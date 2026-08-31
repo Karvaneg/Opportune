@@ -1,0 +1,10 @@
+# Infra IA — Claude Code
+.claude/skills/project-context.md
+
+# Variables d'environnement locales
+.env
+.env.local
+
+# Dépendances Node.js
+node_modules/
+npm-debug.log*
