@@ -15,6 +15,21 @@ const STATUS_SCORES = {
 // Statuts considérés comme terminés (exclus des recommandations).
 const DONE_STATUSES = new Set(["Done"]);
 
+// Un ticket est « urgent » à partir de ce score (max possible = 6).
+const URGENT_THRESHOLD = 5;
+
+// Signaux d'urgence pour proposer une priorité (heuristique, ajustable).
+const PHASE_WEIGHT = { MVP: 2, V1: 1, V2: 0 };
+const TYPE_WEIGHT = { Bug: 2 };
+
+// Traduction poids cumulé -> priorité proposée.
+function weightToPriority(weight) {
+  if (weight >= 4) return "P0";
+  if (weight === 3) return "P1";
+  if (weight === 2) return "P2";
+  return "P3";
+}
+
 /**
  * Attribue un score d'urgence à un ticket (plus haut = plus prioritaire).
  * @param {object} ticket
@@ -41,6 +56,31 @@ function recommendNextTicket(tickets) {
 }
 
 /**
+ * Renvoie les tickets urgents (non terminés, score >= seuil), triés par score.
+ * @param {Array} tickets
+ * @param {number} [threshold=URGENT_THRESHOLD]
+ * @returns {Array} tickets enrichis de `score`
+ */
+function getUrgentTickets(tickets, threshold = URGENT_THRESHOLD) {
+  return tickets
+    .filter((ticket) => !DONE_STATUSES.has(ticket.statut))
+    .map((ticket) => ({ ...ticket, score: scoreTicket(ticket) }))
+    .filter((ticket) => ticket.score >= threshold)
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Propose une priorité P0–P3 à partir de signaux du ticket (phase, type).
+ * Heuristique de départ, destinée à être affinée.
+ * @param {object} ticket
+ * @returns {string} "P0" | "P1" | "P2" | "P3"
+ */
+function suggestPriority(ticket) {
+  const weight = (PHASE_WEIGHT[ticket.phase] ?? 0) + (TYPE_WEIGHT[ticket.type] ?? 0);
+  return weightToPriority(weight);
+}
+
+/**
  * Explique brièvement pourquoi un ticket est recommandé.
  * @param {object} ticket - ticket enrichi de `score`
  * @returns {string}
@@ -53,5 +93,7 @@ function explainRecommendation(ticket) {
 module.exports = {
   scoreTicket,
   recommendNextTicket,
+  getUrgentTickets,
+  suggestPriority,
   explainRecommendation,
 };
