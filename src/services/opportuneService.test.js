@@ -1,7 +1,12 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { scoreTicket, recommendNextTicket } = require("./opportuneService");
+const {
+  scoreTicket,
+  recommendNextTicket,
+  getUrgentTickets,
+  suggestPriority,
+} = require("./opportuneService");
 
 // Raccourci pour fabriquer un ticket minimal.
 const t = (priorite, statut, extra = {}) => ({ priorite, statut, ...extra });
@@ -55,4 +60,38 @@ test("recommendNextTicket : enrichit le ticket d'un champ score sans muter l'ori
 test("recommendNextTicket : liste vide ou tout terminé → null", () => {
   assert.equal(recommendNextTicket([]), null);
   assert.equal(recommendNextTicket([t("P0", "Done")]), null);
+});
+
+test("getUrgentTickets : ne garde que les scores >= seuil, triés", () => {
+  const tickets = [
+    t("P0", "Backlog", { id: "A" }), // 6
+    t("P2", "Backlog", { id: "B" }), // 4  -> exclu
+    t("P1", "Backlog", { id: "C" }), // 5
+  ];
+  const urgents = getUrgentTickets(tickets);
+  assert.deepEqual(urgents.map((u) => u.id), ["A", "C"]);
+});
+
+test("getUrgentTickets : exclut les tickets terminés même très prioritaires", () => {
+  assert.deepEqual(getUrgentTickets([t("P0", "Done")]), []);
+});
+
+test("getUrgentTickets : seuil personnalisable", () => {
+  const tickets = [t("P3", "In Progress", { id: "bas" })]; // score 2
+  assert.equal(getUrgentTickets(tickets, 5).length, 0);
+  assert.equal(getUrgentTickets(tickets, 2).length, 1);
+});
+
+test("suggestPriority : MVP + Bug → P0", () => {
+  assert.equal(suggestPriority({ phase: "MVP", type: "Bug" }), "P0");
+});
+
+test("suggestPriority : MVP feature → P2, V1 bug → P1", () => {
+  assert.equal(suggestPriority({ phase: "MVP", type: "Feature" }), "P2");
+  assert.equal(suggestPriority({ phase: "V1", type: "Bug" }), "P1");
+});
+
+test("suggestPriority : aucun signal → P3", () => {
+  assert.equal(suggestPriority({}), "P3");
+  assert.equal(suggestPriority({ phase: "V2", type: "Feature" }), "P3");
 });
