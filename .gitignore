@@ -8,3 +8,6 @@
 # Dépendances Node.js
 node_modules/
 npm-debug.log*
+
+# Passations de session (hors versioning)
+handoffs/
