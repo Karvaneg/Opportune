@@ -1,0 +1,16 @@
+{
+  "name": "opportune",
+  "version": "0.1.0",
+  "description": "Assistant de candidature — intégration Notion",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@notionhq/client": "^5.26.0",
+    "dotenv": "^17.4.2"
+  }
+}
