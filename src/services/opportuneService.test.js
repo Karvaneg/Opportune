@@ -76,6 +76,19 @@ test("getUrgentTickets : exclut les tickets terminés même très prioritaires",
   assert.deepEqual(getUrgentTickets([t("P0", "Done")]), []);
 });
 
+test("getUrgentTickets : trie strictement par score décroissant", () => {
+  const tickets = [
+    t("P1", "Backlog", { id: "moyen" }), // 5
+    t("P0", "Backlog", { id: "haut" }), // 6
+    t("P0", "Ready", { id: "haut2" }), // 6
+  ];
+  const urgents = getUrgentTickets(tickets);
+  const scores = urgents.map((u) => u.score);
+  assert.deepEqual(scores, [...scores].sort((a, b) => b - a));
+  assert.equal(urgents[0].score, 6);
+  assert.equal(urgents.at(-1).id, "moyen");
+});
+
 test("getUrgentTickets : seuil personnalisable", () => {
   const tickets = [t("P3", "In Progress", { id: "bas" })]; // score 2
   assert.equal(getUrgentTickets(tickets, 5).length, 0);
