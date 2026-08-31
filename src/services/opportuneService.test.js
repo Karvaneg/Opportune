@@ -82,13 +82,27 @@ test("getUrgentTickets : seuil personnalisable", () => {
   assert.equal(getUrgentTickets(tickets, 2).length, 1);
 });
 
-test("suggestPriority : MVP + Bug → P0", () => {
-  assert.equal(suggestPriority({ phase: "MVP", type: "Bug" }), "P0");
+test("suggestPriority : MVP + Bug seul ne suffit plus pour P0 → P1", () => {
+  assert.equal(suggestPriority({ phase: "MVP", type: "Bug" }), "P1"); // 2 + 2 = 4
 });
 
-test("suggestPriority : MVP feature → P2, V1 bug → P1", () => {
-  assert.equal(suggestPriority({ phase: "MVP", type: "Feature" }), "P2");
-  assert.equal(suggestPriority({ phase: "V1", type: "Bug" }), "P1");
+test("suggestPriority : un signal critique fait basculer en P0", () => {
+  // MVP + Bug + epic sécurité = 2 + 2 + 1 = 5
+  assert.equal(
+    suggestPriority({ phase: "MVP", type: "Bug", epic: "Epic E7 — Infrastructure et sécurité" }),
+    "P0",
+  );
+  // MVP + Bug + quick win = 2 + 2 + 1 = 5
+  assert.equal(suggestPriority({ phase: "MVP", type: "Bug", estimation: "2" }), "P0");
+});
+
+test("suggestPriority : le quick win rehausse la priorité", () => {
+  assert.equal(suggestPriority({ phase: "MVP", type: "Feature" }), "P2"); // 2
+  assert.equal(suggestPriority({ phase: "MVP", type: "Feature", estimation: "1" }), "P1"); // 2 + 1
+});
+
+test("suggestPriority : le type Technique compte comme un signal léger", () => {
+  assert.equal(suggestPriority({ phase: "V1", type: "Technique" }), "P2"); // 1 + 1
 });
 
 test("suggestPriority : aucun signal → P3", () => {

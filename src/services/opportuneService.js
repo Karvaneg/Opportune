@@ -9,6 +9,9 @@ const {
   URGENT_THRESHOLD,
   PHASE_WEIGHT,
   TYPE_WEIGHT,
+  EPIC_WEIGHT,
+  QUICK_WIN_ESTIMATIONS,
+  QUICK_WIN_BONUS,
   weightToPriority,
 } = require("./rules");
 
@@ -37,10 +40,23 @@ function getUrgentTickets(tickets, threshold = URGENT_THRESHOLD) {
   return rankActionable(tickets).filter((ticket) => ticket.score >= threshold);
 }
 
-/** Priorité P0–P3 proposée à partir de signaux (phase, type). Heuristique ajustable. */
+/** Poids d'importance cumulé d'un ticket, à partir de ses signaux. */
+function priorityWeight(ticket) {
+  const quickWin = QUICK_WIN_ESTIMATIONS.has(ticket.estimation) ? QUICK_WIN_BONUS : 0;
+  return (
+    (PHASE_WEIGHT[ticket.phase] ?? 0) +
+    (TYPE_WEIGHT[ticket.type] ?? 0) +
+    (EPIC_WEIGHT[ticket.epic] ?? 0) +
+    quickWin
+  );
+}
+
+/**
+ * Priorité P0–P3 proposée à partir des signaux du ticket
+ * (phase, type, epic, quick win). Heuristique ajustable via ./rules.
+ */
 function suggestPriority(ticket) {
-  const weight = (PHASE_WEIGHT[ticket.phase] ?? 0) + (TYPE_WEIGHT[ticket.type] ?? 0);
-  return weightToPriority(weight);
+  return weightToPriority(priorityWeight(ticket));
 }
 
 /** Phrase expliquant la recommandation. */
