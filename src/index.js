@@ -5,7 +5,7 @@ const {
   getUrgentTickets,
   suggestPriority,
   explainRecommendation,
-} = require("./services/opportuneService");
+} = require("./services");
 
 async function main() {
   try {
