@@ -3,6 +3,7 @@ const {
   RESUME_FORMATS,
   formatFromPath,
   createResume,
+  updateResume,
 } = require("../models/resume");
 const {
   DEFAULT_PATH,
@@ -89,8 +90,100 @@ function setDefaultResume(profileId, resumeId, filePath = DEFAULT_PATH) {
   return target;
 }
 
+// Liste les CV d'un profil (les archivés sont exclus par défaut).
+function listResumes(profileId, options = {}, filePath = DEFAULT_PATH) {
+  const { includeArchived = false } = options;
+  return loadResumes(filePath).filter(
+    (r) => r.profileId === profileId && (includeArchived || !r.archived),
+  );
+}
+
+// Retourne un CV par son id, ou null s'il n'existe pas.
+function getResume(id, filePath = DEFAULT_PATH) {
+  return loadResumes(filePath).find((r) => r.id === id) ?? null;
+}
+
+// Remplace le contenu d'un CV (nouvelle source) en conservant id, nom et statut
+// de défaut. Ré-extrait le texte (PDF/DOCX → UnsupportedFormatError).
+function replaceResume(id, newSourcePath, filePath = DEFAULT_PATH) {
+  const resumes = loadResumes(filePath);
+  const index = resumes.findIndex((r) => r.id === id);
+  if (index < 0) throw new Error("CV introuvable");
+
+  const extractedText = extractText(newSourcePath);
+  if (!isNonEmptyString(extractedText)) {
+    throw new Error("Le CV est vide ou illisible");
+  }
+
+  const updated = updateResume(resumes[index], {
+    sourcePath: newSourcePath,
+    format: formatFromPath(newSourcePath),
+    extractedText,
+    importedAt: new Date().toISOString(),
+  });
+
+  resumes[index] = updated;
+  saveResumes(resumes, filePath);
+  return updated;
+}
+
+// Prépare le retrait (archivage/suppression) d'un CV par défaut : si d'autres
+// CV actifs subsistent, l'appelant DOIT désigner le nouveau défaut (newDefaultId),
+// sinon une erreur explicite est levée (l'UI posera la question à l'utilisateur).
+// Si c'était le dernier CV actif, il n'y a rien à réassigner.
+function reassignDefaultOrThrow(resumes, target, newDefaultId) {
+  const others = resumes.filter(
+    (r) => r.profileId === target.profileId && !r.archived && r.id !== target.id,
+  );
+  if (others.length === 0) return; // dernier CV actif : aucun défaut à réassigner
+
+  if (!newDefaultId) {
+    throw new Error(
+      "Ce CV est le CV par défaut : désignez le nouveau CV par défaut (newDefaultId).",
+    );
+  }
+  const next = others.find((r) => r.id === newDefaultId);
+  if (!next) throw new Error("Le nouveau CV par défaut désigné est introuvable ou archivé");
+  next.isDefault = true;
+}
+
+// Archive un CV (conservé dans l'historique, mais retiré des listes actives).
+function archiveResume(id, options = {}, filePath = DEFAULT_PATH) {
+  const resumes = loadResumes(filePath);
+  const target = resumes.find((r) => r.id === id);
+  if (!target) throw new Error("CV introuvable");
+
+  if (target.isDefault) {
+    reassignDefaultOrThrow(resumes, target, options.newDefaultId);
+    target.isDefault = false;
+  }
+  target.archived = true;
+
+  saveResumes(resumes, filePath);
+  return target;
+}
+
+// Supprime définitivement un CV de la collection.
+function deleteResume(id, options = {}, filePath = DEFAULT_PATH) {
+  const resumes = loadResumes(filePath);
+  const target = resumes.find((r) => r.id === id);
+  if (!target) throw new Error("CV introuvable");
+
+  if (target.isDefault) {
+    reassignDefaultOrThrow(resumes, target, options.newDefaultId);
+  }
+
+  saveResumes(resumes.filter((r) => r.id !== id), filePath);
+  return target;
+}
+
 module.exports = {
   validateResume,
   importResume,
   setDefaultResume,
+  listResumes,
+  getResume,
+  replaceResume,
+  archiveResume,
+  deleteResume,
 };
