@@ -19,14 +19,14 @@ offre sélectionnée → dossier personnalisé → validation → envoi manuel o
 
 ## Stack adaptée
 
-| Brique | Rôle |
-|---|---|
-| **Ministral + Ollama** | Analyse et rédaction |
-| **Anthropic** | Contrôle qualité des candidatures importantes |
-| **Kyutai** | Commandes vocales et notes vocales |
-| **Discord** | Interface de validation |
-| **SQLite** | Suivi des offres et candidatures |
-| **Python / Docker / WSL** | Orchestration |
+| Brique                    | Rôle                                          |
+| ------------------------- | --------------------------------------------- |
+| **Ministral + Ollama**    | Analyse et rédaction                          |
+| **Anthropic**             | Contrôle qualité des candidatures importantes |
+| **Kyutai**                | Commandes vocales et notes vocales            |
+| **Discord**               | Interface de validation                       |
+| **SQLite**                | Suivi des offres et candidatures              |
+| **Python / Docker / WSL** | Orchestration                                 |
 
 ## Architecture élargie
 
