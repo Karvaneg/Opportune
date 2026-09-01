@@ -6,6 +6,7 @@
 const { createOffer } = require("../models/jobOffer");
 const { DEFAULT_PATH, saveOffer } = require("../models/offerStore");
 const { validateOffer } = require("./offerService");
+const { normalizeContractType } = require("./offerNormalizer");
 
 // Libellés reconnus dans un texte collé → champs de l'offre.
 const FIELD_LABELS = {
@@ -35,13 +36,6 @@ const FIELD_LABELS = {
   "date de publication": "publishedAt",
   "publié le": "publishedAt",
 };
-
-// Normalise un type de contrat vers CDI / FREELANCE si reconnu, sinon inchangé
-// (la valeur non reconnue sera rejetée à la validation).
-function normalizeContractType(value) {
-  const up = value.trim().toUpperCase();
-  return up === "CDI" || up === "FREELANCE" ? up : value;
-}
 
 // Extrait des champs d'offre d'un texte, ligne à ligne au format « clé: valeur ».
 function parseOfferText(text) {
