@@ -24,7 +24,8 @@ function createOffer(data = {}) {
     location: data.location ?? null, // localisation
     compensation: data.compensation ?? null, // salaire ou budget
     description: data.description ?? null, // description
-    publishedAt: data.publishedAt ?? null, // date de publication
+    publishedAt: data.publishedAt ?? null, // date de publication de l'offre
+    importedAt: data.importedAt ?? new Date().toISOString(), // date d'import dans Opportune
   };
 }
 

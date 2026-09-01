@@ -9,6 +9,7 @@ test("createOffer : génère un id et des défauts neutres", () => {
   assert.equal(o.title, "");
   assert.equal(o.contractType, null);
   assert.equal(o.location, null);
+  assert.ok(o.importedAt); // date d'import horodatée
 });
 
 test("createOffer : conserve les valeurs fournies, y compris un id", () => {
