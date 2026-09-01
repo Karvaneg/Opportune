@@ -18,6 +18,14 @@ test("createProfile : id généré unique, ou conservé si fourni", () => {
   assert.equal(createProfile({ id: "fixed" }).id, "fixed"); // id fourni conservé
 });
 
+test("createProfile : champs complémentaires par défaut à null", () => {
+  const p = createProfile();
+  assert.equal(p.location, null);
+  assert.equal(p.availability, null);
+  assert.equal(p.targetSalary, null);
+  assert.equal(p.targetDailyRate, null);
+});
+
 test("createProfile : conserve les valeurs fournies", () => {
   const p = createProfile({ name: "Alex", skills: ["JS"], contractType: "CDI" });
   assert.equal(p.name, "Alex");

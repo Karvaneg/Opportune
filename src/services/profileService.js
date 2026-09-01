@@ -1,7 +1,22 @@
 // Validation du profil candidat avant l'analyse des offres.
-const { CONTRACT_TYPES, createProfile } = require("../models/userProfile");
+const {
+  CONTRACT_TYPES,
+  AVAILABILITY_OPTIONS,
+  createProfile,
+} = require("../models/userProfile");
 
-// Vérifie les champs obligatoires. Retourne { valid, errors }.
+// Une valeur est « fournie » si elle n'est ni null ni undefined.
+const isProvided = (v) => v !== undefined && v !== null;
+const isNonEmptyString = (v) => typeof v === "string" && v.trim() !== "";
+const isPositiveNumber = (v) => typeof v === "number" && !Number.isNaN(v) && v >= 0;
+const isIsoDate = (v) =>
+  typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+
+// Disponibilité valide : une option de l'échelle fermée, ou une date ISO précise.
+const isValidAvailability = (v) => AVAILABILITY_OPTIONS.includes(v) || isIsoDate(v);
+
+// Vérifie les champs obligatoires et, s'ils sont fournis, les champs facultatifs
+// (localisation, disponibilité, salaire/TJM cible). Retourne { valid, errors }.
 function validateProfile(profile) {
   const errors = [];
 
@@ -13,6 +28,20 @@ function validateProfile(profile) {
 
   if (!CONTRACT_TYPES.includes(profile.contractType)) {
     errors.push("Le type de contrat est invalide");
+  }
+
+  // Champs facultatifs : validés uniquement s'ils sont fournis (rétrocompatibilité).
+  if (isProvided(profile.location) && !isNonEmptyString(profile.location)) {
+    errors.push("La localisation doit être une chaîne non vide");
+  }
+  if (isProvided(profile.availability) && !isValidAvailability(profile.availability)) {
+    errors.push("La disponibilité est invalide");
+  }
+  if (isProvided(profile.targetSalary) && !isPositiveNumber(profile.targetSalary)) {
+    errors.push("Le salaire cible doit être un nombre positif ou nul");
+  }
+  if (isProvided(profile.targetDailyRate) && !isPositiveNumber(profile.targetDailyRate)) {
+    errors.push("Le TJM cible doit être un nombre positif ou nul");
   }
 
   return {
