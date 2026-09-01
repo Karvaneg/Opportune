@@ -4,8 +4,9 @@
 const { randomUUID } = require("node:crypto");
 
 // Types de contrat reconnus pour une offre (distincts du profil : ici en
-// majuscules et sans « les deux » — une offre est soit l'un, soit l'autre).
-const OFFER_CONTRACT_TYPES = ["CDI", "FREELANCE"];
+// majuscules — une offre porte un seul type). La normalisation (offerNormalizer)
+// mappe les variantes des sources vers ces valeurs canoniques.
+const OFFER_CONTRACT_TYPES = ["CDI", "CDD", "FREELANCE"];
 
 // Champs obligatoires pour qu'une offre soit exploitable par l'analyse.
 const REQUIRED_FIELDS = ["title", "company", "source", "url", "contractType"];
@@ -26,6 +27,7 @@ function createOffer(data = {}) {
     description: data.description ?? null, // description
     publishedAt: data.publishedAt ?? null, // date de publication de l'offre
     importedAt: data.importedAt ?? new Date().toISOString(), // date d'import dans Opportune
+    raw: data.raw ?? null, // données brutes d'origine (traçabilité, normalisation)
   };
 }
 
