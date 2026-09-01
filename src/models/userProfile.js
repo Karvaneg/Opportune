@@ -17,7 +17,8 @@ function createProfile(data = {}) {
   return {
     id: data.id ?? randomUUID(), // identifiant stable (référencé par profileId des CV)
     name: data.name ?? "", // obligatoire
-    skills: data.skills ?? [], // compétences — obligatoire (au moins une)
+    skills: data.skills ?? [], // compétences (legacy, string[]) — obligatoire (au moins une)
+    structuredSkills: data.structuredSkills ?? [], // compétences structurées — optionnel
     contractType: data.contractType ?? null, // CDI | freelance | les deux — obligatoire
     experiences: data.experiences ?? [], // expériences
     location: data.location ?? null, // localisation

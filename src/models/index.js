@@ -6,4 +6,5 @@ module.exports = {
   ...require("./offerStore"),
   ...require("./resume"),
   ...require("./resumeStore"),
+  ...require("./skill"),
 };
