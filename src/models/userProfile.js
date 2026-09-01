@@ -7,6 +7,10 @@ const { randomUUID } = require("node:crypto");
 // Types de contrat reconnus (réutilisés par la validation).
 const CONTRACT_TYPES = ["CDI", "freelance", "les deux"];
 
+// Disponibilités reconnues (échelle fermée). Pour une échéance précise, fournir
+// à la place une date ISO (YYYY-MM-DD) — cf. validation dans profileService.
+const AVAILABILITY_OPTIONS = ["immédiate", "sous 1 mois", "sous 3 mois"];
+
 // Champs obligatoires pour qu'un profil soit exploitable par l'analyse d'offres.
 // Les autres champs sont facultatifs et reçoivent une valeur par défaut neutre.
 const REQUIRED_FIELDS = ["name", "skills", "contractType"];
@@ -24,7 +28,8 @@ function createProfile(data = {}) {
     location: data.location ?? null, // localisation
     mobility: data.mobility ?? null, // mobilité
     remote: data.remote ?? null, // télétravail souhaité
-    minCompensation: data.minCompensation ?? null, // salaire ou TJM minimum
+    targetSalary: data.targetSalary ?? null, // salaire annuel cible (CDI)
+    targetDailyRate: data.targetDailyRate ?? null, // TJM cible (freelance)
     languages: data.languages ?? [], // langues
     availability: data.availability ?? null, // disponibilité
     constraints: data.constraints ?? [], // contraintes particulières
@@ -37,4 +42,10 @@ function updateProfile(profile, changes = {}) {
   return { ...profile, ...changes, id: profile.id };
 }
 
-module.exports = { CONTRACT_TYPES, REQUIRED_FIELDS, createProfile, updateProfile };
+module.exports = {
+  CONTRACT_TYPES,
+  AVAILABILITY_OPTIONS,
+  REQUIRED_FIELDS,
+  createProfile,
+  updateProfile,
+};
