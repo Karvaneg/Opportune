@@ -2,6 +2,7 @@
 // Sert de référence à Opportune pour comparer les offres à la situation
 // de l'utilisateur. La validation vit dans src/services/profileService.js ;
 // la persistance dans src/models/profileStore.js.
+const { randomUUID } = require("node:crypto");
 
 // Types de contrat reconnus (réutilisés par la validation).
 const CONTRACT_TYPES = ["CDI", "freelance", "les deux"];
@@ -14,6 +15,7 @@ const REQUIRED_FIELDS = ["name", "skills", "contractType"];
 // Chaque champ absent reçoit une valeur par défaut (liste vide ou null).
 function createProfile(data = {}) {
   return {
+    id: data.id ?? randomUUID(), // identifiant stable (référencé par profileId des CV)
     name: data.name ?? "", // obligatoire
     skills: data.skills ?? [], // compétences — obligatoire (au moins une)
     contractType: data.contractType ?? null, // CDI | freelance | les deux — obligatoire
@@ -29,8 +31,9 @@ function createProfile(data = {}) {
 }
 
 // Retourne une copie du profil avec les modifications appliquées (immutable).
+// L'id reste stable (il identifie le profil et est référencé par les CV).
 function updateProfile(profile, changes = {}) {
-  return { ...profile, ...changes };
+  return { ...profile, ...changes, id: profile.id };
 }
 
 module.exports = { CONTRACT_TYPES, REQUIRED_FIELDS, createProfile, updateProfile };
