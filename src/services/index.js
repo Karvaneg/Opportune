@@ -3,4 +3,6 @@ module.exports = {
   ...require("./opportuneService"),
   ...require("./profileService"),
   ...require("./offerService"),
+  ...require("./resumeService"),
+  ...require("./textExtractor"),
 };
