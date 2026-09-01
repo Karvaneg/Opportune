@@ -11,3 +11,6 @@ npm-debug.log*
 
 # Passations de session (hors versioning)
 handoffs/
+
+# Données personnelles (profil candidat sauvegardé)
+data/
