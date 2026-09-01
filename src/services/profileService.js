@@ -1,5 +1,5 @@
 // Validation du profil candidat avant l'analyse des offres.
-const { CONTRACT_TYPES } = require("../models/userProfile");
+const { CONTRACT_TYPES, createProfile } = require("../models/userProfile");
 
 // Vérifie les champs obligatoires. Retourne { valid, errors }.
 function validateProfile(profile) {
@@ -21,6 +21,20 @@ function validateProfile(profile) {
   };
 }
 
+// Construit un profil puis le valide ; lève une erreur si un champ obligatoire manque.
+// À utiliser quand on veut un profil garanti exploitable (ex. avant analyse des offres).
+function createValidProfile(data) {
+  const profile = createProfile(data);
+  const validation = validateProfile(profile);
+
+  if (!validation.valid) {
+    throw new Error(validation.errors.join(", "));
+  }
+
+  return profile;
+}
+
 module.exports = {
   validateProfile,
+  createValidProfile,
 };
