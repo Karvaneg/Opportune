@@ -2,4 +2,5 @@
 module.exports = {
   ...require("./opportuneService"),
   ...require("./profileService"),
+  ...require("./offerService"),
 };

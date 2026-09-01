@@ -2,4 +2,6 @@
 module.exports = {
   ...require("./userProfile"),
   ...require("./profileStore"),
+  ...require("./jobOffer"),
+  ...require("./offerStore"),
 };
