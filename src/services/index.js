@@ -9,6 +9,7 @@ module.exports = {
   ...require("./skillLexicon"),
   ...require("./offerKeyInfoExtractor"),
   ...require("./offerProfileComparator"),
+  ...require("./offerMatchScorer"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
