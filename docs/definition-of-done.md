@@ -1,0 +1,52 @@
+# Definition of Done
+
+> Un ticket n'est **Done** que lorsque **tous** les critères ci-dessous sont
+> satisfaits. Cette DoD reflète les pratiques réellement tenues sur Opportune ;
+> elle sert de garde-fou partagé, pas de formalité.
+
+## 1. Fonctionnel
+
+- [ ] Le **critère d'acceptation** du ticket est satisfait et vérifié.
+- [ ] Le comportement est **déterministe** (heuristique + JSON), sans LLM ni
+      dépendance à la stack cible tant qu'elle n'est pas explicitement engagée.
+- [ ] Les cas limites et les entrées vides/incomplètes sont gérés proprement.
+
+## 2. Code
+
+- [ ] **Une responsabilité par fichier** : modèles purs (`models/`), persistance
+      (`*Store.js`), logique (`services/`) ; chaque dossier expose un barrel `index.js`.
+- [ ] Réutilisation avant duplication (ex. lexique de compétences partagé).
+- [ ] Commentaires **en français**, densité et style cohérents avec l'existant.
+- [ ] Aucune **dépendance externe** ajoutée sans justification explicite.
+- [ ] **Erreurs typées** (`src/errors`) là où l'appelant doit distinguer les cas.
+
+## 3. Tests
+
+- [ ] Tests **co-localisés** `*.test.js` avec `node:test`, couvrant le cas nominal,
+      les cas limites et les erreurs.
+- [ ] `npm test` (`node --test`) **entièrement au vert**, sans test ignoré.
+- [ ] Les tests n'écrivent pas dans les données réelles (fichiers temporaires).
+
+## 4. Fidélité et sécurité
+
+- [ ] **Aucune invention** : CV et lettres restent strictement fidèles au profil ;
+      les compétences manquantes sont signalées, jamais ajoutées (anti-invention).
+- [ ] Les **secrets** sont lus depuis l'environnement / `.env.local` (gitignoré),
+      **jamais commités ni journalisés**.
+- [ ] **Aucun envoi** possible sans validation humaine **explicite** (sas d'envoi).
+
+## 5. Intégration et suivi
+
+- [ ] Travail sur une **branche dédiée** `OPP-XXX-slug`, créée depuis `main` à jour.
+- [ ] **Commit conventionnel** ; PR ouverte, mergée dans `main`, branche supprimée.
+- [ ] Le **ticket Notion** est passé en **Done**, statut **relu et confirmé**.
+
+## 6. Documentation
+
+- [ ] Le code est auto-documenté ; la documentation (`docs/`, `CLAUDE.md`) est mise
+      à jour si la vision, l'architecture ou les conventions changent.
+
+---
+
+Voir aussi : [`docs/vision.md`](./vision.md) (vision produit et stack cible),
+`CLAUDE.md` (contexte et conventions du dépôt).
