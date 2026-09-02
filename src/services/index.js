@@ -14,6 +14,7 @@ module.exports = {
   ...require("./coverLetterGenerator"),
   ...require("./inventionGuard"),
   ...require("./applicationSendGuard"),
+  ...require("./applicationService"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
