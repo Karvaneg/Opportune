@@ -20,6 +20,7 @@ module.exports = {
   ...require("./applicationStatus"),
   ...require("./applicationService"),
   ...require("./opportunityValidation"),
+  ...require("./offerSummary"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
