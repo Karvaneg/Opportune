@@ -4,6 +4,7 @@ module.exports = {
   ...require("./profileService"),
   ...require("./offerService"),
   ...require("./offerImportService"),
+  ...require("./offerSourceConnector"),
   ...require("./offerNormalizer"),
   ...require("./offerDeduplicator"),
   ...require("./skillLexicon"),
