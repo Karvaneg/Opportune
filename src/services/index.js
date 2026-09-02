@@ -10,6 +10,7 @@ module.exports = {
   ...require("./offerKeyInfoExtractor"),
   ...require("./offerProfileComparator"),
   ...require("./offerMatchScorer"),
+  ...require("./scoreExplainer"),
   ...require("./resumeAdapter"),
   ...require("./coverLetterGenerator"),
   ...require("./inventionGuard"),
