@@ -7,6 +7,7 @@
 // (jamais commité) ; ce module ne journalise jamais une valeur et expose
 // maskSecret pour un affichage sûr.
 const fs = require("node:fs");
+const { ConfigError } = require("../errors");
 
 // Parse le contenu d'un fichier .env en objet { CLE: valeur }. Ignore les
 // lignes vides et les commentaires (#), retire les guillemets entourant la valeur.
@@ -59,7 +60,7 @@ function hasSecret(name, source = process.env) {
 function getSecret(name, options = {}) {
   const { source = process.env, required = true } = options;
   if (!hasSecret(name, source)) {
-    if (required) throw new Error(`Variable secrète manquante : ${name}`);
+    if (required) throw new ConfigError(`Variable secrète manquante : ${name}`, { name });
     return null;
   }
   return source[name];
@@ -70,7 +71,7 @@ function getSecret(name, options = {}) {
 function requireSecrets(names = [], source = process.env) {
   const missing = names.filter((name) => !hasSecret(name, source));
   if (missing.length > 0) {
-    throw new Error(`Variables secrètes manquantes : ${missing.join(", ")}`);
+    throw new ConfigError(`Variables secrètes manquantes : ${missing.join(", ")}`, { missing });
   }
   return true;
 }

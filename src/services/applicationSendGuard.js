@@ -10,6 +10,7 @@
 // L'envoi réel n'existe pas encore (pas de connecteur au MVP) : ce module fournit
 // le point de passage obligé que tout futur envoi devra franchir (performSend).
 const { verifyApplication } = require("./inventionGuard");
+const { SendBlockedError } = require("../errors");
 
 // Codes de blocage stables (exploitables par l'UI).
 const BLOCK_REASONS = {
@@ -40,7 +41,7 @@ function authorizeSend(application = {}, confirmation = {}) {
 function performSend(application, confirmation, send) {
   const decision = authorizeSend(application, confirmation);
   if (!decision.authorized) {
-    throw new Error(`Envoi bloqué : ${decision.reasons.join(", ")}`);
+    throw new SendBlockedError(`Envoi bloqué : ${decision.reasons.join(", ")}`, { reasons: decision.reasons });
   }
   if (typeof send !== "function") {
     throw new Error("performSend : la fonction d'envoi (send) est requise");
