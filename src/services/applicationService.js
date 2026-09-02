@@ -13,6 +13,7 @@ const {
   saveApplications,
 } = require("../models/applicationStore");
 const { canTransition } = require("./applicationStatus");
+const { ValidationError, NotFoundError, InvalidTransitionError } = require("../errors");
 
 // Vrai si la valeur est une chaîne non vide (espaces seuls exclus).
 function isNonEmptyString(value) {
@@ -51,7 +52,7 @@ function createValidApplication(data) {
   const validation = validateApplication(application);
 
   if (!validation.valid) {
-    throw new Error(validation.errors.join(", "));
+    throw new ValidationError(validation.errors.join(", "));
   }
 
   return application;
@@ -77,12 +78,12 @@ function getApplication(id, filePath = DEFAULT_PATH) {
 function updateApplicationById(id, changes, filePath = DEFAULT_PATH) {
   const applications = loadApplications(filePath);
   const index = applications.findIndex((a) => a.id === id);
-  if (index < 0) throw new Error("Candidature introuvable");
+  if (index < 0) throw new NotFoundError("Candidature introuvable");
 
   const updated = updateApplication(applications[index], changes);
   const validation = validateApplication(updated);
   if (!validation.valid) {
-    throw new Error(validation.errors.join(", "));
+    throw new ValidationError(validation.errors.join(", "));
   }
 
   applications[index] = updated;
@@ -96,11 +97,11 @@ function updateApplicationById(id, changes, filePath = DEFAULT_PATH) {
 function changeApplicationStatus(id, newStatus, filePath = DEFAULT_PATH) {
   const applications = loadApplications(filePath);
   const index = applications.findIndex((a) => a.id === id);
-  if (index < 0) throw new Error("Candidature introuvable");
+  if (index < 0) throw new NotFoundError("Candidature introuvable");
 
   const current = applications[index].status;
   if (!canTransition(current, newStatus)) {
-    throw new Error(`Transition de statut invalide : ${current} → ${newStatus}`);
+    throw new InvalidTransitionError(`Transition de statut invalide : ${current} → ${newStatus}`, { from: current, to: newStatus });
   }
 
   const updated = updateApplication(applications[index], { status: newStatus });
