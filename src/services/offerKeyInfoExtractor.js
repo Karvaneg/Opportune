@@ -6,84 +6,13 @@
 // Extraction heuristique et déterministe (aucune dépendance externe, aucun LLM,
 // en continuité de la stack Node actuelle) : lit les champs structurés quand ils
 // existent, sinon analyse le texte libre (titre + description + données brutes).
+//
+// Le vocabulaire des compétences est mutualisé dans skillLexicon (partagé avec
+// la comparaison offre↔profil) ; l'appariement de termes vit dans textMatch.
+const { containsTerm } = require("./textMatch");
+const { findSkillsInText } = require("./skillLexicon");
 
 // --- Catalogues de détection -------------------------------------------------
-
-// Compétences reconnues : nom canonique + variantes rencontrées dans les offres.
-// L'ordre définit l'ordre d'apparition dans le résultat ; il est structuré par
-// familles (langages, front, back, données, cloud, devops, outils, méthodo).
-const SKILL_CATALOG = [
-  // Langages
-  { name: "JavaScript", aliases: ["javascript"] },
-  { name: "TypeScript", aliases: ["typescript"] },
-  { name: "Python", aliases: ["python"] },
-  { name: "Java", aliases: ["java"] },
-  { name: "C#", aliases: ["c#", ".net", "dotnet"] },
-  { name: "C++", aliases: ["c++"] },
-  { name: "Go", aliases: ["golang"] },
-  { name: "PHP", aliases: ["php"] },
-  { name: "Ruby", aliases: ["ruby", "rails"] },
-  // Runtime / back JS
-  { name: "Node.js", aliases: ["node.js", "nodejs"] },
-  // Frameworks front
-  { name: "React", aliases: ["react", "react.js", "reactjs"] },
-  { name: "Vue.js", aliases: ["vue.js", "vuejs", "vue"] },
-  { name: "Angular", aliases: ["angular"] },
-  { name: "Next.js", aliases: ["next.js", "nextjs"] },
-  { name: "Svelte", aliases: ["svelte", "sveltekit"] },
-  { name: "Astro", aliases: ["astro"] },
-  // Frameworks back
-  { name: "Express", aliases: ["express.js", "expressjs"] },
-  { name: "NestJS", aliases: ["nestjs", "nest.js"] },
-  { name: "Symfony", aliases: ["symfony"] },
-  { name: "Laravel", aliases: ["laravel"] },
-  { name: "Django", aliases: ["django"] },
-  { name: "Flask", aliases: ["flask"] },
-  { name: "FastAPI", aliases: ["fastapi"] },
-  { name: "Spring", aliases: ["spring boot", "spring"] },
-  // Bases de données
-  { name: "SQL", aliases: ["sql", "postgresql", "postgres", "mysql"] },
-  { name: "MongoDB", aliases: ["mongodb", "mongo"] },
-  { name: "Redis", aliases: ["redis"] },
-  { name: "Elasticsearch", aliases: ["elasticsearch"] },
-  // Bases de données managées / BaaS
-  { name: "Supabase", aliases: ["supabase"] },
-  { name: "Firebase", aliases: ["firebase"] },
-  { name: "Neon", aliases: ["neon"] },
-  { name: "PlanetScale", aliases: ["planetscale"] },
-  // Cloud & hébergement
-  { name: "AWS", aliases: ["aws"] },
-  { name: "GCP", aliases: ["gcp", "google cloud"] },
-  { name: "Azure", aliases: ["azure"] },
-  { name: "Vercel", aliases: ["vercel"] },
-  { name: "Netlify", aliases: ["netlify"] },
-  // Casse exacte requise : « render » est aussi un terme technique courant.
-  { name: "Render", aliases: ["Render"], caseSensitive: true },
-  { name: "Cloudflare", aliases: ["cloudflare"] },
-  { name: "Heroku", aliases: ["heroku"] },
-  // DevOps / CI-CD
-  { name: "Docker", aliases: ["docker"] },
-  { name: "Kubernetes", aliases: ["kubernetes", "k8s"] },
-  { name: "Terraform", aliases: ["terraform"] },
-  { name: "Ansible", aliases: ["ansible"] },
-  { name: "DevOps", aliases: ["devops"] },
-  { name: "CI/CD", aliases: ["ci/cd", "cicd"] },
-  { name: "GitHub Actions", aliases: ["github actions"] },
-  { name: "GitLab CI", aliases: ["gitlab ci"] },
-  { name: "Jenkins", aliases: ["jenkins"] },
-  // Outils
-  { name: "Git", aliases: ["git"] },
-  { name: "GraphQL", aliases: ["graphql"] },
-  // Casse exacte requise : « notion » est aussi un mot courant (« des notions
-  // de… ») et le nom d'un niveau de compétence — seule la majuscule distingue.
-  { name: "Notion", aliases: ["Notion"], caseSensitive: true },
-  { name: "Jira", aliases: ["jira"] },
-  { name: "Figma", aliases: ["figma"] },
-  // Méthodologie
-  { name: "Agile", aliases: ["agile"] },
-  { name: "Scrum", aliases: ["scrum"] },
-  { name: "Kanban", aliases: ["kanban"] },
-];
 
 // Langues reconnues : nom canonique (français) + variantes multilingues.
 const LANGUAGE_CATALOG = [
@@ -112,19 +41,6 @@ const CONSTRAINT_CATALOG = [
 
 // --- Utilitaires -------------------------------------------------------------
 
-// Vrai si `term` apparaît dans `haystack` comme unité entière. Les frontières
-// sont des caractères non alphanumériques (Unicode), ce qui gère aussi bien les
-// termes classiques que ceux à ponctuation (c++, c#, node.js).
-// `caseSensitive` exige la casse exacte du terme : utile pour les noms propres
-// qui sont aussi des mots courants (Notion vs « notions de… », Render vs
-// « rendering »), où seule la majuscule distingue l'outil du mot.
-function containsTerm(haystack, term, caseSensitive = false) {
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const flags = caseSensitive ? "u" : "iu";
-  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, flags);
-  return re.test(haystack);
-}
-
 // Assemble le corpus textuel d'une offre : champs structurés lisibles + données
 // brutes (chaînes) éventuelles. Sert de support à toutes les heuristiques.
 function collectText(offer) {
@@ -149,13 +65,9 @@ function collectText(offer) {
 
 // --- Extracteurs par dimension ----------------------------------------------
 
-// Compétences détectées, dans l'ordre du catalogue, sans doublon.
+// Compétences détectées, via le lexique partagé (skillLexicon).
 function extractSkills(text) {
-  const found = [];
-  for (const { name, aliases, caseSensitive } of SKILL_CATALOG) {
-    if (aliases.some((alias) => containsTerm(text, alias, caseSensitive))) found.push(name);
-  }
-  return found;
+  return findSkillsInText(text);
 }
 
 // Nombre minimal d'années d'expérience exigé (borne basse d'une fourchette),
@@ -258,6 +170,7 @@ function extractKeyInfo(offer = {}) {
   const text = collectText(offer);
   return {
     skills: extractSkills(text),
+    contractType: offer.contractType ?? null, // champ structuré (CDI/CDD/FREELANCE)
     experienceYears: extractExperienceYears(text),
     location: extractLocation(offer, text),
     salary: extractSalary(text),

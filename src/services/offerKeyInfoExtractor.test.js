@@ -170,6 +170,7 @@ test("extractKeyInfo : offre vide → dimensions neutres, jamais absentes", () =
   const info = extractKeyInfo({});
   assert.deepEqual(info, {
     skills: [],
+    contractType: null,
     experienceYears: null,
     location: null,
     salary: null,
