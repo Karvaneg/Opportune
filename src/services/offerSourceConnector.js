@@ -12,15 +12,16 @@ const { normalizeOffer } = require("./offerNormalizer");
 const { validateOffer } = require("./offerService");
 const { OFFER_CONTRACT_TYPES } = require("../models/jobOffer");
 const { ValidationError } = require("../errors");
+const { logger: defaultLogger } = require("../logging");
 
 // Crée un connecteur configuré pour une source donnée.
 // - name : identifiant de la source (obligatoire), reporté dans chaque offre.
 // - fetcher : fonction (sync ou async) renvoyant un tableau d'offres brutes.
 // - contractType : filtre optionnel (ex. "CDI") — seules les offres de ce type
 //   sont retenues. null = pas de filtre.
-// - logger : cible de journalisation (défaut console), doit exposer .error.
+// - logger : cible de journalisation (défaut : logger applicatif), doit exposer .error.
 function createSourceConnector(config = {}) {
-  const { name, fetcher, contractType = null, logger = console } = config;
+  const { name, fetcher, contractType = null, logger = defaultLogger } = config;
 
   if (typeof name !== "string" || name.trim() === "") {
     throw new ValidationError("Le connecteur exige un nom de source (name)");
