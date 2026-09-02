@@ -9,4 +9,6 @@ module.exports = {
   ...require("./skill"),
   ...require("./application"),
   ...require("./applicationStore"),
+  ...require("./documentVersion"),
+  ...require("./documentVersionStore"),
 };

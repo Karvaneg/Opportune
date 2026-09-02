@@ -20,6 +20,7 @@ module.exports = {
   ...require("./linkedInMessageGenerator"),
   ...require("./inventionGuard"),
   ...require("./documentEditor"),
+  ...require("./documentVersionService"),
   ...require("./applicationSendGuard"),
   ...require("./applicationStatus"),
   ...require("./applicationService"),
