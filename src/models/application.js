@@ -37,6 +37,7 @@ function createApplication(data = {}) {
     nextAction: data.nextAction ?? null, // prochaine action à mener
     appliedAt: data.appliedAt ?? null, // date d'envoi (null tant que non envoyée)
     followUpAt: data.followUpAt ?? null, // date de relance planifiée (auto ou manuelle), null si aucune
+    result: data.result ?? null, // résultat enregistré : { outcome, respondedAt, note, score } ou null (cf. OPP-064)
     createdAt: data.createdAt ?? now,
     updatedAt: data.updatedAt ?? now,
   };
