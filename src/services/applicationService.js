@@ -1,6 +1,7 @@
 // Validation et gestion des candidatures : création validée, persistance,
 // listing par profil, récupération et mise à jour.
 const {
+  APPLICATION_STATUSES,
   REQUIRED_FIELDS,
   createApplication,
   updateApplication,
@@ -11,6 +12,7 @@ const {
   saveApplication,
   saveApplications,
 } = require("../models/applicationStore");
+const { canTransition } = require("./applicationStatus");
 
 // Vrai si la valeur est une chaîne non vide (espaces seuls exclus).
 function isNonEmptyString(value) {
@@ -35,6 +37,9 @@ function validateApplication(application) {
   }
   if (!isValidScore(application.score)) {
     errors.push("Le score doit être compris entre 0 et 100");
+  }
+  if (!APPLICATION_STATUSES.includes(application.status)) {
+    errors.push("Le statut est invalide");
   }
 
   return { valid: errors.length === 0, errors };
@@ -85,6 +90,25 @@ function updateApplicationById(id, changes, filePath = DEFAULT_PATH) {
   return updated;
 }
 
+// Change le statut d'une candidature en contrôlant la transition (machine à
+// états applicationStatus). Lève si la candidature est introuvable ou si la
+// transition n'est pas autorisée. Persiste et retourne la candidature à jour.
+function changeApplicationStatus(id, newStatus, filePath = DEFAULT_PATH) {
+  const applications = loadApplications(filePath);
+  const index = applications.findIndex((a) => a.id === id);
+  if (index < 0) throw new Error("Candidature introuvable");
+
+  const current = applications[index].status;
+  if (!canTransition(current, newStatus)) {
+    throw new Error(`Transition de statut invalide : ${current} → ${newStatus}`);
+  }
+
+  const updated = updateApplication(applications[index], { status: newStatus });
+  applications[index] = updated;
+  saveApplications(applications, filePath);
+  return updated;
+}
+
 module.exports = {
   REQUIRED_FIELDS,
   validateApplication,
@@ -93,4 +117,5 @@ module.exports = {
   listApplications,
   getApplication,
   updateApplicationById,
+  changeApplicationStatus,
 };
