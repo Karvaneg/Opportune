@@ -43,6 +43,9 @@ function validateProfile(profile) {
   if (isProvided(profile.targetDailyRate) && !isPositiveNumber(profile.targetDailyRate)) {
     errors.push("Le TJM cible doit être un nombre positif ou nul");
   }
+  if (isProvided(profile.totalExperienceYears) && !isPositiveNumber(profile.totalExperienceYears)) {
+    errors.push("Le total d'années d'expérience doit être un nombre positif ou nul");
+  }
 
   return {
     valid: errors.length === 0,

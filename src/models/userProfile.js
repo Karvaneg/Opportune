@@ -25,6 +25,7 @@ function createProfile(data = {}) {
     structuredSkills: data.structuredSkills ?? [], // compétences structurées — optionnel
     contractType: data.contractType ?? null, // CDI | freelance | les deux — obligatoire
     experiences: data.experiences ?? [], // expériences
+    totalExperienceYears: data.totalExperienceYears ?? null, // total d'années d'expérience (déclaratif, ≥ 0)
     location: data.location ?? null, // localisation
     mobility: data.mobility ?? null, // mobilité
     remote: data.remote ?? null, // télétravail souhaité

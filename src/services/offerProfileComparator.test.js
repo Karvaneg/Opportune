@@ -48,9 +48,11 @@ test("compareContractType : donnée manquante → compatible null (inconnu)", ()
 
 // --- compareExperience ---
 
-test("compareExperience : exigence remontée ou non requise", () => {
-  assert.deepEqual(compareExperience(4), { required: 4, status: "unknown" });
-  assert.deepEqual(compareExperience(null), { required: null, status: "not_required" });
+test("compareExperience : ok / insufficient / unknown / non requise", () => {
+  assert.deepEqual(compareExperience(4, { totalExperienceYears: 5 }), { required: 4, profile: 5, status: "ok" });
+  assert.deepEqual(compareExperience(4, { totalExperienceYears: 2 }), { required: 4, profile: 2, status: "insufficient" });
+  assert.deepEqual(compareExperience(4, {}), { required: 4, profile: null, status: "unknown" });
+  assert.deepEqual(compareExperience(null, {}), { required: null, profile: null, status: "not_required" });
 });
 
 // --- compareLocation ---
@@ -130,6 +132,7 @@ test("compareOfferToProfile : agrège toutes les dimensions", () => {
     remote: "hybride",
     targetSalary: 55000,
     targetDailyRate: null,
+    totalExperienceYears: 6,
     languages: ["Français", "Anglais"],
   };
 
@@ -137,7 +140,7 @@ test("compareOfferToProfile : agrège toutes les dimensions", () => {
 
   assert.deepEqual(report.skills, { matched: ["React", "SQL"], missing: ["TypeScript"] });
   assert.equal(report.contractType.compatible, true);
-  assert.deepEqual(report.experience, { required: 4, status: "unknown" });
+  assert.deepEqual(report.experience, { required: 4, profile: 6, status: "ok" });
   assert.equal(report.location.status, "match");
   assert.equal(report.remote.status, "match");
   assert.deepEqual(report.languages, { matched: ["anglais"], missing: [] });
