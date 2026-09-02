@@ -36,6 +36,7 @@ function createApplication(data = {}) {
     contact: data.contact ?? null, // contact recruteur : { name, email… } ou null
     nextAction: data.nextAction ?? null, // prochaine action à mener
     appliedAt: data.appliedAt ?? null, // date d'envoi (null tant que non envoyée)
+    followUpAt: data.followUpAt ?? null, // date de relance planifiée (auto ou manuelle), null si aucune
     createdAt: data.createdAt ?? now,
     updatedAt: data.updatedAt ?? now,
   };
