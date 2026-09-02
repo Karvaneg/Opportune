@@ -11,6 +11,7 @@ module.exports = {
   ...require("./offerProfileComparator"),
   ...require("./offerMatchScorer"),
   ...require("./scoreExplainer"),
+  ...require("./opportunityClassifier"),
   ...require("./resumeAdapter"),
   ...require("./coverLetterGenerator"),
   ...require("./inventionGuard"),
