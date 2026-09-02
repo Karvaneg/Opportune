@@ -62,11 +62,14 @@ function compareContractType(offerType, profile) {
 
 // --- Expérience --------------------------------------------------------------
 
-// Le profil ne porte pas de total d'années : on remonte l'exigence de l'offre,
-// « non requise » si absente, « à vérifier » sinon (évaluée au scoring/humain).
-function compareExperience(requiredYears) {
-  if (requiredYears == null) return { required: null, status: "not_required" };
-  return { required: requiredYears, status: "unknown" };
+// Confronte l'exigence d'expérience de l'offre au total d'années du profil
+// (totalExperienceYears, déclaratif). « not_required » si l'offre n'exige rien ;
+// « unknown » si le profil ne renseigne pas son total ; sinon « ok » / « insufficient ».
+function compareExperience(requiredYears, profile = {}) {
+  const owned = profile.totalExperienceYears ?? null;
+  if (requiredYears == null) return { required: null, profile: owned, status: "not_required" };
+  if (owned == null) return { required: requiredYears, profile: null, status: "unknown" };
+  return { required: requiredYears, profile: owned, status: owned >= requiredYears ? "ok" : "insufficient" };
 }
 
 // --- Lieu --------------------------------------------------------------------
@@ -165,7 +168,7 @@ function compareOfferToProfile(offerKeyInfo = {}, profile = {}) {
   return {
     skills: compareSkills(offerKeyInfo.skills ?? [], profile),
     contractType: compareContractType(offerKeyInfo.contractType ?? null, profile),
-    experience: compareExperience(offerKeyInfo.experienceYears ?? null),
+    experience: compareExperience(offerKeyInfo.experienceYears ?? null, profile),
     location: compareLocation(offerKeyInfo.location ?? null, profile, offerKeyInfo.remote ?? null),
     remote: compareRemote(offerKeyInfo.remote ?? null, profile),
     languages: compareLanguages(offerKeyInfo.languages ?? [], profile),

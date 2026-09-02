@@ -20,6 +20,15 @@ test("refuse un profil incomplet", () => {
   assert.ok(result.errors.length > 0);
 });
 
+test("valide totalExperienceYears fourni (nombre positif) et refuse une valeur négative", () => {
+  const base = { name: "Alex", skills: ["JavaScript"], contractType: "CDI" };
+  assert.equal(validateProfile({ ...base, totalExperienceYears: 5 }).valid, true);
+
+  const bad = validateProfile({ ...base, totalExperienceYears: -2 });
+  assert.equal(bad.valid, false);
+  assert.ok(bad.errors.some((e) => /expérience/.test(e)));
+});
+
 test("refuse un type de contrat inconnu", () => {
   const result = validateProfile({
     name: "Alex",
