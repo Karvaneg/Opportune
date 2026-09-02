@@ -17,6 +17,7 @@ module.exports = {
   ...require("./opportunityClassifier"),
   ...require("./resumeAdapter"),
   ...require("./coverLetterGenerator"),
+  ...require("./linkedInMessageGenerator"),
   ...require("./inventionGuard"),
   ...require("./documentEditor"),
   ...require("./applicationSendGuard"),
