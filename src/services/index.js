@@ -10,6 +10,7 @@ module.exports = {
   ...require("./offerKeyInfoExtractor"),
   ...require("./offerProfileComparator"),
   ...require("./offerMatchScorer"),
+  ...require("./resumeAdapter"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
