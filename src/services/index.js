@@ -6,6 +6,7 @@ module.exports = {
   ...require("./offerImportService"),
   ...require("./offerNormalizer"),
   ...require("./offerDeduplicator"),
+  ...require("./offerKeyInfoExtractor"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
