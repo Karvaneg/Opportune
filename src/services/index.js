@@ -13,6 +13,7 @@ module.exports = {
   ...require("./resumeAdapter"),
   ...require("./coverLetterGenerator"),
   ...require("./inventionGuard"),
+  ...require("./applicationSendGuard"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
