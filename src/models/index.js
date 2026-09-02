@@ -7,4 +7,6 @@ module.exports = {
   ...require("./resume"),
   ...require("./resumeStore"),
   ...require("./skill"),
+  ...require("./application"),
+  ...require("./applicationStore"),
 };
