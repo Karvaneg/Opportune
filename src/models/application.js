@@ -4,10 +4,20 @@
 // src/services/applicationService.js ; la persistance dans applicationStore.js.
 const { randomUUID } = require("node:crypto");
 
-// Statut initial d'une candidature. L'échelle complète des statuts et les
-// transitions relèvent d'un ticket dédié (E6, suite) : on ne pose ici que le
-// champ et sa valeur de départ.
-const DEFAULT_STATUS = "brouillon";
+// Échelle fermée des statuts de suivi d'une candidature (ordre du cycle de vie).
+// Les transitions autorisées entre statuts vivent dans applicationStatus.js.
+const APPLICATION_STATUSES = [
+  "À étudier",
+  "Validée",
+  "Envoyée",
+  "Entretien",
+  "Refusée",
+  "Acceptée",
+  "Abandonnée",
+];
+
+// Statut initial d'une candidature (premier de l'échelle).
+const DEFAULT_STATUS = APPLICATION_STATUSES[0];
 
 // Champs obligatoires : une candidature relie forcément un profil à une offre.
 const REQUIRED_FIELDS = ["profileId", "offerId"];
@@ -42,4 +52,10 @@ function updateApplication(application, changes = {}) {
   };
 }
 
-module.exports = { DEFAULT_STATUS, REQUIRED_FIELDS, createApplication, updateApplication };
+module.exports = {
+  APPLICATION_STATUSES,
+  DEFAULT_STATUS,
+  REQUIRED_FIELDS,
+  createApplication,
+  updateApplication,
+};
