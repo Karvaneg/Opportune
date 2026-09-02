@@ -16,6 +16,7 @@ module.exports = {
   ...require("./resumeAdapter"),
   ...require("./coverLetterGenerator"),
   ...require("./inventionGuard"),
+  ...require("./documentEditor"),
   ...require("./applicationSendGuard"),
   ...require("./applicationStatus"),
   ...require("./applicationService"),
