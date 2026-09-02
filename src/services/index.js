@@ -25,6 +25,7 @@ module.exports = {
   ...require("./applicationStatus"),
   ...require("./applicationService"),
   ...require("./followUpPlanner"),
+  ...require("./applicationResultRecorder"),
   ...require("./opportunityValidation"),
   ...require("./offerSummary"),
   ...require("./resumeService"),
