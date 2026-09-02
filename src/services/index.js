@@ -24,6 +24,7 @@ module.exports = {
   ...require("./applicationSendGuard"),
   ...require("./applicationStatus"),
   ...require("./applicationService"),
+  ...require("./followUpPlanner"),
   ...require("./opportunityValidation"),
   ...require("./offerSummary"),
   ...require("./resumeService"),
