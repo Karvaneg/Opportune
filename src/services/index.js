@@ -12,6 +12,7 @@ module.exports = {
   ...require("./offerMatchScorer"),
   ...require("./resumeAdapter"),
   ...require("./coverLetterGenerator"),
+  ...require("./inventionGuard"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
