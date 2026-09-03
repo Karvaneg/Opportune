@@ -23,7 +23,6 @@ from __future__ import annotations
 import logging
 import urllib.error
 from dataclasses import dataclass, field
-from functools import partial
 from typing import Protocol, runtime_checkable
 
 from app import llm
@@ -89,7 +88,7 @@ class OllamaLLMClient:
         self.model = model
         self.host = host
         self.timeout = timeout
-        self._transport = transport or partial(llm._urllib_transport, timeout=timeout)
+        self._transport = transport or llm.default_transport(timeout=timeout)
 
     def generate(self, prompt: str, *, model: str | None = None) -> LLMResponse:
         url, payload = llm.build_generate_request(

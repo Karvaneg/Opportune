@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from functools import partial
 from typing import Callable
 
 # Hôte du serveur Ollama et modèle par défaut, surchargeables par variables d'env
@@ -51,6 +52,16 @@ def _urllib_transport(url: str, payload: dict, *, timeout: int = DEFAULT_TIMEOUT
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 (URL interne)
         return json.loads(response.read().decode("utf-8"))
+
+
+def default_transport(*, timeout: int = DEFAULT_TIMEOUT) -> Transport:
+    """Fabrique le transport HTTP par défaut (POST ``urllib``) lié à un ``timeout``.
+
+    Point d'entrée **public** pour obtenir le transport réel sans dépendre du détail
+    d'implémentation ``_urllib_transport`` : les consommateurs (p. ex.
+    ``app.llm_client``) restent découplés de la fonction interne.
+    """
+    return partial(_urllib_transport, timeout=timeout)
 
 
 def generate(

@@ -8,6 +8,7 @@ import urllib.error
 
 import pytest
 
+from app import llm
 from app.llm_client import (
     LLMClient,
     LLMError,
@@ -39,7 +40,7 @@ def test_ollama_generate_returns_structured_response():
 
     assert isinstance(out, LLMResponse)
     assert out.text == "analyse simulée"
-    assert out.model == "ministral"  # DEFAULT_MODEL
+    assert out.model == llm.DEFAULT_MODEL  # modèle par défaut (surchargé par env)
     assert out.raw["done"] is True  # le corps brut reste accessible
 
 
