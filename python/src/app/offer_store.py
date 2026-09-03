@@ -87,13 +87,9 @@ class OfferStore:
         )
         self.conn.commit()
 
-    def get(self, offer_id: str) -> Offer | None:
-        """Retourne l'offre d'``id`` donné, ou ``None`` si absente."""
-        row = self.conn.execute(
-            "SELECT * FROM offers WHERE id = ?", (offer_id,)
-        ).fetchone()
-        if row is None:
-            return None
+    @staticmethod
+    def _row_to_offer(row: sqlite3.Row) -> Offer:
+        """Reconstruit une ``Offer`` depuis une ligne SQLite (désérialise les champs JSON)."""
         return Offer(
             id=row["id"],
             title=row["title"],
@@ -108,6 +104,18 @@ class OfferStore:
             url=row["url"],
             raw_text=row["raw_text"],
         )
+
+    def get(self, offer_id: str) -> Offer | None:
+        """Retourne l'offre d'``id`` donné, ou ``None`` si absente."""
+        row = self.conn.execute(
+            "SELECT * FROM offers WHERE id = ?", (offer_id,)
+        ).fetchone()
+        return None if row is None else self._row_to_offer(row)
+
+    def list_all(self) -> list[Offer]:
+        """Retourne toutes les offres stockées (ordonnées par ``id`` pour déterminisme)."""
+        rows = self.conn.execute("SELECT * FROM offers ORDER BY id").fetchall()
+        return [self._row_to_offer(row) for row in rows]
 
     def count(self) -> int:
         """Nombre d'offres stockées (utile aux vérifications d'upsert)."""
