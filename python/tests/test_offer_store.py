@@ -61,3 +61,15 @@ def test_distinct_ids_coexist(store):
     store.save(_offer(id="a"))
     store.save(_offer(id="b"))
     assert store.count() == 2
+
+
+def test_list_all_returns_every_offer(store):
+    store.save(_offer(id="b"))
+    store.save(_offer(id="a"))
+    offers = store.list_all()
+    assert [o.id for o in offers] == ["a", "b"]  # ordonné par id
+    assert all(isinstance(o.skills, list) for o in offers)
+
+
+def test_list_all_empty(store):
+    assert store.list_all() == []
