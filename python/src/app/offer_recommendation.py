@@ -14,14 +14,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.candidate_profile import CandidateProfile
+from app.config import RECOMMENDATION_HIGH, RECOMMENDATION_MEDIUM
 from app.offer import Offer
 from app.offer_profile_match import OfferProfileMatch, match_offer_to_profile
 from app.offer_score import score_match
 
-# Seuils par défaut (bornes basses incluses) : score ≥ high → postuler,
-# score ≥ medium → à étudier, sinon → ignorer.
-DEFAULT_HIGH = 75
-DEFAULT_MEDIUM = 50
+# Seuils par défaut, définis en configuration produit (cf. app.config). Bornes basses
+# incluses : score ≥ high → postuler, score ≥ medium → à étudier, sinon → ignorer.
+DEFAULT_HIGH = RECOMMENDATION_HIGH
+DEFAULT_MEDIUM = RECOMMENDATION_MEDIUM
 
 # Codes d'action stables (exploitables) + libellés affichables.
 _LABELS = {
