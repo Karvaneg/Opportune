@@ -136,6 +136,31 @@ def test_empty_stock_returns_empty(env):
     assert decisions.count() == 0
 
 
+def test_integration_two_offers_sort_and_limit(env):
+    """Intégration bout-en-bout : 1 candidat, 2 offres, l'une meilleure que l'autre.
+
+    Couvre en un seul scénario le tri (meilleure en tête) et la limite ``limit``.
+    """
+    orchestrator, offers, _ = env
+    # Offre forte : profil parfait (Python+SQL, CDI, Paris, Senior) → score élevé.
+    offers.save(_offer(id="offer-forte", title="Forte", url="http://forte"))
+    # Offre faible : une seule compétence en commun → score strictement inférieur.
+    offers.save(_offer(id="offer-faible", title="Faible", url="http://faible",
+                       skills=["Python", "Go"]))
+
+    results = orchestrator.recommend_for_candidate("cand-1")
+
+    # Résultat uniforme.
+    assert all(isinstance(r, HermesRecommendation) for r in results)
+    # Tri : la meilleure offre est en tête, scores strictement décroissants.
+    assert [r.recommendation.offer.id for r in results] == ["offer-forte", "offer-faible"]
+    assert results[0].recommendation.score > results[1].recommendation.score
+
+    # Limite : ne retourne que la meilleure.
+    top = orchestrator.recommend_for_candidate("cand-1", limit=1)
+    assert [r.recommendation.offer.id for r in top] == ["offer-forte"]
+
+
 def test_rerun_upserts_decisions_without_duplicating(env):
     orchestrator, offers, decisions = env
     _seed_three(offers)
@@ -165,3 +190,51 @@ def test_injected_clock_stamps_decision_history(env):
     offers.save(_offer(id="a", title="A", url="http://a"))
     result = orchestrator.recommend_for_candidate("cand-1")[0]
     assert result.decision.history[0].at == "2026-09-03T00:00:00+00:00"
+
+
+def _seed_one_per_bucket(offers):
+    """Sème 3 offres calibrées pour tomber dans chacun des 3 statuts de triage.
+
+    Profil : Python+SQL, CDI, Paris, 6 ans. Seuils 75 / 50. Poids skills .45 /
+    contrat .30 / séniorité .15 / lieu .10.
+    """
+    # Parfaite → 100 → postuler → approved.
+    offers.save(_offer(id="off-app", title="App", url="http://app"))
+    # 1/2 compétence + lieu différent → 68 → a_etudier → pending.
+    #   skills .5*.45=.225 + contrat 1*.30 + séniorité 1*.15 + lieu 0*.10 = .675 → 68.
+    offers.save(_offer(id="off-pend", title="Pend", url="http://pend",
+                       skills=["Python", "Java"], location="Lyon"))
+    # Tout discordant → 0 → ignorer → rejected.
+    offers.save(_offer(id="off-rej", title="Rej", url="http://rej",
+                       skills=["Cobol"], contract_type="Freelance",
+                       location="Lyon", seniority="Lead"))
+
+
+def test_evaluate_for_candidate_buckets_approved_pending_rejected(env):
+    orchestrator, offers, decisions = env
+    _seed_one_per_bucket(offers)
+
+    result = orchestrator.evaluate_for_candidate("cand-1")
+
+    assert result["candidate_id"] == "cand-1"
+    assert [r.offer.id for r in result["recommendations"]] == ["off-app"]
+    assert [r.offer.id for r in result["pending_review"]] == ["off-pend"]
+    assert [r.offer.id for r in result["rejected"]] == ["off-rej"]
+    # Triage pur : aucune décision persistée par ce chemin.
+    assert decisions.count() == 0
+
+
+def test_evaluate_for_candidate_respects_limit(env):
+    orchestrator, offers, _ = env
+    _seed_one_per_bucket(offers)
+    # limit=1 ne garde que la meilleure (approved) ; les autres buckets sont vides.
+    result = orchestrator.evaluate_for_candidate("cand-1", limit=1)
+    assert [r.offer.id for r in result["recommendations"]] == ["off-app"]
+    assert result["pending_review"] == []
+    assert result["rejected"] == []
+
+
+def test_evaluate_for_candidate_unknown_candidate_raises(env):
+    orchestrator, _, _ = env
+    with pytest.raises(UnknownCandidateError):
+        orchestrator.evaluate_for_candidate("nope")

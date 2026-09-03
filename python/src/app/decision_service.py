@@ -8,9 +8,17 @@ injectable au métier (ex. l'orchestrateur Hermes).
 
 L'horloge est injectable pour des dates déterministes en test ; ``None`` laisse les
 fonctions de ``app.decision`` utiliser leur horloge UTC par défaut.
+
+Deux registres distincts à ne pas confondre :
+- ``evaluate`` → **pré-évaluation automatique** (pure, sans persistance) : un tri
+  déterministe de la recommandation en ``approved`` / ``pending`` / ``rejected``.
+- ``decide`` / ``validate`` → **décision métier** persistée, dont ``validate`` porte la
+  validation humaine définitive (historisée).
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from app.decision import (
     PENDING,
@@ -22,6 +30,41 @@ from app.decision import (
 )
 from app.decision_store import DecisionRepository
 from app.recommendation_service import OfferRecommendation
+
+# --- Pré-évaluation automatique (≠ décision humaine) --------------------------
+#
+# RÈGLE : les statuts ``approved`` / ``pending`` / ``rejected`` produits ici sont des
+# statuts de **pré-évaluation** — un tri automatique et déterministe fondé sur l'action
+# recommandée (issue du score). Ce ne sont **pas** des décisions humaines définitives :
+# ils n'engagent rien, ne sont pas persistés et peuvent être recalculés à volonté. La
+# décision métier définitive passe, elle, par la validation humaine (``validate``), seule
+# à être historisée et persistée.
+#
+#   postuler  → approved   (candidature pressentie)
+#   a_etudier → pending    (à faire relire par un humain)
+#   ignorer   → rejected   (écartée)
+# Toute autre action (ex. ``indeterminee``, données insuffisantes) → pending par
+# prudence : on ne pré-approuve ni ne pré-rejette ce qu'on ne sait pas trancher.
+APPROVED = "approved"
+REJECTED = "rejected"
+PRE_EVALUATION_STATUSES = (APPROVED, PENDING, REJECTED)
+_ACTION_TO_STATUS = {
+    "postuler": APPROVED,
+    "a_etudier": PENDING,
+    "ignorer": REJECTED,
+}
+
+
+@dataclass(frozen=True)
+class PreEvaluation:
+    """Pré-évaluation automatique d'une recommandation (≠ décision humaine définitive).
+
+    ``status`` est un statut de pré-évaluation (``approved`` / ``pending`` / ``rejected``),
+    pas une décision validée par un humain : rien n'est persisté ni engagé.
+    """
+
+    recommendation: OfferRecommendation
+    status: str
 
 
 class UnknownDecisionError(Exception):
@@ -80,3 +123,14 @@ class DecisionService:
         updated = validate(existing, status, comment=comment, **self._clock_kwargs())
         self.decisions.save(updated)
         return updated
+
+    def evaluate(self, recommendation: OfferRecommendation) -> PreEvaluation:
+        """Pré-évalue une recommandation en un statut de **pré-évaluation automatique**.
+
+        Politique déterministe fondée sur l'action recommandée (``postuler`` → approved,
+        ``a_etudier`` → pending, ``ignorer`` → rejected ; toute autre → pending). Pure et
+        sans persistance. Le statut retourné n'est **pas** une décision humaine définitive
+        (cf. la RÈGLE ci-dessus et ``validate``, qui, elle, historise et persiste).
+        """
+        status = _ACTION_TO_STATUS.get(recommendation.action, PENDING)
+        return PreEvaluation(recommendation=recommendation, status=status)
