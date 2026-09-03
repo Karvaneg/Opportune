@@ -22,3 +22,29 @@ class HermesRecommendation:
 
     recommendation: OfferRecommendation
     decision: Decision
+
+
+@dataclass(frozen=True)
+class OfferEvaluation:
+    """Trace d'une offre évaluée lors d'une exécution : son score et le statut de décision."""
+
+    offer_id: str
+    score: int
+    decision_status: str  # statut de la décision persistée (``pending`` au départ)
+
+
+@dataclass(frozen=True)
+class HermesRun:
+    """Trace complète et immuable d'une exécution Hermes pour un candidat (OPP-092).
+
+    Journalise ce qu'une exécution a produit : quand (``executed_at``), pour qui
+    (``candidate_id``), quelles offres évaluées avec quels scores et décisions
+    (``evaluations``), et les erreurs éventuelles rencontrées par offre (``errors``).
+    ``run_id`` identifie l'exécution de façon unique.
+    """
+
+    run_id: str
+    candidate_id: str
+    executed_at: str  # ISO 8601
+    evaluations: tuple[OfferEvaluation, ...]
+    errors: tuple[str, ...] = ()

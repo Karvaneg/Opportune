@@ -12,7 +12,14 @@ Le point d'entrée est ``HermesOrchestrator.recommend_for_candidate``.
 
 from __future__ import annotations
 
-from hermes.models import HermesRecommendation
+from hermes.models import HermesRecommendation, HermesRun, OfferEvaluation
 from hermes.orchestrator import HermesOrchestrator
+from hermes.run_store import RunStore
 
-__all__ = ["HermesOrchestrator", "HermesRecommendation"]
+__all__ = [
+    "HermesOrchestrator",
+    "HermesRecommendation",
+    "HermesRun",
+    "OfferEvaluation",
+    "RunStore",
+]
