@@ -85,6 +85,11 @@ _MOBILITY_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
+# Marqueurs de négation : « non mobile », « pas de déplacements », « aucune
+# mobilité »… Leur présence désamorce les marqueurs de mobilité (heuristique v1
+# prudente : en cas de négation, on ne requalifie pas un écart de lieu).
+_NEGATION_MARKERS = re.compile(r"\b(non|pas|aucune?|sans|jamais)\b", re.IGNORECASE)
+
 
 @dataclass(frozen=True)
 class LocationMatch:
@@ -95,7 +100,11 @@ class LocationMatch:
 
 
 def _is_highly_mobile(profile: CandidateProfile) -> bool:
-    return isinstance(profile.mobility, str) and bool(_MOBILITY_MARKERS.search(profile.mobility))
+    mobility = profile.mobility
+    if not isinstance(mobility, str) or not _MOBILITY_MARKERS.search(mobility):
+        return False
+    # Une négation (« non mobile », « pas de déplacements ») annule le marqueur.
+    return not _NEGATION_MARKERS.search(mobility)
 
 
 def compare_location(offer: Offer, profile: CandidateProfile) -> LocationMatch:
@@ -106,6 +115,8 @@ def compare_location(offer: Offer, profile: CandidateProfile) -> LocationMatch:
     offer_loc = base_offer.lower() if base_offer else None
     prof_loc = base_profile.lower() if base_profile else None
 
+    # NOTE (v1) : match par sous-chaîne — robuste pour « Paris » ⊂ « Paris 15e »,
+    # mais fragile (« Nice » ⊂ « Venice »). À affiner quand le lieu servira au scoring.
     if offer_loc and prof_loc and (
         offer_loc == prof_loc or offer_loc in prof_loc or prof_loc in offer_loc
     ):
@@ -163,7 +174,7 @@ def compare_seniority(offer: Offer, profile: CandidateProfile) -> SeniorityMatch
 
     required = _SENIORITY_YEARS.get(normalized)
     if required is None:  # label non reconnu → non évaluable
-        return SeniorityMatch(label, None, owned, "unknown")
+        return SeniorityMatch(label or None, None, owned, "unknown")
     if owned is None:  # profil ne déclare pas son total
         return SeniorityMatch(label, required, None, "unknown")
     return SeniorityMatch(

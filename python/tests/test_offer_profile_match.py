@@ -68,6 +68,17 @@ def test_contract_les_deux_accepts_freelance():
     assert result.compatible is True
 
 
+def test_contract_les_deux_rejects_cdd():
+    # « les deux » = CDI ou freelance : un CDD n'est visé par aucune préférence.
+    result = compare_contract_type(_offer(contract_type="CDD"), _profile(contract_type="les deux"))
+    assert result.compatible is False
+
+
+def test_contract_none_when_offer_side_absent():
+    result = compare_contract_type(_offer(contract_type=""), _profile(contract_type="CDI"))
+    assert result.compatible is None
+
+
 # --- Localisation ------------------------------------------------------------
 
 
@@ -87,6 +98,14 @@ def test_location_not_blocking_when_profile_mobile():
     )
     assert result.status == "not_blocking"
     assert result.reason == "profile-mobility"
+
+
+def test_location_negated_mobility_does_not_rescue_mismatch():
+    # « non mobile » ne doit PAS requalifier un écart en not_blocking (point de revue).
+    result = compare_location(
+        _offer(location="Lyon"), _profile(location="Paris", mobility="non mobile")
+    )
+    assert result.status == "mismatch"
 
 
 def test_location_unknown_when_profile_missing():
