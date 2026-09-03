@@ -6,6 +6,7 @@
 const { changeApplicationStatus, getApplication } = require("./applicationService");
 const { explainScore } = require("./scoreExplainer");
 const { recommendAction } = require("./scoreRecommender");
+const { ValidationError, NotFoundError } = require("../errors");
 
 // Décisions possibles de la validation humaine (critère : accepter / rejeter /
 // mettre en attente) + libellés et statut cible dans la machine à états.
@@ -27,12 +28,12 @@ const DECISION = Object.fromEntries(VALIDATION_ACTIONS.map((a) => [a.decision, a
 function reviewApplication(applicationId, decision, filePath) {
   const action = DECISION[decision];
   if (!action) {
-    throw new Error(`Décision de validation inconnue : ${decision} (attendu : ${VALIDATION_DECISIONS.join(", ")})`);
+    throw new ValidationError(`Décision de validation inconnue : ${decision} (attendu : ${VALIDATION_DECISIONS.join(", ")})`);
   }
 
   if (action.status === null) {
     const application = getApplication(applicationId, filePath);
-    if (!application) throw new Error("Candidature introuvable");
+    if (!application) throw new NotFoundError("Candidature introuvable");
     return application; // mise en attente : inchangée
   }
 

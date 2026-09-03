@@ -13,6 +13,7 @@
 const { extractKeyInfo } = require("./offerKeyInfoExtractor");
 const { adaptResumeToOffer } = require("./resumeAdapter");
 const { extractFreelanceDetails } = require("./offerFreelanceConnector");
+const { ValidationError } = require("../errors");
 
 // Vrai si la valeur est une chaîne non vide (espaces seuls exclus).
 function isNonEmptyString(value) {
@@ -54,7 +55,7 @@ function termsSentence({ dailyRate, availability, duration }) {
 // highlightedSkills, terms } — body est la proposition en texte prêt à relire/envoyer.
 function generateFreelanceProposal(profile = {}, offer = {}, options = {}) {
   if (!isNonEmptyString(offer.company) || !isNonEmptyString(offer.title)) {
-    throw new Error(
+    throw new ValidationError(
       "Le client et l'intitulé de la mission sont requis pour une proposition précise",
     );
   }

@@ -8,6 +8,7 @@
 // exigée mais non détenue n'apparaît dans la lettre.
 const { extractKeyInfo } = require("./offerKeyInfoExtractor");
 const { adaptResumeToOffer } = require("./resumeAdapter");
+const { ValidationError } = require("../errors");
 
 // Vrai si la valeur est une chaîne non vide (espaces seuls exclus).
 function isNonEmptyString(value) {
@@ -41,7 +42,7 @@ function contractSentence(contractType) {
 // highlightedSkills } — body est la lettre en texte prêt à relire/envoyer.
 function generateCoverLetter(profile = {}, offer = {}, options = {}) {
   if (!isNonEmptyString(offer.company) || !isNonEmptyString(offer.title)) {
-    throw new Error(
+    throw new ValidationError(
       "L'entreprise et l'intitulé du poste sont requis pour une lettre précise",
     );
   }

@@ -4,6 +4,7 @@ const {
   AVAILABILITY_OPTIONS,
   createProfile,
 } = require("../models/userProfile");
+const { ValidationError } = require("../errors");
 
 // Une valeur est « fournie » si elle n'est ni null ni undefined.
 const isProvided = (v) => v !== undefined && v !== null;
@@ -60,7 +61,7 @@ function createValidProfile(data) {
   const validation = validateProfile(profile);
 
   if (!validation.valid) {
-    throw new Error(validation.errors.join(", "));
+    throw new ValidationError(validation.errors.join(", "));
   }
 
   return profile;

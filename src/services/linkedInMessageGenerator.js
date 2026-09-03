@@ -10,6 +10,7 @@
 // champ highlightedSkills retourné est vérifiable par inventionGuard.verifyCoverLetter.
 const { extractKeyInfo } = require("./offerKeyInfoExtractor");
 const { adaptResumeToOffer } = require("./resumeAdapter");
+const { ValidationError } = require("../errors");
 
 // Longueur maximale d'une note de connexion LinkedIn (invitation).
 const CONNECTION_NOTE_MAX_LENGTH = 300;
@@ -90,7 +91,7 @@ function buildInMail({ name, title, company, skills, contractType }) {
 // highlightedSkills, maxConnectionNoteLength }.
 function generateLinkedInMessage(profile = {}, offer = {}) {
   if (!isNonEmptyString(offer.company) || !isNonEmptyString(offer.title)) {
-    throw new Error(
+    throw new ValidationError(
       "L'entreprise et l'intitulé du poste sont requis pour un message précis",
     );
   }
