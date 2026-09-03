@@ -1,0 +1,14 @@
+# Environnement de développement Docker (V2, OPP-071).
+# Un seul service pour l'instant : l'application Python. Les services externes
+# (base SQLite/volume — OPP-072, Ollama — OPP-073) seront ajoutés par leurs tickets.
+services:
+  app:
+    build: .
+    image: opportune-py:dev
+    working_dir: /app
+    # Montage du code pour un cycle de dev rapide (l'install éditable pointe sur src/).
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    # Par défaut, lance les tests ; surchargeable : `docker compose run --rm app <cmd>`.
+    command: pytest
