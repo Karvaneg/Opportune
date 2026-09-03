@@ -1,0 +1,48 @@
+"""Service d'analyse d'offre par LLM (V2, OPP-036).
+
+Première boucle métier de bout en bout de la stack V2 :
+
+    texte brut → prompt structuré → LLMClient → réponse JSON → validation → OfferAnalysis
+
+Le service dépend du **contrat** ``LLMClient`` (OPP-079), jamais d'Ollama en direct :
+en test, on injecte un ``MockLLMClient``. Le prompt est **déterministe** (fonction pure
+du texte d'offre), donc directement testable.
+"""
+
+from __future__ import annotations
+
+from app.llm_client import LLMClient
+from app.offer_analysis import OfferAnalysis
+
+# Consigne déterministe imposant une sortie JSON stricte aux clés attendues. Séparée du
+# texte d'offre pour rester testable et éviter toute interpolation d'accolades.
+_INSTRUCTIONS = (
+    "Tu analyses une offre d'emploi. Réponds UNIQUEMENT par un objet JSON valide, "
+    "sans aucun texte autour, avec exactement ces clés :\n"
+    "- title, company, location, seniority, contract_type, summary : des chaînes ;\n"
+    "- skills, attention_points : des listes de chaînes.\n"
+    "Chaque champ texte doit être renseigné (\"Non précisé\" s'il est absent de "
+    "l'offre).\n\n"
+    "Offre :\n"
+)
+
+
+def build_analysis_prompt(offer_text: str) -> str:
+    """Construit le prompt d'analyse (pur et déterministe).
+
+    Lève ``ValueError`` si le texte d'offre est vide.
+    """
+    if not isinstance(offer_text, str) or offer_text.strip() == "":
+        raise ValueError("Le texte de l'offre est requis")
+    return _INSTRUCTIONS + offer_text.strip()
+
+
+def analyze_offer(offer_text: str, client: LLMClient) -> OfferAnalysis:
+    """Analyse une offre textuelle en ``OfferAnalysis`` via le ``client`` LLM.
+
+    Propage ``ValueError`` (offre vide), les erreurs du client (``LLMError`` et
+    sous-classes) et ``OfferAnalysisError`` (réponse non conforme).
+    """
+    prompt = build_analysis_prompt(offer_text)
+    response = client.generate(prompt)
+    return OfferAnalysis.from_json(response.text)
