@@ -12,6 +12,7 @@ const {
   saveResumes,
 } = require("../models/resumeStore");
 const { extractText } = require("./textExtractor");
+const { ValidationError, NotFoundError } = require("../errors");
 
 // Vrai si la valeur est une chaîne non vide (espaces seuls exclus).
 function isNonEmptyString(value) {
@@ -49,13 +50,13 @@ function importResume(input, filePath = DEFAULT_PATH) {
   const draft = createResume({ ...input, format });
   const validation = validateResume(draft);
   if (!validation.valid) {
-    throw new Error(validation.errors.join(", "));
+    throw new ValidationError(validation.errors.join(", "));
   }
 
   // Extraction du contenu ; lève UnsupportedFormatError pour PDF/DOCX.
   const extractedText = extractText(draft.sourcePath);
   if (!isNonEmptyString(extractedText)) {
-    throw new Error("Le CV est vide ou illisible");
+    throw new ValidationError("Le CV est vide ou illisible");
   }
 
   // Premier CV non archivé du profil → défaut automatique.
@@ -84,7 +85,7 @@ function setDefaultResume(profileId, resumeId, filePath = DEFAULT_PATH) {
     }
   }
 
-  if (!target) throw new Error("CV introuvable pour ce profil");
+  if (!target) throw new NotFoundError("CV introuvable pour ce profil");
 
   saveResumes(resumes, filePath);
   return target;
@@ -108,11 +109,11 @@ function getResume(id, filePath = DEFAULT_PATH) {
 function replaceResume(id, newSourcePath, filePath = DEFAULT_PATH) {
   const resumes = loadResumes(filePath);
   const index = resumes.findIndex((r) => r.id === id);
-  if (index < 0) throw new Error("CV introuvable");
+  if (index < 0) throw new NotFoundError("CV introuvable");
 
   const extractedText = extractText(newSourcePath);
   if (!isNonEmptyString(extractedText)) {
-    throw new Error("Le CV est vide ou illisible");
+    throw new ValidationError("Le CV est vide ou illisible");
   }
 
   const updated = updateResume(resumes[index], {
@@ -138,12 +139,12 @@ function reassignDefaultOrThrow(resumes, target, newDefaultId) {
   if (others.length === 0) return; // dernier CV actif : aucun défaut à réassigner
 
   if (!newDefaultId) {
-    throw new Error(
+    throw new ValidationError(
       "Ce CV est le CV par défaut : désignez le nouveau CV par défaut (newDefaultId).",
     );
   }
   const next = others.find((r) => r.id === newDefaultId);
-  if (!next) throw new Error("Le nouveau CV par défaut désigné est introuvable ou archivé");
+  if (!next) throw new NotFoundError("Le nouveau CV par défaut désigné est introuvable ou archivé");
   next.isDefault = true;
 }
 
@@ -151,7 +152,7 @@ function reassignDefaultOrThrow(resumes, target, newDefaultId) {
 function archiveResume(id, options = {}, filePath = DEFAULT_PATH) {
   const resumes = loadResumes(filePath);
   const target = resumes.find((r) => r.id === id);
-  if (!target) throw new Error("CV introuvable");
+  if (!target) throw new NotFoundError("CV introuvable");
 
   if (target.isDefault) {
     reassignDefaultOrThrow(resumes, target, options.newDefaultId);
@@ -167,7 +168,7 @@ function archiveResume(id, options = {}, filePath = DEFAULT_PATH) {
 function deleteResume(id, options = {}, filePath = DEFAULT_PATH) {
   const resumes = loadResumes(filePath);
   const target = resumes.find((r) => r.id === id);
-  if (!target) throw new Error("CV introuvable");
+  if (!target) throw new NotFoundError("CV introuvable");
 
   if (target.isDefault) {
     reassignDefaultOrThrow(resumes, target, options.newDefaultId);

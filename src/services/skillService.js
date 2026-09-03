@@ -3,6 +3,7 @@
 // Volontairement sans analyse automatique complexe (appariement par lexique).
 const { SKILL_LEVELS, createSkill } = require("../models/skill");
 const { updateProfile } = require("../models/userProfile");
+const { ValidationError } = require("../errors");
 
 // Vrai si la valeur est une chaîne non vide (espaces seuls exclus).
 function isNonEmptyString(value) {
@@ -91,12 +92,12 @@ function extractSkillsFromText(text, knownSkills = []) {
 function attachSkillsToProfile(profile, skills, options = {}) {
   const { mode } = options;
   if (mode !== "replace" && mode !== "merge") {
-    throw new Error('attachSkillsToProfile : option mode requise ("replace" ou "merge")');
+    throw new ValidationError('attachSkillsToProfile : option mode requise ("replace" ou "merge")');
   }
 
   for (const skill of skills) {
     const validation = validateSkill(skill);
-    if (!validation.valid) throw new Error(validation.errors.join(", "));
+    if (!validation.valid) throw new ValidationError(validation.errors.join(", "));
   }
 
   const next =

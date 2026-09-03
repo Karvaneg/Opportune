@@ -1,5 +1,6 @@
 // Validation d'une offre avant analyse et scoring.
 const { OFFER_CONTRACT_TYPES, createOffer, updateOffer } = require("../models/jobOffer");
+const { ValidationError } = require("../errors");
 
 // Vrai si la valeur est une chaîne non vide (espaces seuls exclus).
 function isNonEmptyString(value) {
@@ -32,7 +33,7 @@ function createValidOffer(data) {
   const validation = validateOffer(offer);
 
   if (!validation.valid) {
-    throw new Error(validation.errors.join(", "));
+    throw new ValidationError(validation.errors.join(", "));
   }
 
   return offer;
@@ -45,7 +46,7 @@ function updateValidOffer(offer, changes) {
   const validation = validateOffer(updated);
 
   if (!validation.valid) {
-    throw new Error(validation.errors.join(", "));
+    throw new ValidationError(validation.errors.join(", "));
   }
 
   return updated;

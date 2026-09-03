@@ -11,6 +11,7 @@
 const { listApplications } = require("./applicationService");
 const { isTerminal } = require("./applicationStatus");
 const { DEFAULT_PATH } = require("../models/applicationStore");
+const { ValidationError } = require("../errors");
 
 // Couleur de l'embed de rappel (jaune « attention »).
 const REMINDER_COLOR = 0xf1c40f;
@@ -71,7 +72,7 @@ function buildFollowUpReminderMessage(applications, { resolveOffer } = {}) {
 async function remindDueFollowUps(profileId, options = {}) {
   const { send, now = new Date(), horizonDays = 0, filePath = DEFAULT_PATH, resolveOffer } = options;
   if (typeof send !== "function") {
-    throw new Error("remindDueFollowUps : la fonction d'envoi (send) est requise");
+    throw new ValidationError("remindDueFollowUps : la fonction d'envoi (send) est requise");
   }
 
   const reminded = listFollowUpsToNotify(profileId, { now, horizonDays, filePath });

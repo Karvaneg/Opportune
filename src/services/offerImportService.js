@@ -7,6 +7,7 @@ const { createOffer } = require("../models/jobOffer");
 const { DEFAULT_PATH, saveOffer } = require("../models/offerStore");
 const { validateOffer } = require("./offerService");
 const { normalizeContractType } = require("./offerNormalizer");
+const { ValidationError } = require("../errors");
 
 // Libellés reconnus dans un texte collé → champs de l'offre.
 const FIELD_LABELS = {
@@ -78,7 +79,7 @@ function draftOfferFromText(text, overrides = {}) {
 function confirmOffer(draft, filePath = DEFAULT_PATH) {
   const validation = validateOffer(draft);
   if (!validation.valid) {
-    throw new Error(validation.errors.join(", "));
+    throw new ValidationError(validation.errors.join(", "));
   }
   return saveOffer(draft, filePath);
 }
