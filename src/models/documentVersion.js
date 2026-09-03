@@ -6,8 +6,9 @@
 const { randomUUID } = require("node:crypto");
 
 // Types de documents générés versionnables (cohérent avec les générateurs E4 :
-// resumeAdapter, coverLetterGenerator, linkedInMessageGenerator).
-const DOCUMENT_TYPES = ["cv", "coverLetter", "linkedInMessage"];
+// resumeAdapter, coverLetterGenerator, linkedInMessageGenerator,
+// freelanceProposalGenerator).
+const DOCUMENT_TYPES = ["cv", "coverLetter", "linkedInMessage", "freelanceProposal"];
 
 // Champs obligatoires : une version est toujours rattachée à une offre et typée.
 const REQUIRED_FIELDS = ["offerId", "type"];

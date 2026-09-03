@@ -16,6 +16,7 @@ const { classifyOpportunity } = require("./opportunityClassifier");
 const { adaptResumeToOffer } = require("./resumeAdapter");
 const { generateCoverLetter } = require("./coverLetterGenerator");
 const { generateLinkedInMessage } = require("./linkedInMessageGenerator");
+const { generateFreelanceProposal } = require("./freelanceProposalGenerator");
 const { addVersion } = require("./documentVersionService");
 const { saveValidApplication } = require("./applicationService");
 const { planFollowUp } = require("./followUpPlanner");
@@ -35,16 +36,22 @@ function isNonEmptyString(value) {
 }
 
 // Documents de candidature à générer pour une offre, fidèles au profil (aucune
-// invention). Le CV adapté est toujours produit ; la lettre et le message LinkedIn
-// n'ont de sens que si l'entreprise et l'intitulé sont connus (mêmes garde-fous
-// que les générateurs). Retourne [{ type, content }], type ∈ DOCUMENT_TYPES.
+// invention). Le CV adapté est toujours produit ; le document d'accroche et le
+// message LinkedIn n'ont de sens que si l'entreprise et l'intitulé sont connus
+// (mêmes garde-fous que les générateurs). Le document d'accroche est adapté au type
+// de contrat : une offre FREELANCE reçoit une proposition d'intervention, les autres
+// (CDI/CDD) une lettre de motivation. Retourne [{ type, content }], type ∈ DOCUMENT_TYPES.
 function buildDocuments(offer, profile, keyInfo) {
   const documents = [
     { type: "cv", content: adaptResumeToOffer(profile, keyInfo) },
   ];
 
   if (isNonEmptyString(offer.company) && isNonEmptyString(offer.title)) {
-    documents.push({ type: "coverLetter", content: generateCoverLetter(profile, offer) });
+    const pitch =
+      offer.contractType === "FREELANCE"
+        ? { type: "freelanceProposal", content: generateFreelanceProposal(profile, offer) }
+        : { type: "coverLetter", content: generateCoverLetter(profile, offer) };
+    documents.push(pitch);
     documents.push({ type: "linkedInMessage", content: generateLinkedInMessage(profile, offer) });
   }
 
