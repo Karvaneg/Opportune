@@ -25,11 +25,21 @@ Contrat de coordination :
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
+from typing import Callable
+
 from app.decision import Decision
 from app.decision_service import DecisionService
 from app.recommendation_service import OfferRecommendation, RecommendationService
 
-from hermes.models import HermesRecommendation
+from hermes.models import HermesRecommendation, HermesRun, OfferEvaluation
+from hermes.run_store import RunRepository
+
+
+def _utcnow_iso() -> str:
+    """Instant UTC au format ISO 8601 (horloge par défaut des exécutions)."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 class HermesOrchestrator:
@@ -39,9 +49,18 @@ class HermesOrchestrator:
         self,
         recommendations: RecommendationService,
         decisions: DecisionService,
+        *,
+        runs: RunRepository | None = None,
+        run_id: Callable[[], str] | None = None,
+        now: Callable[[], str] | None = None,
     ) -> None:
         self.recommendations = recommendations
         self.decisions = decisions
+        # Traçabilité : dépôt d'exécutions (optionnel), fabrique d'identifiant d'exécution
+        # et horloge — tous injectables pour des exécutions déterministes en test.
+        self.runs = runs
+        self._run_id = run_id or (lambda: uuid.uuid4().hex)
+        self._now = now or _utcnow_iso
 
     def recommend_for_candidate(
         self,
@@ -136,3 +155,56 @@ class HermesOrchestrator:
             "pending_review": pending,
             "rejected": rejected,
         }
+
+    def run_for_candidate(
+        self,
+        candidate_id: str,
+        limit: int = 10,
+    ) -> HermesRun:
+        """Exécute la boucle pour ``candidate_id`` en **journalisant** l'exécution.
+
+        Génère un ``run_id`` unique et un instant d'exécution, recommande les offres, puis
+        pour chacune persiste la décision (via ``DecisionService.decide``) en traçant le
+        score et le statut obtenus. Chaque erreur **par offre** est capturée dans le run et
+        n'interrompt pas les suivantes : une exécution ultérieure reprend proprement, la
+        persistance des décisions étant idempotente (upsert sur le couple candidat/offre,
+        et toute validation humaine déjà posée est préservée).
+
+        L'exécution est persistée si un dépôt de runs (``runs``) est configuré, puis
+        retournée. Propage ``UnknownCandidateError`` (candidat inconnu) et ``ValueError``
+        (``limit`` négatif) *avant* toute écriture : aucun run n'est alors enregistré.
+        """
+        run_id = self._run_id()
+        executed_at = self._now()
+        recommendations = self.recommendations.recommend(candidate_id, limit=limit)
+
+        evaluations: list[OfferEvaluation] = []
+        errors: list[str] = []
+        for recommendation in recommendations:
+            offer_id = recommendation.offer.id
+            try:
+                decision = self.decisions.decide(recommendation, candidate_id)
+            except Exception as exc:  # noqa: BLE001 — toute erreur d'offre est tracée, jamais fatale
+                # On conserve le type d'exception : une erreur de programmation
+                # (AttributeError, TypeError…) reste diagnosticable dans la trace du run
+                # au lieu d'être noyée dans un message anonyme.
+                errors.append(f"{offer_id}: {type(exc).__name__}: {exc}")
+                continue
+            evaluations.append(
+                OfferEvaluation(
+                    offer_id=offer_id,
+                    score=recommendation.score,
+                    decision_status=decision.status,
+                )
+            )
+
+        run = HermesRun(
+            run_id=run_id,
+            candidate_id=candidate_id,
+            executed_at=executed_at,
+            evaluations=tuple(evaluations),
+            errors=tuple(errors),
+        )
+        if self.runs is not None:
+            self.runs.save(run)
+        return run
