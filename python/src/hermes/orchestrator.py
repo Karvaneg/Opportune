@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from app.decision import Decision
 from app.decision_service import DecisionService
-from app.recommendation_service import RecommendationService
+from app.recommendation_service import OfferRecommendation, RecommendationService
 
 from hermes.models import HermesRecommendation
 
@@ -86,3 +86,53 @@ class HermesOrchestrator:
         return self.decisions.validate(
             candidate_id, offer_id, status, comment=comment
         )
+
+    def evaluate_for_candidate(
+        self,
+        candidate_id: str,
+        limit: int = 10,
+    ) -> dict:
+        """Recommande puis **trie automatiquement** les offres par statut de décision.
+
+        Pour chaque recommandation (au plus ``limit``), délègue le triage à
+        ``DecisionService.evaluate`` (postuler → approved, à étudier → pending, ignorer →
+        rejected) et regroupe les recommandations par statut. L'ordre de classement (score
+        décroissant) est préservé au sein de chaque groupe.
+
+        Retourne un dictionnaire structuré ::
+
+            {
+                "candidate_id": <str>,
+                "recommendations": [<approuvées>],
+                "pending_review": [<à relire>],
+                "rejected": [<écartées>],
+            }
+
+        Propage ``UnknownCandidateError`` (candidat inconnu) et ``ValueError`` (``limit``
+        négatif). Triage pur : aucune décision n'est persistée ici (la persistance passe
+        par ``recommend_for_candidate`` / ``validate_decision``).
+
+        RÈGLE : les statuts ``approved`` / ``pending`` / ``rejected`` de ce résultat sont
+        des statuts de **pré-évaluation automatique**, pas des décisions humaines
+        définitives. Nommer les deux registres distinctement lève l'ambiguïté ::
+
+            auto_status = orchestrator.evaluate_for_candidate(candidate_id)   # pré-éval
+            human_decision = orchestrator.validate_decision(cand, offer, ...)  # définitive
+        """
+        recommendations = self.recommendations.recommend(candidate_id, limit=limit)
+
+        approved: list[OfferRecommendation] = []
+        pending: list[OfferRecommendation] = []
+        rejected: list[OfferRecommendation] = []
+        buckets = {"approved": approved, "pending": pending, "rejected": rejected}
+
+        for recommendation in recommendations:
+            outcome = self.decisions.evaluate(recommendation)
+            buckets[outcome.status].append(recommendation)
+
+        return {
+            "candidate_id": candidate_id,
+            "recommendations": approved,
+            "pending_review": pending,
+            "rejected": rejected,
+        }

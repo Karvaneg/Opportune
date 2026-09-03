@@ -101,3 +101,32 @@ def test_validate_invalid_status_raises(env):
     service.decide(_recommendation(), "cand-1")
     with pytest.raises(DecisionError):
         service.validate("cand-1", "o", "pending")  # retour à pending interdit
+
+
+def test_evaluate_postuler_is_approved(env):
+    service, _ = env
+    outcome = service.evaluate(_recommendation(action="postuler"))
+    assert outcome.status == "approved"
+    assert outcome.recommendation.action == "postuler"
+
+
+def test_evaluate_a_etudier_is_pending(env):
+    service, _ = env
+    assert service.evaluate(_recommendation(action="a_etudier")).status == "pending"
+
+
+def test_evaluate_ignorer_is_rejected(env):
+    service, _ = env
+    assert service.evaluate(_recommendation(action="ignorer")).status == "rejected"
+
+
+def test_evaluate_unknown_action_defaults_to_pending(env):
+    service, _ = env
+    # Action non triable (ex. données insuffisantes) → pending par prudence.
+    assert service.evaluate(_recommendation(action="indeterminee")).status == "pending"
+
+
+def test_evaluate_does_not_persist(env):
+    service, store = env
+    service.evaluate(_recommendation(action="postuler"))
+    assert store.count() == 0  # triage pur, sans effet de bord
