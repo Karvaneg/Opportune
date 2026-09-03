@@ -18,6 +18,7 @@ module.exports = {
   ...require("./resumeAdapter"),
   ...require("./coverLetterGenerator"),
   ...require("./linkedInMessageGenerator"),
+  ...require("./freelanceProposalGenerator"),
   ...require("./inventionGuard"),
   ...require("./documentEditor"),
   ...require("./documentVersionService"),
