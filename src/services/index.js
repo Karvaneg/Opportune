@@ -26,6 +26,7 @@ module.exports = {
   ...require("./applicationStatus"),
   ...require("./applicationService"),
   ...require("./followUpPlanner"),
+  ...require("./discordReminderAdapter"),
   ...require("./applicationResultRecorder"),
   ...require("./opportunityValidation"),
   ...require("./discordValidationAdapter"),
