@@ -1,7 +1,6 @@
-# Environnement de développement Docker (V2, OPP-071).
-# Un seul service applicatif pour l'instant. SQLite (OPP-072) est une base sur fichier
-# embarquée : pas de service séparé, mais un volume dédié pour la persistance. Le
-# service externe Ollama (OPP-073) sera ajouté par son ticket.
+# Environnement de développement Docker (V2, OPP-071/072/073).
+# - app    : l'application Python. SQLite (OPP-072) est embarquée (volume dédié).
+# - ollama : serveur LLM local (OPP-073) servant le modèle Ministral.
 services:
   app:
     build: .
@@ -10,6 +9,9 @@ services:
     environment:
       # Chemin de la base SQLite dans le conteneur (persistée via le volume ci-dessous).
       - OPPORTUNE_DB_PATH=/app/data/opportune.db
+      # Accès au LLM local : le service `ollama` ci-dessous et le modèle par défaut.
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=ministral
     volumes:
       # Montage du code pour un cycle de dev rapide (l'install éditable pointe sur src/).
       - ./src:/app/src
@@ -19,5 +21,17 @@ services:
     # Par défaut, lance les tests ; surchargeable : `docker compose run --rm app <cmd>`.
     command: pytest
 
+  # Serveur Ollama. Démarrage : `docker compose up -d ollama`, puis récupérer le
+  # modèle une fois : `docker compose exec ollama ollama pull ministral`.
+  # Non requis pour les tests (le transport est injecté), d'où l'absence de depends_on.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      # Persistance des modèles téléchargés (évite de re-télécharger Ministral).
+      - ollama-models:/root/.ollama
+
 volumes:
   opportune-data:
+  ollama-models:
