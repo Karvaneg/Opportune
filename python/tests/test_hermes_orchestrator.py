@@ -10,6 +10,7 @@ import pytest
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision import PENDING, decision_id
+from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
 from app.offer import Offer
 from app.offer_store import OfferStore
@@ -41,7 +42,8 @@ def env():
         location="Paris", total_experience_years=6,
     ))
     service = RecommendationService(profiles, offers)
-    orchestrator = HermesOrchestrator(service, decisions, now=lambda: "2026-09-03T00:00:00+00:00")
+    decision_service = DecisionService(decisions, now=lambda: "2026-09-03T00:00:00+00:00")
+    orchestrator = HermesOrchestrator(service, decision_service)
     yield orchestrator, offers, decisions
     conn.close()
 

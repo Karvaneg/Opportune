@@ -4,12 +4,12 @@
 ``candidate_id`` en un jeu de **décisions persistées**, sans réimplémenter leur logique :
 
     RecommendationService.recommend   → profil + offres + match + score + action  [OPP-0393]
-        → decision_from_recommendation → décision ``pending`` (immuable, historisée)  [OPP-057]
-        → DecisionRepository.save      → persistance (upsert sur le couple candidat/offre)
+        → DecisionService.decide       → décision ``pending`` créée et persistée    [OPP-057]
 
-Ses collaborateurs sont **injectés** (couplage aux protocoles, pas aux implémentations) :
-tout est testable avec de vrais dépôts SQLite en mémoire, sans réseau. L'horloge est
-injectable pour des dates de décision déterministes en test.
+Ses collaborateurs sont **injectés** (couplage aux services, pas aux implémentations
+de persistance) : tout est testable avec de vrais dépôts SQLite en mémoire, sans réseau.
+La gestion de l'horloge et de la persistance des décisions est déléguée à
+``DecisionService`` — Hermes ne fait qu'enchaîner recommandation puis décision.
 
 Contrat de coordination :
 - l'ordre des recommandations (score décroissant, tie-break déterministe) est **préservé**
@@ -22,8 +22,7 @@ Contrat de coordination :
 
 from __future__ import annotations
 
-from app.decision import Clock, decision_from_recommendation
-from app.decision_store import DecisionRepository
+from app.decision_service import DecisionService
 from app.recommendation_service import RecommendationService
 
 from hermes.models import HermesRecommendation
@@ -35,15 +34,10 @@ class HermesOrchestrator:
     def __init__(
         self,
         recommendations: RecommendationService,
-        decisions: DecisionRepository,
-        *,
-        now: Clock | None = None,
+        decisions: DecisionService,
     ) -> None:
         self.recommendations = recommendations
         self.decisions = decisions
-        # Horloge optionnelle : ``None`` laisse ``decision_from_recommendation`` utiliser
-        # son horloge UTC par défaut ; une horloge injectée rend les tests déterministes.
-        self._now = now
 
     def recommend_for_candidate(
         self,
@@ -53,8 +47,9 @@ class HermesOrchestrator:
         """Déroule la boucle complète pour ``candidate_id`` et rend le résultat final.
 
         Pour chacune des meilleures offres recommandées (au plus ``limit``), crée une
-        décision ``pending`` dérivée de la recommandation et la persiste, puis retourne
-        la liste des couples (recommandation, décision) dans l'ordre de classement.
+        décision ``pending`` dérivée de la recommandation et la persiste (via
+        ``DecisionService``), puis retourne la liste des couples (recommandation,
+        décision) dans l'ordre de classement.
 
         Propage ``UnknownCandidateError`` si le candidat est introuvable et ``ValueError``
         si ``limit`` est négatif — aucune décision n'est alors persistée.
@@ -63,13 +58,7 @@ class HermesOrchestrator:
 
         results: list[HermesRecommendation] = []
         for recommendation in recommendations:
-            if self._now is None:
-                decision = decision_from_recommendation(recommendation, candidate_id)
-            else:
-                decision = decision_from_recommendation(
-                    recommendation, candidate_id, now=self._now
-                )
-            self.decisions.save(decision)
+            decision = self.decisions.decide(recommendation, candidate_id)
             results.append(
                 HermesRecommendation(recommendation=recommendation, decision=decision)
             )
