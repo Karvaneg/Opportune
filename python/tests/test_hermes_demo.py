@@ -4,7 +4,13 @@ La démo est déterministe et sans réseau : on vérifie qu'elle déroule la bou
 et rend un affichage cohérent, sans re-tester la logique déléguée.
 """
 
-from hermes.demo import CANDIDATE_ID, render, run
+from hermes.demo import (
+    CANDIDATE_ID,
+    render,
+    render_validation,
+    run,
+    run_with_validation,
+)
 
 
 def test_run_deroule_la_boucle_et_classe_par_score():
@@ -30,3 +36,19 @@ def test_render_liste_chaque_offre_avec_action_et_statut():
 
 def test_render_gere_le_cas_vide():
     assert render([]) == "Aucune offre évaluable pour ce candidat."
+
+
+def test_run_with_validation_approuve_la_meilleure_offre():
+    results, approved = run_with_validation()
+    assert approved.offer_id == results[0].recommendation.offer.id
+    assert approved.status == "approved"
+    assert approved.comment == "Profil idéal"
+    assert len(approved.history) == 2  # pending + approved
+
+
+def test_render_validation_affiche_statut_et_commentaire():
+    _, approved = run_with_validation()
+    text = render_validation(approved)
+    assert "offer-devpy" in text
+    assert "approved" in text
+    assert "Profil idéal" in text

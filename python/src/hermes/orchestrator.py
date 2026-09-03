@@ -5,23 +5,27 @@
 
     RecommendationService.recommend   → profil + offres + match + score + action  [OPP-0393]
         → DecisionService.decide       → décision ``pending`` créée et persistée    [OPP-057]
+        → DecisionService.validate     → validation humaine (approve/reject/defer)  [OPP-057]
 
 Ses collaborateurs sont **injectés** (couplage aux services, pas aux implémentations
 de persistance) : tout est testable avec de vrais dépôts SQLite en mémoire, sans réseau.
 La gestion de l'horloge et de la persistance des décisions est déléguée à
-``DecisionService`` — Hermes ne fait qu'enchaîner recommandation puis décision.
+``DecisionService`` — Hermes ne fait qu'enchaîner recommandation puis décision, et offre
+un point d'entrée unique pour la validation humaine ultérieure.
 
 Contrat de coordination :
 - l'ordre des recommandations (score décroissant, tie-break déterministe) est **préservé**
   tel quel ; Hermes ne reclasse ni ne filtre — il délègue à ``RecommendationService`` ;
 - une décision ``pending`` est créée puis persistée pour **chaque** recommandation
-  retenue ; la validation humaine (approve/reject/defer) reste hors de ce flux ;
+  retenue ; la validation humaine (approve/reject/defer) est appliquée à la demande via
+  ``validate_decision`` ;
 - ``UnknownCandidateError`` (candidat introuvable) et ``ValueError`` (``limit`` négatif,
   seuils incohérents) remontent depuis ``RecommendationService`` sans être masqués.
 """
 
 from __future__ import annotations
 
+from app.decision import Decision
 from app.decision_service import DecisionService
 from app.recommendation_service import RecommendationService
 
@@ -63,3 +67,22 @@ class HermesOrchestrator:
                 HermesRecommendation(recommendation=recommendation, decision=decision)
             )
         return results
+
+    def validate_decision(
+        self,
+        candidate_id: str,
+        offer_id: str,
+        status: str,
+        *,
+        comment: str | None = None,
+    ) -> Decision:
+        """Applique une validation humaine à une décision déjà produite par Hermes.
+
+        Ferme la boucle humaine (``approved`` / ``rejected`` / ``deferred``) sur une
+        décision ``pending`` issue de ``recommend_for_candidate``. Délègue à
+        ``DecisionService`` : propage ``UnknownDecisionError`` si la décision n'existe pas
+        et ``DecisionError`` si le statut n'est pas un statut de validation humaine.
+        """
+        return self.decisions.validate(
+            candidate_id, offer_id, status, comment=comment
+        )

@@ -9,8 +9,8 @@ import pytest
 
 from app.candidate_profile import create_profile
 from app.db import connect
-from app.decision import PENDING, decision_id
-from app.decision_service import DecisionService
+from app.decision import DecisionError, PENDING, decision_id
+from app.decision_service import DecisionService, UnknownDecisionError
 from app.decision_store import DecisionStore
 from app.offer import Offer
 from app.offer_store import OfferStore
@@ -104,6 +104,30 @@ def test_negative_limit_rejected_and_persists_nothing(env):
     with pytest.raises(ValueError):
         orchestrator.recommend_for_candidate("cand-1", limit=-1)
     assert decisions.count() == 0
+
+
+def test_validate_decision_applies_human_status(env):
+    orchestrator, offers, decisions = env
+    offers.save(_offer(id="a", title="A", url="http://a"))
+    orchestrator.recommend_for_candidate("cand-1")  # crée la décision pending
+    updated = orchestrator.validate_decision("cand-1", "a", "approved", comment="go")
+    assert updated.status == "approved"
+    assert updated.comment == "go"
+    assert decisions.get(decision_id("cand-1", "a")).status == "approved"
+
+
+def test_validate_decision_unknown_raises(env):
+    orchestrator, _, _ = env
+    with pytest.raises(UnknownDecisionError):
+        orchestrator.validate_decision("cand-1", "a", "approved")
+
+
+def test_validate_decision_invalid_status_raises(env):
+    orchestrator, offers, _ = env
+    offers.save(_offer(id="a", title="A", url="http://a"))
+    orchestrator.recommend_for_candidate("cand-1")
+    with pytest.raises(DecisionError):
+        orchestrator.validate_decision("cand-1", "a", "pending")
 
 
 def test_empty_stock_returns_empty(env):

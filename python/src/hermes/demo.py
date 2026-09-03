@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from app.candidate_profile import create_profile
 from app.db import connect
+from app.decision import Decision
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
 from app.offer import Offer
@@ -47,26 +48,45 @@ _OFFERS = (
 )
 
 
+def _build_orchestrator(conn) -> HermesOrchestrator:
+    """Sème profil et offres sur ``conn`` puis câble l'orchestrateur."""
+    profiles = ProfileStore(conn)
+    offers = OfferStore(conn)
+    decisions = DecisionStore(conn)
+
+    profiles.save(create_profile(
+        id=CANDIDATE_ID, name="Marie", skills=["Python", "SQL"],
+        contract_type="CDI", location="Paris", total_experience_years=6,
+    ))
+    for offer in _OFFERS:
+        offers.save(offer)
+
+    return HermesOrchestrator(
+        RecommendationService(profiles, offers),
+        DecisionService(decisions),
+    )
+
+
 def run() -> list[HermesRecommendation]:
     """Monte l'environnement en mémoire, sème les fixtures et déroule Hermes."""
     conn = connect(":memory:")
     try:
-        profiles = ProfileStore(conn)
-        offers = OfferStore(conn)
-        decisions = DecisionStore(conn)
+        return _build_orchestrator(conn).recommend_for_candidate(CANDIDATE_ID)
+    finally:
+        conn.close()
 
-        profiles.save(create_profile(
-            id=CANDIDATE_ID, name="Marie", skills=["Python", "SQL"],
-            contract_type="CDI", location="Paris", total_experience_years=6,
-        ))
-        for offer in _OFFERS:
-            offers.save(offer)
 
-        orchestrator = HermesOrchestrator(
-            RecommendationService(profiles, offers),
-            DecisionService(decisions),
+def run_with_validation() -> tuple[list[HermesRecommendation], Decision]:
+    """Déroule Hermes puis simule l'humain qui **approuve** la meilleure offre."""
+    conn = connect(":memory:")
+    try:
+        orchestrator = _build_orchestrator(conn)
+        results = orchestrator.recommend_for_candidate(CANDIDATE_ID)
+        top_offer_id = results[0].recommendation.offer.id
+        approved = orchestrator.validate_decision(
+            CANDIDATE_ID, top_offer_id, "approved", comment="Profil idéal"
         )
-        return orchestrator.recommend_for_candidate(CANDIDATE_ID)
+        return results, approved
     finally:
         conn.close()
 
@@ -87,8 +107,18 @@ def render(results: list[HermesRecommendation]) -> str:
     return "\n".join(lines)
 
 
+def render_validation(decision: Decision) -> str:
+    """Rend l'étape de validation humaine sur une décision."""
+    return (
+        f"Validation humaine → {decision.offer_id} : {decision.status}"
+        + (f" ({decision.comment})" if decision.comment else "")
+    )
+
+
 def main() -> None:
-    print(render(run()))
+    results, approved = run_with_validation()
+    print(render(results))
+    print(render_validation(approved))
 
 
 if __name__ == "__main__":
