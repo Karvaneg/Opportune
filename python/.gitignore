@@ -1,3 +1,6 @@
+# Base de données SQLite locale (données, non versionnées)
+data/
+
 # Environnement virtuel et artefacts Python
 .venv/
 __pycache__/

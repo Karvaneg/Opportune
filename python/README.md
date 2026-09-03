@@ -19,9 +19,11 @@ python/
 ├── .dockerignore
 ├── src/
 │   └── app/
-│       └── __init__.py   # package applicatif (version + healthcheck)
+│       ├── __init__.py   # package applicatif (version + healthcheck)
+│       └── db.py         # configuration & accès SQLite (stdlib sqlite3)
 └── tests/
-    └── test_smoke.py     # test de fumée pytest
+    ├── test_smoke.py     # test de fumée pytest
+    └── test_db.py        # tests de la connexion SQLite
 ```
 
 ## Prérequis
@@ -71,6 +73,25 @@ compte sans reconstruire l'image.
 cd python
 docker compose run --rm app            # lance pytest (commande par défaut)
 docker compose run --rm app python -c "import app; print(app.healthcheck())"
+```
+
+## Base de données SQLite
+
+L'accès à SQLite est configuré via la bibliothèque standard (`sqlite3`) — **aucune
+dépendance ni ORM** à ce stade (SQLAlchemy et le schéma métier viendront plus tard).
+
+- Chemin par défaut : `data/opportune.db`, surchargeable par la variable
+  d'environnement `OPPORTUNE_DB_PATH` (`:memory:` accepté pour les tests).
+- `app.db.connect()` ouvre une connexion configurée (lignes `sqlite3.Row`, clés
+  étrangères activées) et crée le dossier parent au besoin.
+- Sous Docker Compose, la base est persistée dans le volume `opportune-data`.
+
+```python
+from app.db import connect, healthcheck
+
+conn = connect()            # data/opportune.db (ou OPPORTUNE_DB_PATH)
+assert healthcheck(conn)    # SELECT 1
+conn.close()
 ```
 
 ### Sous Windows / WSL2
