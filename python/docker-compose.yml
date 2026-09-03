@@ -1,14 +1,23 @@
 # Environnement de développement Docker (V2, OPP-071).
-# Un seul service pour l'instant : l'application Python. Les services externes
-# (base SQLite/volume — OPP-072, Ollama — OPP-073) seront ajoutés par leurs tickets.
+# Un seul service applicatif pour l'instant. SQLite (OPP-072) est une base sur fichier
+# embarquée : pas de service séparé, mais un volume dédié pour la persistance. Le
+# service externe Ollama (OPP-073) sera ajouté par son ticket.
 services:
   app:
     build: .
     image: opportune-py:dev
     working_dir: /app
-    # Montage du code pour un cycle de dev rapide (l'install éditable pointe sur src/).
+    environment:
+      # Chemin de la base SQLite dans le conteneur (persistée via le volume ci-dessous).
+      - OPPORTUNE_DB_PATH=/app/data/opportune.db
     volumes:
+      # Montage du code pour un cycle de dev rapide (l'install éditable pointe sur src/).
       - ./src:/app/src
       - ./tests:/app/tests
+      # Persistance de la base SQLite entre les exécutions.
+      - opportune-data:/app/data
     # Par défaut, lance les tests ; surchargeable : `docker compose run --rm app <cmd>`.
     command: pytest
+
+volumes:
+  opportune-data:
