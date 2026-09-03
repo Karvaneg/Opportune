@@ -28,6 +28,7 @@ module.exports = {
   ...require("./applicationResultRecorder"),
   ...require("./opportunityValidation"),
   ...require("./offerSummary"),
+  ...require("./applicationPipeline"),
   ...require("./resumeService"),
   ...require("./textExtractor"),
   ...require("./skillService"),
