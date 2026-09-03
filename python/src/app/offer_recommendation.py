@@ -39,6 +39,16 @@ class Recommendation:
     score: int | None
 
 
+def validate_thresholds(high: int, medium: int) -> None:
+    """Vérifie la cohérence des seuils (``0 ≤ medium ≤ high ≤ 100``) ; ``ValueError`` sinon.
+
+    Exposé pour que les appelants (p. ex. le pipeline) puissent échouer *avant* tout
+    effet de bord, sans dupliquer la contrainte.
+    """
+    if not (0 <= medium <= high <= 100):
+        raise ValueError("Seuils invalides : attendu 0 ≤ medium ≤ high ≤ 100")
+
+
 def recommend_action(
     score: int | None, *, high: int = DEFAULT_HIGH, medium: int = DEFAULT_MEDIUM
 ) -> Recommendation:
@@ -47,8 +57,7 @@ def recommend_action(
     ``score=None`` → ``indeterminee``. Lève ``ValueError`` si le score n'est ni un
     entier ni ``None``, ou si les seuils sont incohérents (``0 ≤ medium ≤ high ≤ 100``).
     """
-    if not (0 <= medium <= high <= 100):
-        raise ValueError("Seuils invalides : attendu 0 ≤ medium ≤ high ≤ 100")
+    validate_thresholds(high, medium)
 
     if score is None:
         return Recommendation("indeterminee", _LABELS["indeterminee"], None)
