@@ -53,7 +53,13 @@ class OfferAnalysis:
 
     @classmethod
     def from_dict(cls, data: dict) -> "OfferAnalysis":
-        """Valide strictement un dict et construit l'analyse."""
+        """Valide les champs requis d'un dict et construit l'analyse.
+
+        La validation est stricte sur les champs **attendus** (présence + type) mais
+        tolérante aux clés **supplémentaires**, simplement ignorées : robustesse en
+        lecture face aux variations du LLM (une clé en trop ne fait pas échouer
+        l'analyse).
+        """
         values: dict[str, object] = {}
 
         for name in _TEXT_FIELDS:

@@ -39,6 +39,14 @@ def test_empty_lists_are_allowed():
     assert analysis.attention_points == []
 
 
+def test_extra_keys_are_ignored():
+    # Tolérance en lecture : une clé inattendue n'empêche pas l'analyse.
+    payload = dict(VALID, salary="55k", extra={"foo": "bar"})
+    analysis = OfferAnalysis.from_json(json.dumps(payload))
+    assert analysis.title == "Développeur Python"
+    assert not hasattr(analysis, "salary")
+
+
 def test_malformed_json_is_rejected():
     with pytest.raises(OfferAnalysisError):
         OfferAnalysis.from_json("pas du json {")
