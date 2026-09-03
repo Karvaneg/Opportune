@@ -66,6 +66,30 @@ def test_validate_applies_human_status_and_persists(env):
     assert len(updated.history) == 2  # pending + approved
 
 
+def test_redecide_preserves_human_validation(env):
+    service, store = env
+    service.decide(_recommendation(), "cand-1")
+    service.validate("cand-1", "o", "approved", comment="go")
+    # Re-dérouler la recommandation ne doit pas écraser la validation humaine.
+    returned = service.decide(_recommendation(), "cand-1")
+    assert returned.status == "approved"
+    assert returned.comment == "go"
+    stored = store.get(decision_id("cand-1", "o"))
+    assert stored.status == "approved"
+    assert len(stored.history) == 2  # pending + approved, non réinitialisé
+
+
+def test_redecide_still_pending_refreshes_row(env):
+    service, store = env
+    service.decide(_recommendation(), "cand-1")
+    # Tant qu'elle est pending, re-décider met la ligne à jour sans dupliquer.
+    service.decide(_recommendation(score=42), "cand-1")
+    stored = store.get(decision_id("cand-1", "o"))
+    assert store.count() == 1
+    assert stored.status == "pending"
+    assert stored.score == 42
+
+
 def test_validate_unknown_decision_raises(env):
     service, _ = env
     with pytest.raises(UnknownDecisionError):

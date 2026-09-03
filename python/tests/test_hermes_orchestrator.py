@@ -144,6 +144,22 @@ def test_rerun_upserts_decisions_without_duplicating(env):
     assert decisions.count() == 3  # upsert sur le couple candidat/offre, pas de doublon
 
 
+def test_rerun_preserves_human_validation(env):
+    orchestrator, offers, decisions = env
+    _seed_three(offers)
+    orchestrator.recommend_for_candidate("cand-1")
+    orchestrator.validate_decision("cand-1", "a", "approved", comment="go")
+    # Re-dérouler Hermes ne doit pas réinitialiser la décision validée à pending.
+    results = orchestrator.recommend_for_candidate("cand-1")
+    top = next(r for r in results if r.recommendation.offer.id == "a")
+    assert top.decision.status == "approved"
+    assert top.decision.comment == "go"
+    stored = decisions.get(decision_id("cand-1", "a"))
+    assert stored.status == "approved"
+    assert len(stored.history) == 2  # pending + approved, non écrasé
+    assert decisions.count() == 3
+
+
 def test_injected_clock_stamps_decision_history(env):
     orchestrator, offers, decisions = env
     offers.save(_offer(id="a", title="A", url="http://a"))

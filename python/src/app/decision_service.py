@@ -13,6 +13,7 @@ fonctions de ``app.decision`` utiliser leur horloge UTC par défaut.
 from __future__ import annotations
 
 from app.decision import (
+    PENDING,
     Clock,
     Decision,
     decision_from_recommendation,
@@ -34,18 +35,26 @@ class DecisionService:
         self.decisions = decisions
         self._now = now
 
+    def _clock_kwargs(self) -> dict[str, Clock]:
+        """Passe l'horloge injectée si présente, sinon laisse ``app.decision`` par défaut."""
+        return {} if self._now is None else {"now": self._now}
+
     def decide(self, recommendation: OfferRecommendation, candidate_id: str) -> Decision:
-        """Crée une décision ``pending`` dérivée d'une recommandation et la persiste.
+        """Crée (ou rafraîchit) une décision ``pending`` dérivée d'une recommandation.
 
         La persistance est un upsert sur le couple (candidat, offre) : re-décider la même
-        offre pour le même candidat met à jour la ligne au lieu de la dupliquer.
+        offre pour le même candidat met à jour la ligne au lieu de la dupliquer. Une
+        décision **déjà validée** par un humain (``approved`` / ``rejected`` / ``deferred``)
+        est en revanche **préservée telle quelle** : re-dérouler la recommandation ne doit
+        jamais écraser une validation humaine ni son historique.
         """
-        if self._now is None:
-            decision = decision_from_recommendation(recommendation, candidate_id)
-        else:
-            decision = decision_from_recommendation(
-                recommendation, candidate_id, now=self._now
-            )
+        stored_id = decision_id(candidate_id, recommendation.offer.id)
+        existing = self.decisions.get(stored_id)
+        if existing is not None and existing.status != PENDING:
+            return existing
+        decision = decision_from_recommendation(
+            recommendation, candidate_id, **self._clock_kwargs()
+        )
         self.decisions.save(decision)
         return decision
 
@@ -68,9 +77,6 @@ class DecisionService:
         existing = self.decisions.get(stored_id)
         if existing is None:
             raise UnknownDecisionError(f"Décision introuvable : {stored_id!r}")
-        if self._now is None:
-            updated = validate(existing, status, comment=comment)
-        else:
-            updated = validate(existing, status, comment=comment, now=self._now)
+        updated = validate(existing, status, comment=comment, **self._clock_kwargs())
         self.decisions.save(updated)
         return updated
