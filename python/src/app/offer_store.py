@@ -64,13 +64,17 @@ class OfferStore:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+        # ``get`` accède aux colonnes par nom : on garantit le factory ici plutôt
+        # que de dépendre de la configuration de la connexion injectée.
+        self.conn.row_factory = sqlite3.Row
         self.conn.execute(_CREATE_TABLE)
         self.conn.commit()
 
     def save(self, offer: Offer) -> None:
         """Insère l'offre ou met à jour la ligne existante (upsert sur ``id``)."""
+        _JSON_COLUMNS = ("skills", "attention_points")
         values = {
-            **{col: getattr(offer, col) for col in _COLUMNS},
+            **{col: getattr(offer, col) for col in _COLUMNS if col not in _JSON_COLUMNS},
             "skills": json.dumps(offer.skills, ensure_ascii=False),
             "attention_points": json.dumps(offer.attention_points, ensure_ascii=False),
         }

@@ -59,6 +59,18 @@ def test_intake_upserts_existing_offer():
     assert len(store.offers) == 1  # pas de doublon
 
 
+def test_intake_upserts_despite_title_drift_when_url_present():
+    # Le LLM reformule le titre à la seconde analyse : avec une url stable, l'id ne
+    # doit pas changer et l'offre est mise à jour, pas dupliquée.
+    store = FakeOfferStore()
+    drifted = json.dumps({**json.loads(VALID_RESPONSE), "title": "Développeur Python H/F"})
+    client = MockLLMClient([VALID_RESPONSE, drifted])
+    first = intake_offer("t", source="indeed", url="http://x", client=client, store=store)
+    second = intake_offer("t", source="indeed", url="http://x", client=client, store=store)
+    assert first.id == second.id
+    assert len(store.offers) == 1
+
+
 def test_intake_rejects_invalid_analysis_and_persists_nothing():
     store = FakeOfferStore()
     client = MockLLMClient(["pas du json"])
