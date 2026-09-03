@@ -32,6 +32,22 @@ function fullstackProfile() {
   };
 }
 
+// Profil freelance, aligné sur la mission Data Engineer (sample-2).
+function freelanceProfile() {
+  return {
+    id: "profile-2",
+    name: "Sam Indé",
+    contractType: "freelance",
+    skills: ["Python", "SQL", "Airflow"],
+    totalExperienceYears: 5,
+    location: "Lyon",
+    remote: "hybride",
+    targetDailyRate: 500,
+    availability: "immédiate",
+    languages: ["français"],
+  };
+}
+
 // Retrouve une offre du jeu de test par son id brut.
 function sampleOfferById(id) {
   return sampleOffers().find((offer) => offer.id === id);
@@ -125,6 +141,16 @@ test("processOffer : re-traiter la même offre incrémente les versions (aucun �
   const cvVersions = listVersions(offer.id, "cv", stores.documentsPath);
   assert.deepEqual(cvVersions.map((v) => v.version), [1, 2]);
   assert.ok(second.documents.find((d) => d.type === "cv").version === 2);
+});
+
+test("processOffer : une offre FREELANCE génère une proposition (pas de lettre)", () => {
+  const stores = tmpStores();
+  const offer = sampleOfferById("sample-2");
+  const dossier = processOffer(offer, freelanceProfile(), { ...stores, persist: true });
+
+  assert.equal(dossier.persisted, true);
+  const types = dossier.documents.map((d) => d.type).sort();
+  assert.deepEqual(types, ["cv", "freelanceProposal", "linkedInMessage"]);
 });
 
 // --- Décision : offres non retenues ---

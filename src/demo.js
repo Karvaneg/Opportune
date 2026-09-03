@@ -13,17 +13,20 @@ const { processOffers } = require("./services");
 const { sampleOffers } = require("./fixtures");
 const { formatPipelineReport } = require("./display");
 
-// Profil de démonstration : un développeur fullstack en CDI, aligné sur une partie
-// seulement du jeu d'offres (pour illustrer des scores et décisions variés).
+// Profil de démonstration : un développeur polyvalent ouvert au CDI comme au
+// freelance, aligné sur une partie seulement du jeu d'offres (pour illustrer des
+// scores et décisions variés, y compris une mission freelance → proposition).
 const DEMO_PROFILE = {
   id: "demo-profile",
   name: "Alex Martin",
-  contractType: "CDI",
-  skills: ["React", "Node.js", "PostgreSQL", "JavaScript", "TypeScript"],
+  contractType: "les deux",
+  skills: ["React", "Node.js", "PostgreSQL", "JavaScript", "TypeScript", "Python", "SQL"],
   totalExperienceYears: 6,
   location: "Paris",
   remote: "full remote",
   targetSalary: 50000,
+  targetDailyRate: 550,
+  availability: "immédiate",
   languages: ["français", "anglais"],
 };
 
