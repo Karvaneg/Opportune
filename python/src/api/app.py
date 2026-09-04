@@ -30,6 +30,14 @@ message) sous **confirmation explicite obligatoire** (``{"confirm": true}``) : u
 ``approved`` seul ne suffit **jamais**. La candidature exige en plus une décision humaine
 ``approved`` (sinon 409) ; ils sont idempotents (``already_confirmed``) et **simulés** à ce
 stade. Ces routes ne sont montées que si un ``ActionService`` est fourni à ``HermesApi``.
+
+Sécurité (OPP-097) : si un ``AuthProvider`` est fourni, **toute** route métier exige un jeton
+``Authorization: Bearer`` valide (401 sinon), puis un contrôle de **propriété** (l'utilisateur
+n'accède qu'à ses candidats/runs — sinon **404**, on ne révèle pas l'existence d'une ressource
+d'autrui) et, pour la validation humaine et les actions sensibles, le **rôle ``reviewer``**
+(sinon **403**). Le propriétaire est toujours résolu depuis la **ressource persistée**, jamais
+d'un identifiant du corps. Sans ``AuthProvider`` (``auth=None``), l'API reste **ouverte** :
+mode de **compatibilité/test uniquement**, à ne pas utiliser en production.
 """
 
 from __future__ import annotations
@@ -39,6 +47,7 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
+from app.auth import AuthProvider, User
 from app.decision import VALIDATION_STATUSES, Decision, decision_id
 from app.decision_service import PRE_EVALUATION_STATUSES, UnknownDecisionError
 from app.offer_normalization import normalize_contract, normalize_skills
@@ -87,23 +96,36 @@ class HermesApi:
         self,
         orchestrator: HermesOrchestrator,
         actions: ActionService | None = None,
+        auth: AuthProvider | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
         # routes /applications|/messages ne sont pas montées (404), l'API reste utilisable
         # pour la recommandation et les décisions.
         self.actions = actions
+        # Fournisseur d'authentification. ``None`` = **mode ouvert** (compatibilité/test) :
+        # aucune vérification. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur
+        # ``None`` en production. Avec un fournisseur, toute route métier exige un jeton
+        # valide (401) puis contrôle propriété/rôle (404/403).
+        self.auth = auth
 
-    def dispatch(self, method: str, path: str, body: dict | None = None) -> Response:
-        """Route ``(method, path, body)`` vers un handler ; convertit toute ``ApiError``.
+    def dispatch(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        headers: dict | None = None,
+    ) -> Response:
+        """Route ``(method, path, body, headers)`` vers un handler ; convertit toute ``ApiError``.
 
-        Le corps est optionnel ; la query string éventuelle est parsée et transmise aux
-        handlers qui l'exploitent (pagination et filtres de la consultation d'un run).
+        Le corps est optionnel ; la query string est parsée ; les en-têtes servent à
+        l'authentification (``Authorization: Bearer``) quand un fournisseur est configuré.
         """
         path_only, _, query_string = path.partition("?")
         query = parse_qs(query_string)
         try:
-            return self._route(method.upper(), path_only, body or {}, query)
+            user = self._authenticate(headers or {})
+            return self._route(method.upper(), path_only, body or {}, query, user)
         except ApiError as exc:
             return Response(exc.status, {"error": exc.message})
         except Exception:  # noqa: BLE001 — filet de sécurité : jamais de connexion coupée
@@ -111,43 +133,54 @@ class HermesApi:
             # gérée qui remonterait jusqu'au socket (réponse absente / connexion tuée).
             return Response(500, {"error": "erreur interne"})
 
-    def _route(self, method: str, path: str, body: dict, query: dict) -> Response:
+    def _authenticate(self, headers: dict) -> User | None:
+        """Résout l'utilisateur courant : ``None`` en mode ouvert, sinon un ``User`` ou 401."""
+        if self.auth is None:
+            return None
+        user = self.auth.authenticate(headers)
+        if user is None:
+            raise ApiError(401, "authentification requise")
+        return user
+
+    def _route(
+        self, method: str, path: str, body: dict, query: dict, user: User | None
+    ) -> Response:
         match = _RECOMMENDATIONS.match(path)
         if match:
             self._require(method, "POST", path)
-            return self._post_recommendations(unquote(match["candidate_id"]), body)
+            return self._post_recommendations(unquote(match["candidate_id"]), body, user)
 
         match = _RUN_RECOMMENDATIONS.match(path)
         if match:
             self._require(method, "GET", path)
-            return self._get_run_recommendations(unquote(match["run_id"]), query)
+            return self._get_run_recommendations(unquote(match["run_id"]), query, user)
 
         match = _RUN.match(path)
         if match:
             self._require(method, "GET", path)
-            return self._get_run(unquote(match["run_id"]))
+            return self._get_run(unquote(match["run_id"]), user)
 
         match = _RECOMMENDATION_DECISION.match(path)
         if match:
             self._require(method, "POST", path)
-            return self._post_decision(unquote(match["rid"]), body)
+            return self._post_decision(unquote(match["rid"]), body, user)
 
         match = _RECOMMENDATION.match(path)
         if match:
             self._require(method, "GET", path)
-            return self._get_recommendation(unquote(match["rid"]))
+            return self._get_recommendation(unquote(match["rid"]), user)
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
             match = _APPLICATION_CONFIRM.match(path)
             if match:
                 self._require(method, "POST", path)
-                return self._post_application_confirm(unquote(match["rid"]), body)
+                return self._post_application_confirm(unquote(match["rid"]), body, user)
 
             match = _MESSAGE_CONFIRM.match(path)
             if match:
                 self._require(method, "POST", path)
-                return self._post_message_confirm(unquote(match["cid"]), body)
+                return self._post_message_confirm(unquote(match["cid"]), body, user)
 
         raise ApiError(404, f"route inconnue : {method} {path}")
 
@@ -156,7 +189,30 @@ class HermesApi:
         if method != expected:
             raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
-    def _post_recommendations(self, candidate_id: str, body: dict) -> Response:
+    # --- Autorisation (propriété / rôle) : résolue depuis la ressource persistée ---
+
+    @staticmethod
+    def _guard_owner(user: User | None, candidate_id: str) -> None:
+        """Refuse (404) l'accès à une ressource hors du périmètre du propriétaire.
+
+        404 (et non 403) : on ne révèle pas l'existence d'une ressource d'autrui. En mode
+        ouvert (``user is None``), aucune restriction.
+        """
+        if user is not None and not user.owns(candidate_id):
+            raise ApiError(404, "ressource introuvable")
+
+    @staticmethod
+    def _guard_reviewer(user: User | None) -> None:
+        """Exige le rôle ``reviewer`` (403) — pour une ressource que l'utilisateur possède déjà."""
+        if user is not None and not user.is_reviewer:
+            raise ApiError(403, "rôle reviewer requis")
+
+    def _post_recommendations(
+        self, candidate_id: str, body: dict, user: User | None
+    ) -> Response:
+        # Propriété vérifiée sur le ``candidate_id`` **du path** (jamais un id du corps) ;
+        # pas de rôle reviewer requis pour lancer une recommandation.
+        self._guard_owner(user, candidate_id)
         limit = body.get("limit", 10)
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
             raise ApiError(400, "limit doit être un entier ≥ 0")
@@ -225,13 +281,17 @@ class HermesApi:
             return None  # filtres vides : équivalent à pas de filtre
         return {"contract_type": contract_type, "skills": skills}
 
-    def _get_run(self, run_id: str) -> Response:
+    def _get_run(self, run_id: str, user: User | None) -> Response:
         run = self.orchestrator.get_run(run_id)
         if run is None:
             raise ApiError(404, f"run inconnu : {run_id}")
+        # Propriété résolue depuis le run persisté (jamais depuis un id du corps).
+        self._guard_owner(user, run.candidate_id)
         return Response(200, self._serialize_run(run))
 
-    def _get_run_recommendations(self, run_id: str, query: dict) -> Response:
+    def _get_run_recommendations(
+        self, run_id: str, query: dict, user: User | None
+    ) -> Response:
         """Consultation **paginée** des recommandations persistées d'un run.
 
         Paramètres de query : ``page`` (≥ 1, défaut 1), ``page_size`` (1–100, défaut 20),
@@ -256,6 +316,7 @@ class HermesApi:
         run = self.orchestrator.get_run(run_id)
         if run is None:
             raise ApiError(404, f"run inconnu : {run_id}")
+        self._guard_owner(user, run.candidate_id)
         items = self.orchestrator.get_run_recommendation_items(
             run, advisory_status=advisory_status, decision_status=decision_status
         )
@@ -294,13 +355,23 @@ class HermesApi:
         except ValueError:
             raise ApiError(400, f"{key} doit être un entier")
 
-    def _get_recommendation(self, recommendation_id: str) -> Response:
+    def _get_recommendation(self, recommendation_id: str, user: User | None) -> Response:
         decision = self.orchestrator.get_recommendation(recommendation_id)
         if decision is None:
             raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
+        # Propriété résolue depuis la décision persistée (son ``candidate_id``).
+        self._guard_owner(user, decision.candidate_id)
         return Response(200, self._serialize_decision(decision))
 
-    def _post_decision(self, recommendation_id: str, body: dict) -> Response:
+    def _post_decision(self, recommendation_id: str, body: dict, user: User | None) -> Response:
+        # Validation humaine = action réservée : existence → propriété → rôle reviewer,
+        # dans cet ordre (on ne révèle une ressource d'autrui ni son état).
+        if user is not None:
+            decision = self.orchestrator.get_recommendation(recommendation_id)
+            if decision is None:
+                raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
+            self._guard_owner(user, decision.candidate_id)
+            self._guard_reviewer(user)
         verb = body.get("decision")
         # ``verb`` vient du JSON client : un tableau/objet n'est pas hashable et ferait
         # lever ``dict.get`` — on écarte tout ce qui n'est pas une chaîne connue.
@@ -320,13 +391,17 @@ class HermesApi:
             raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
         return Response(200, self._serialize_decision(decision))
 
-    def _post_application_confirm(self, recommendation_id: str, body: dict) -> Response:
+    def _post_application_confirm(
+        self, recommendation_id: str, body: dict, user: User | None
+    ) -> Response:
         """Confirme (explicitement) l'intention de candidater à une recommandation.
 
-        Exige ``{"confirm": true}`` (sinon 400) *et* une décision humaine ``approved``
-        (sinon 409). Idempotent : une seconde confirmation renvoie la même action avec
-        ``already_confirmed: true``.
+        Action sensible : quand l'auth est active, on vérifie **successivement** existence de
+        la cible → propriété → rôle ``reviewer`` (404/404/403) **avant** la garde
+        ``{"confirm": true}`` (400), pour ne rien révéler à un appelant non autorisé. Exige
+        ensuite une décision humaine ``approved`` (sinon 409). Idempotent.
         """
+        self._guard_sensitive_target(user, recommendation_id)
         self._require_confirm(body)
         try:
             action, already = self.actions.confirm_application(recommendation_id)
@@ -334,18 +409,37 @@ class HermesApi:
             raise ApiError(409, str(exc))
         return Response(200, self._serialize_action(action, already))
 
-    def _post_message_confirm(self, contact_id: str, body: dict) -> Response:
+    def _post_message_confirm(
+        self, contact_id: str, body: dict, user: User | None
+    ) -> Response:
         """Confirme (explicitement) l'intention d'envoyer un message à une cible.
 
-        Exige ``{"confirm": true}`` (sinon 400) ; cible inconnue → 404. Idempotent par
-        ``contact_id``.
+        Mêmes gardes d'action sensible que la candidature (existence → propriété → rôle,
+        puis ``{"confirm": true}``). Cible inconnue → 404. Idempotent par ``contact_id``.
         """
+        self._guard_sensitive_target(user, contact_id)
         self._require_confirm(body)
         try:
             action, already = self.actions.confirm_message(contact_id)
         except UnknownTargetError:
             raise ApiError(404, f"cible inconnue : {contact_id}")
         return Response(200, self._serialize_action(action, already))
+
+    def _guard_sensitive_target(self, user: User | None, target_id: str) -> None:
+        """Gardes d'une action sensible : existence → propriété → rôle ``reviewer``.
+
+        La cible d'une action (candidature/message) est une recommandation persistée
+        (``target_id`` = son id) : on résout son propriétaire depuis la décision, jamais
+        depuis le corps. En mode ouvert (``user is None``), aucune garde (l'existence/état
+        est alors traité par le service, cf. OPP-096).
+        """
+        if user is None:
+            return
+        decision = self.orchestrator.get_recommendation(target_id)
+        if decision is None:
+            raise ApiError(404, "cible inconnue")
+        self._guard_owner(user, decision.candidate_id)
+        self._guard_reviewer(user)
 
     @staticmethod
     def _require_confirm(body: dict) -> None:

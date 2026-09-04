@@ -36,7 +36,10 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
             if not isinstance(body, dict):
                 self._write(400, {"error": "le corps doit être un objet JSON"})
                 return
-            response = api.dispatch(method, self.path, body)
+            # Les en-têtes portent l'authentification (Authorization: Bearer …) ; on les
+            # transmet au dispatcher (clé insensible à la casse, gérée en aval).
+            headers = {key: value for key, value in self.headers.items()}
+            response = api.dispatch(method, self.path, body, headers)
             self._write(response.status, response.body)
 
         def do_GET(self) -> None:  # noqa: N802 - nom imposé par http.server
@@ -73,10 +76,15 @@ def create_server(
     return HTTPServer((host, port), make_handler(api))
 
 
-def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
+def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
+    """Compose l'API **de production** : orchestrateur + actions + **authentification**.
+
+    ``auth`` est **obligatoire** : le point d'entrée réseau ne sert jamais l'API en mode
+    ouvert (``auth=None`` est réservé aux tests/compatibilité). Fonction isolée pour être
+    testable — vérifier qu'elle produit bien une API qui **exige** un jeton.
+    """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
-    from app.db import connect
     from app.decision_service import DecisionService
     from app.decision_store import DecisionStore
     from app.offer_store import OfferStore
@@ -85,7 +93,9 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from hermes.orchestrator import HermesOrchestrator
     from hermes.run_store import RunStore
 
-    conn = connect()
+    if auth is None:
+        raise ValueError("assemble_api exige un AuthProvider (pas de mode ouvert en prod)")
+
     decisions = DecisionService(DecisionStore(conn))
     orchestrator = HermesOrchestrator(
         RecommendationService(ProfileStore(conn), OfferStore(conn)),
@@ -95,7 +105,24 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     actions = ActionService(
         decisions, ApplicationActionStore(conn), OutboundMessageActionStore(conn)
     )
-    server = create_server(HermesApi(orchestrator, actions))
+    return HermesApi(orchestrator, actions, auth)
+
+
+def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
+    import os
+
+    from app.auth import REVIEWER, AuthProvider, User
+    from app.db import connect
+
+    token = os.environ.get("OPPORTUNE_API_TOKEN")
+    if not token:
+        raise SystemExit(
+            "OPPORTUNE_API_TOKEN manquant : l'API ne démarre jamais sans authentification."
+        )
+    owned = frozenset(c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c)
+    auth = AuthProvider({token: User(id="demo", role=REVIEWER, owned_candidates=owned)})
+
+    server = create_server(assemble_api(connect(), auth))
     host, port = server.server_address
     print(f"API Hermes à l'écoute sur http://{host}:{port}")
     server.serve_forever()
