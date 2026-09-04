@@ -1,80 +1,130 @@
 # Opportune
 
-Assistant de candidature (analyse d'offres, scoring, personnalisation et suivi), avec intégration Notion pour le pilotage des tickets.
+Assistant de candidature : analyse d'offres, scoring, personnalisation et suivi, avec
+validation humaine avant toute action sortante.
+
+Le projet est en **migration V1 → V2** :
+
+- **V2 (Python) — active.** Le moteur métier, l'orchestrateur **Hermes**, l'API HTTP et
+  un **frontend web de consultation** (React/Vite). C'est là que se fait le développement
+  courant. Code sous `python/` et `frontend/`.
+- **V1 (Node.js) — historique.** Le MVP CLI d'origine (intégration Notion, stockage JSON)
+  vit encore à la racine (`src/`, `index.js`, `package.json`). Conservé comme référence le
+  temps de la migration ; il n'est plus la cible produit.
+
+## Cartographie du dépôt (monorepo)
+
+```
+python/         Back V2 : métier, orchestrateur Hermes, API HTTP, persistance SQLite
+frontend/       Front V2 : dashboard React/Vite de consultation des runs Hermes
+docs/           Vision, definition of done, décisions d'architecture (ADR)
+scripts/        Scripts utilitaires (dont la recette E9)
+handoffs/       Passations de contexte entre sessions
+src/ index.js   V1 Node.js (historique — voir « Legacy V1 » plus bas)
+```
+
+Chaque brique V2 a son propre README détaillé :
+
+- **Back** → [`python/README.md`](python/README.md)
+- **Front** → [`frontend/README.md`](frontend/README.md)
+
+## Architecture V2 (vue d'ensemble)
+
+```
+  ┌────────────┐   HTTP  /api   ┌──────────────┐        ┌───────────────┐
+  │  frontend/ │ ─────────────▶ │  API Python  │ ─────▶ │ Hermes +      │
+  │ React/Vite │  Bearer token  │ (python/api) │        │ métier + LLM  │
+  └────────────┘                └──────────────┘        └───────┬───────┘
+                                        │                        │
+                                        ▼                        ▼
+                                  GET /me, /runs            SQLite (run_store)
+```
+
+- L'API expose la consultation (`GET /me`, `GET /runs`, détail, recommandations paginées)
+  et les actions sensibles (`POST /recommendations/{id}/decision`, `/confirm`) — ces
+  dernières exigent le rôle `reviewer` et une confirmation explicite.
+- Le frontend est en **lecture seule** à ce stade (Epic E9) ; il consomme l'API via un
+  proxy `/api` (cf. [`frontend/README.md`](frontend/README.md)).
+- Auth : jeton porteur validé par `GET /me`, persisté côté client — voir
+  [`docs/adr/0002-auth-frontend-localstorage-me.md`](docs/adr/0002-auth-frontend-localstorage-me.md).
 
 ## Prérequis
 
-- **Node.js ≥ 18** (le projet utilise le lanceur de tests natif `node --test` et l'API `node:test`). Développé et testé avec Node 24.
-- **npm** (fourni avec Node.js).
-- Un **espace Notion** avec une intégration et une base de données de tickets (pour `npm start`).
+- **Python ≥ 3.11** (back) et **Node.js ≥ 18** (front), ou **Docker** (chemin recommandé,
+  reproductible — notamment sous WSL2).
 
-Aucune autre dépendance système : le moteur est en JavaScript pur, sans base de données externe (stockage sur disque en JSON dans `data/`).
+## Démarrage (V2)
 
-## Installation
+### Back — API Python
+
+L'API **refuse de démarrer sans jeton** (`OPPORTUNE_API_TOKEN`). Depuis `python/` :
 
 ```bash
-git clone <url-du-dépôt> Opportune
-cd Opportune
+export OPPORTUNE_API_TOKEN=mon-jeton          # requis
+export OPPORTUNE_API_CANDIDATES=cand-marie    # périmètre : candidats possédés (CSV)
+export OPPORTUNE_DB_PATH=data/opportune.db     # base SQLite (défaut : data/opportune.db)
+# export OPPORTUNE_API_TOKEN_TTL=3600          # optionnel : expiration du jeton (secondes)
+
+python -m api.server                           # écoute sur http://127.0.0.1:8000
+```
+
+### Front — dashboard React
+
+Depuis `frontend/` (l'API doit tourner en parallèle) :
+
+```bash
 npm install
+npm run dev        # http://localhost:5173, proxy /api → http://localhost:8000
 ```
 
-## Configuration
+Cible du proxy surchargeable via `API_PROXY_TARGET` (ex. réseau Docker).
 
-La configuration locale se fait via un fichier `.env.local` (gitignoré, jamais commité). Partir du modèle fourni :
+### Démo Docker de bout en bout
+
+Front et API sur un réseau bridge partagé, ports publiés vers l'hôte (host-networking
+inopérant sous Docker Desktop/WSL2). La recette ci-dessous s'appuie sur cette démo.
+
+## Recette
+
+Recette de bout en bout de l'Epic E9 (login → `/me`, liste, pagination, détail,
+recommandations, erreurs 401/404, accès direct par ID) :
 
 ```bash
-cp .env.example .env.local
+bash scripts/recette-e9.sh
+# ou en ciblant directement l'API :
+BASE=http://localhost:8000 TOKEN=mon-jeton bash scripts/recette-e9.sh
 ```
-
-Puis renseigner les valeurs dans `.env.local` :
-
-| Variable | Rôle | Obligatoire |
-|---|---|---|
-| `NOTION_TOKEN` | Token d'intégration Notion (secret) — voir https://www.notion.so/my-integrations | oui (pour `npm start`) |
-| `NOTION_DATABASE_ID` | ID de la base (database) Notion | oui |
-| `NOTION_DATA_SOURCE_ID` | ID de la data source interrogée par le code (`@notionhq/client` v5) | oui |
-| `NOTION_TICKET_ID_PROP` | Propriété portant l'identifiant du ticket (défaut : `ID`) | non |
-| `NOTION_STATUS_PROP` | Propriété statut à mettre à jour (défaut : `Statut`) | non |
-| `NOTION_DOING_OPTION` | Nom exact de l'option « en cours » (ex. `In Progress`) | non |
-| `NOTION_DONE_OPTION` | Nom exact de l'option « terminé » (ex. `Done`) | non |
-| `LOG_LEVEL` | Seuil des logs applicatifs : `debug`, `info`, `warn`, `error` (défaut : `info`) | non |
-
-Le fichier `.env.local` est chargé automatiquement au démarrage (via `dotenv`, cf. `src/notion/client.js`). Les secrets ne sont jamais journalisés (masquage assuré par le logger et `config/secrets`).
-
-## Lancement
-
-```bash
-npm start
-```
-
-Récupère les tickets depuis Notion et affiche le prochain ticket recommandé, les tickets urgents et les priorités suggérées.
 
 ## Tests
 
+- **Back** : `cd python && docker compose run --rm app pytest -q`
+- **Front** : `cd frontend && docker run --rm -v "$PWD":/app -v /app/node_modules opportune-frontend:dev npm test`
+
+Détails et variantes (venv local, lint, build) dans les READMEs respectifs.
+
+## Configuration
+
+Les variables sensibles se placent dans un `.env.local` (gitignoré, jamais commité).
+Voir `.env.example` et les READMEs de chaque brique pour la liste complète.
+
+## Documentation
+
+- [`docs/vision.md`](docs/vision.md) — vision produit
+- [`docs/definition-of-done.md`](docs/definition-of-done.md) — definition of done
+- [`docs/adr/`](docs/adr/) — décisions d'architecture (ADR)
+
+## Legacy V1 (Node.js)
+
+Le MVP CLI d'origine reste exécutable depuis la racine (récupère les tickets Notion et
+suggère le prochain à traiter). Il n'est plus la cible produit ; la logique métier migre
+vers `python/`.
+
 ```bash
-npm test
+npm install
+cp .env.example .env.local   # renseigner NOTION_TOKEN, NOTION_DATABASE_ID, NOTION_DATA_SOURCE_ID…
+npm start                    # affiche le prochain ticket recommandé
+npm test                     # suite V1 via node --test
 ```
 
-Lance l'intégralité de la suite via `node --test` (aucun framework externe).
-
-## Structure du projet
-
-```
-src/
-  config/     Configuration et secrets (chargement .env, masquage)
-  errors/     Hiérarchie d'erreurs typées
-  fixtures/   Jeux de données de test (offres d'exemple)
-  logging/    Logger applicatif structuré
-  models/     Modèles de données + persistance JSON (profil, offre, candidature…)
-  notion/     Intégration Notion (client, requêtes, mutations)
-  services/   Cœur métier (analyse, scoring, personnalisation, suivi)
-  display/    Formatage pour l'affichage terminal
-  index.js    Point d'entrée (npm start)
-docs/         Documentation projet (vision, definition of done)
-scripts/      Scripts utilitaires
-data/         Données locales persistées (gitignoré)
-```
-
-## Données locales
-
-Les données personnelles et les documents générés sont stockés en JSON sous `data/` (dossier gitignoré). Ils restent donc uniquement sur votre machine.
+Les données locales V1 sont stockées en JSON sous `data/` (gitignoré) et ne quittent pas
+votre machine.
