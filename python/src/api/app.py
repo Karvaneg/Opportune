@@ -7,6 +7,7 @@ C'est là que vit le routage ; ``server.py`` n'en est que l'adaptateur socket.
 Endpoints :
 
     GET  /me                                           (OPP-103, sonde d'auth + identité)
+    GET  /runs                                          (OPP-101, listing paginé, périmètre)
     POST /candidates/{candidate_id}/recommendations   (OPP-093, filtres OPP-095)
     GET  /runs/{run_id}                                (OPP-094)
     GET  /runs/{run_id}/recommendations                (OPP-095, paginé + filtres)
@@ -53,7 +54,7 @@ from app.decision import VALIDATION_STATUSES, Decision, decision_id
 from app.decision_service import PRE_EVALUATION_STATUSES, UnknownDecisionError
 from app.offer_normalization import normalize_contract, normalize_skills
 from app.recommendation_service import UnknownCandidateError
-from hermes.models import HermesRun, OfferEvaluation
+from hermes.models import HermesRun, HermesRunSummary, OfferEvaluation
 from hermes.orchestrator import HermesOrchestrator
 
 
@@ -76,6 +77,7 @@ class ApiError(Exception):
 
 # Routes connues (chemin sans query string).
 _ME = re.compile(r"^/me$")
+_RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
 _RUN_RECOMMENDATIONS = re.compile(r"^/runs/(?P<run_id>[^/]+)/recommendations$")
 _RUN = re.compile(r"^/runs/(?P<run_id>[^/]+)$")
@@ -154,6 +156,10 @@ class HermesApi:
         if _ME.match(path):
             self._require(method, "GET", path)
             return self._get_me(user)
+
+        if _RUNS.match(path):
+            self._require(method, "GET", path)
+            return self._get_runs(query, user)
 
         match = _RECOMMENDATIONS.match(path)
         if match:
@@ -321,6 +327,39 @@ class HermesApi:
         if contract_type is None and not skills:
             return None  # filtres vides : équivalent à pas de filtre
         return {"contract_type": contract_type, "skills": skills}
+
+    def _get_runs(self, query: dict, user: User | None) -> Response:
+        """Listing **paginé** des runs du périmètre (plus récents d'abord).
+
+        Périmètre : en mode authentifié, seuls les runs des candidats **possédés** sont
+        listés (un périmètre vide → liste vide) ; on ne révèle jamais les runs d'autrui, et
+        aucun 404 n'est requis — une collection filtrée ne divulgue pas l'existence de
+        ressources tierces (cohérent OPP-097). En mode ouvert, tous les runs. Conventions de
+        pagination identiques à ``GET /runs/{run_id}/recommendations`` ; ``total`` est le
+        cardinal **avant** découpe en page.
+        """
+        page = self._query_int(query, "page", 1)
+        if page < 1:
+            raise ApiError(400, "page doit être un entier ≥ 1")
+        page_size = self._query_int(query, "page_size", 20)
+        if not 1 <= page_size <= 100:
+            raise ApiError(400, "page_size doit être un entier entre 1 et 100")
+
+        scope = None if user is None else user.owned_candidates
+        summaries, total = self.orchestrator.list_run_summaries(
+            scope, limit=page_size, offset=(page - 1) * page_size
+        )
+        total_pages = (total + page_size - 1) // page_size  # 0 si total == 0
+        return Response(
+            200,
+            {
+                "items": [self._serialize_run_summary(s) for s in summaries],
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": total_pages,
+            },
+        )
 
     def _get_run(self, run_id: str, user: User | None) -> Response:
         run = self.orchestrator.get_run(run_id)
@@ -521,6 +560,18 @@ class HermesApi:
             "title": evaluation.title,
             "company": evaluation.company,
             "justification": evaluation.justification,
+        }
+
+    @staticmethod
+    def _serialize_run_summary(summary: HermesRunSummary) -> dict:
+        """Sérialise le résumé d'un run pour le **listing** : identité + volumétrie, sans les
+        évaluations détaillées (lourdes). Le détail se consulte via ``GET /runs/{run_id}``."""
+        return {
+            "run_id": summary.run_id,
+            "candidate_id": summary.candidate_id,
+            "executed_at": summary.executed_at,
+            "evaluation_count": summary.evaluation_count,
+            "error_count": summary.error_count,
         }
 
     @staticmethod

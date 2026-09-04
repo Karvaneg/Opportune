@@ -1,0 +1,146 @@
+"""Tests du listing paginé des runs — ``GET /runs`` (OPP-101).
+
+Vérifie : ordre antéchronologique, filtrage par **périmètre** (l'utilisateur ne voit que
+les runs de ses candidats), pagination (page/page_size/total/total_pages), forme **résumé**
+(volumétrie sans les évaluations détaillées), authentification (401) et validation (400).
+Les runs sont semés directement via ``RunStore`` pour contrôler dates et périmètres.
+"""
+
+import pytest
+
+from api.app import HermesApi
+from app.auth import REVIEWER, AuthProvider, User
+from app.db import connect
+from app.decision_service import DecisionService
+from app.decision_store import DecisionStore
+from app.offer_store import OfferStore
+from app.profile_store import ProfileStore
+from app.recommendation_service import RecommendationService
+from hermes.models import HermesRun, OfferEvaluation
+from hermes.orchestrator import HermesOrchestrator
+from hermes.run_store import RunStore
+
+
+def _hdr(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _run(run_id: str, candidate_id: str, executed_at: str, *, evals=0, errs=0) -> HermesRun:
+    evaluations = tuple(OfferEvaluation(f"off-{i}", 50) for i in range(evals))
+    errors = tuple(f"err-{i}" for i in range(errs))
+    return HermesRun(run_id, candidate_id, executed_at, evaluations, errors)
+
+
+@pytest.fixture
+def api_and_runs():
+    conn = connect(":memory:")
+    runs = RunStore(conn)
+    # cand-1 : deux runs (01/09 et 03/09) ; cand-2 : un run (02/09).
+    runs.save(_run("r-a1", "cand-1", "2026-09-01T10:00:00+00:00", evals=1))
+    runs.save(_run("r-a2", "cand-1", "2026-09-03T10:00:00+00:00", evals=2, errs=1))
+    runs.save(_run("r-b1", "cand-2", "2026-09-02T10:00:00+00:00", evals=0))
+
+    orchestrator = HermesOrchestrator(
+        RecommendationService(ProfileStore(conn), OfferStore(conn)),
+        DecisionService(DecisionStore(conn)),
+        runs=runs,
+    )
+    auth = AuthProvider({
+        "tok-1": User("u1", REVIEWER, frozenset({"cand-1"})),
+        "tok-both": User("u2", REVIEWER, frozenset({"cand-1", "cand-2"})),
+        "tok-none": User("u3", REVIEWER, frozenset()),
+    })
+    yield HermesApi(orchestrator, None, auth), orchestrator
+    conn.close()
+
+
+def _ids(resp) -> list[str]:
+    return [item["run_id"] for item in resp.body["items"]]
+
+
+# --- Périmètre + ordre --------------------------------------------------------
+
+def test_lists_only_owned_runs_newest_first(api_and_runs):
+    api, _ = api_and_runs
+    resp = api.dispatch("GET", "/runs", None, _hdr("tok-1"))
+    assert resp.status == 200
+    # cand-1 uniquement, plus récent d'abord.
+    assert _ids(resp) == ["r-a2", "r-a1"]
+
+
+def test_scope_spanning_multiple_candidates(api_and_runs):
+    api, _ = api_and_runs
+    resp = api.dispatch("GET", "/runs", None, _hdr("tok-both"))
+    assert _ids(resp) == ["r-a2", "r-b1", "r-a1"]  # 03/09, 02/09, 01/09
+
+
+def test_empty_scope_returns_empty_list(api_and_runs):
+    api, _ = api_and_runs
+    resp = api.dispatch("GET", "/runs", None, _hdr("tok-none"))
+    assert resp.status == 200
+    assert resp.body["items"] == [] and resp.body["total"] == 0
+
+
+# --- Forme résumé -------------------------------------------------------------
+
+def test_summary_shape_has_counts_not_evaluations(api_and_runs):
+    api, _ = api_and_runs
+    resp = api.dispatch("GET", "/runs", None, _hdr("tok-1"))
+    top = resp.body["items"][0]  # r-a2 : 2 évaluations, 1 erreur
+    assert top == {
+        "run_id": "r-a2",
+        "candidate_id": "cand-1",
+        "executed_at": "2026-09-03T10:00:00+00:00",
+        "evaluation_count": 2,
+        "error_count": 1,
+    }
+    assert "evaluations" not in top  # listing ≠ détail (pas de payload lourd)
+
+
+# --- Pagination ---------------------------------------------------------------
+
+def test_pagination_slices_and_counts(api_and_runs):
+    api, _ = api_and_runs
+    p1 = api.dispatch("GET", "/runs?page=1&page_size=2", None, _hdr("tok-both"))
+    assert _ids(p1) == ["r-a2", "r-b1"]
+    assert (p1.body["total"], p1.body["total_pages"], p1.body["page"]) == (3, 2, 1)
+    p2 = api.dispatch("GET", "/runs?page=2&page_size=2", None, _hdr("tok-both"))
+    assert _ids(p2) == ["r-a1"]
+    assert p2.body["page"] == 2
+
+
+@pytest.mark.parametrize("qs", ["page=0", "page_size=0", "page_size=101", "page=x"])
+def test_invalid_pagination_is_400(api_and_runs, qs):
+    api, _ = api_and_runs
+    assert api.dispatch("GET", f"/runs?{qs}", None, _hdr("tok-1")).status == 400
+
+
+# --- Auth + méthode -----------------------------------------------------------
+
+def test_requires_authentication(api_and_runs):
+    api, _ = api_and_runs
+    assert api.dispatch("GET", "/runs", None, None).status == 401
+    assert api.dispatch("GET", "/runs", None, _hdr("wrong")).status == 401
+
+
+def test_rejects_non_get(api_and_runs):
+    api, _ = api_and_runs
+    assert api.dispatch("POST", "/runs", {}, _hdr("tok-1")).status == 405
+
+
+# --- Mode ouvert --------------------------------------------------------------
+
+def test_open_mode_lists_all_runs():
+    conn = connect(":memory:")
+    runs = RunStore(conn)
+    runs.save(_run("r-a1", "cand-1", "2026-09-01T10:00:00+00:00"))
+    runs.save(_run("r-b1", "cand-2", "2026-09-02T10:00:00+00:00"))
+    orchestrator = HermesOrchestrator(
+        RecommendationService(ProfileStore(conn), OfferStore(conn)),
+        DecisionService(DecisionStore(conn)),
+        runs=runs,
+    )
+    resp = HermesApi(orchestrator).dispatch("GET", "/runs", None, None)
+    assert resp.status == 200
+    assert _ids(resp) == ["r-b1", "r-a1"]  # tous, newest-first
+    conn.close()

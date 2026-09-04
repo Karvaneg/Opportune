@@ -26,6 +26,7 @@ Contrat de coordination :
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
@@ -34,7 +35,12 @@ from app.decision import Decision
 from app.decision_service import DecisionService
 from app.recommendation_service import OfferRecommendation, RecommendationService
 
-from hermes.models import HermesRecommendation, HermesRun, OfferEvaluation
+from hermes.models import (
+    HermesRecommendation,
+    HermesRun,
+    HermesRunSummary,
+    OfferEvaluation,
+)
 from hermes.run_store import RunRepository
 
 
@@ -282,6 +288,22 @@ class HermesOrchestrator:
     def get_run(self, run_id: str) -> HermesRun | None:
         """Retourne l'exécution journalisée d'``run_id``, ou ``None`` (dépôt absent inclus)."""
         return None if self.runs is None else self.runs.get(run_id)
+
+    def list_run_summaries(
+        self,
+        candidate_ids: Collection[str] | None = None,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[HermesRunSummary], int]:
+        """Résumés **paginés** des runs du périmètre + total ; ``([], 0)`` si dépôt absent.
+
+        ``candidate_ids=None`` → tous les runs (mode ouvert) ; sinon restreint au périmètre.
+        La pagination (``limit`` / ``offset``) et le comptage sont délégués au dépôt (SQL).
+        """
+        if self.runs is None:
+            return [], 0
+        return self.runs.list_run_summaries(candidate_ids, limit=limit, offset=offset)
 
     def get_run_recommendation_items(
         self,
