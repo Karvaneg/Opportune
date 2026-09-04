@@ -3,9 +3,9 @@ import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-qu
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
 import { ApiHttpError } from "./api/client";
 import { useAuth } from "./auth/AuthContext";
-import { HomePage } from "./pages/HomePage";
 import { LoginGate } from "./pages/LoginGate";
 import { RunDetailPage } from "./pages/RunDetailPage";
+import { RunsListPage } from "./pages/RunsListPage";
 
 export function App() {
   const { status, token, identity, logout } = useAuth();
@@ -63,7 +63,7 @@ export function App() {
           </header>
           <main className="mx-auto max-w-4xl px-4 py-6">
             <Routes>
-              <Route path="/" element={<HomePage />} />
+              <Route path="/" element={<RunsListPage />} />
               <Route path="/runs/:runId" element={<RunDetailPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

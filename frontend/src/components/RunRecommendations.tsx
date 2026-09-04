@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRunRecommendations } from "../api/runs";
+import { Pager } from "./Pager";
 import { ErrorNotice, Loading } from "./States";
 import { StatusBadge } from "./StatusBadge";
 
@@ -40,27 +41,14 @@ export function RunRecommendations({ runId }: { runId: string }) {
         ))}
       </ul>
 
-      <div className="flex items-center justify-between text-sm text-slate-500">
-        <span>
-          Page {data.page} / {Math.max(data.total_pages, 1)} · {data.total} au total
-        </span>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={data.page <= 1 || isFetching}
-            className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
-          >
-            Précédent
-          </button>
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            disabled={data.page >= data.total_pages || isFetching}
-            className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
-          >
-            Suivant
-          </button>
-        </div>
-      </div>
+      <Pager
+        page={data.page}
+        totalPages={data.total_pages}
+        total={data.total}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => p + 1)}
+        busy={isFetching}
+      />
     </div>
   );
 }
