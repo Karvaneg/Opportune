@@ -257,3 +257,28 @@ class HermesOrchestrator:
             "pending_review": pending,
             "rejected": rejected,
         }
+
+    # --- Consultation et décision humaine (adressées par identifiant) -------------
+
+    def get_run(self, run_id: str) -> HermesRun | None:
+        """Retourne l'exécution journalisée d'``run_id``, ou ``None`` (dépôt absent inclus)."""
+        return None if self.runs is None else self.runs.get(run_id)
+
+    def get_recommendation(self, recommendation_id: str) -> Decision | None:
+        """Retourne la décision (recommandation persistée) d'identifiant donné, ou ``None``.
+
+        ``recommendation_id`` est l'id stable du couple candidat/offre (cf. ``decision_id``).
+        """
+        return self.decisions.get(recommendation_id)
+
+    def record_human_decision(
+        self, recommendation_id: str, status: str, *, comment: str | None = None
+    ) -> Decision:
+        """Applique une validation humaine à une recommandation, adressée par son id.
+
+        ``status`` ∈ {``approved``, ``rejected``, ``deferred``}. Délègue à
+        ``DecisionService.validate_by_id`` : la décision est persistée et historisée.
+        Propage ``UnknownDecisionError`` si l'id est inconnu et ``DecisionError`` si le
+        statut n'est pas un statut de validation humaine.
+        """
+        return self.decisions.validate_by_id(recommendation_id, status, comment=comment)

@@ -116,10 +116,26 @@ class DecisionService:
         le score et la justification d'origine restent immuables ; le changement est
         historisé.
         """
-        stored_id = decision_id(candidate_id, offer_id)
-        existing = self.decisions.get(stored_id)
+        return self.validate_by_id(
+            decision_id(candidate_id, offer_id), status, comment=comment
+        )
+
+    def get(self, decision_ref: str) -> Decision | None:
+        """Retourne la décision d'identifiant ``decision_ref``, ou ``None`` si absente."""
+        return self.decisions.get(decision_ref)
+
+    def validate_by_id(
+        self, decision_ref: str, status: str, *, comment: str | None = None
+    ) -> Decision:
+        """Comme ``validate`` mais adressée par l'identifiant de décision directement.
+
+        Utile quand l'appelant ne dispose que de l'id stable (couple candidat/offre encodé),
+        p. ex. l'API. Lève ``UnknownDecisionError`` si la décision est introuvable, et
+        ``DecisionError`` si le statut n'est pas humain.
+        """
+        existing = self.decisions.get(decision_ref)
         if existing is None:
-            raise UnknownDecisionError(f"Décision introuvable : {stored_id!r}")
+            raise UnknownDecisionError(f"Décision introuvable : {decision_ref!r}")
         updated = validate(existing, status, comment=comment, **self._clock_kwargs())
         self.decisions.save(updated)
         return updated
