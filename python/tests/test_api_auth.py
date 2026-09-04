@@ -298,3 +298,46 @@ def test_server_rejects_unauthenticated_request_over_http():
         server.server_close()
         thread.join()
     conn.close()
+
+
+# --- GET /me : sonde d'authentification + identité (OPP-103) ------------------
+
+def test_me_returns_identity_for_valid_token(env):
+    api, _ = env
+    resp = api.dispatch("GET", "/me", None, _hdr("tok-rev"))
+    assert resp.status == 200
+    assert resp.body == {"id": "rev", "role": REVIEWER, "owned_count": 1}
+
+
+def test_me_reflects_role_and_scope(env):
+    api, _ = env
+    # tok-view : rôle non-reviewer, périmètre cand-1 ; tok-str : reviewer, périmètre cand-2.
+    assert api.dispatch("GET", "/me", None, _hdr("tok-view")).body["role"] == "viewer"
+    assert api.dispatch("GET", "/me", None, _hdr("tok-str")).body["id"] == "str"
+
+
+def test_me_requires_authentication(env):
+    api, _ = env
+    assert api.dispatch("GET", "/me", None, None).status == 401
+    assert api.dispatch("GET", "/me", None, _hdr("wrong")).status == 401
+
+
+def test_me_rejects_non_get(env):
+    api, _ = env
+    assert api.dispatch("POST", "/me", {}, _hdr("tok-rev")).status == 405
+
+
+def test_me_open_mode_has_no_identity():
+    # Sans AuthProvider (mode ouvert/test) : route accessible, identité nulle.
+    conn = connect(":memory:")
+    _profile(conn)
+    OfferStore(conn).save(_offer())
+    orchestrator = HermesOrchestrator(
+        RecommendationService(ProfileStore(conn), OfferStore(conn)),
+        DecisionService(DecisionStore(conn)),
+        runs=RunStore(conn),
+    )
+    resp = HermesApi(orchestrator).dispatch("GET", "/me", None, None)
+    assert resp.status == 200
+    assert resp.body == {"id": None, "role": None, "owned_count": 0}
+    conn.close()
