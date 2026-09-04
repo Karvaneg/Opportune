@@ -46,6 +46,11 @@ class _FlakyDecisions:
             raise RuntimeError("échec simulé")
         return self._real.decide(recommendation, candidate_id)
 
+    def __getattr__(self, name):
+        # Tout le reste (evaluate, get, validate, list_for_candidate…) est délégué au
+        # service réel : le fake ne surcharge que ``decide`` pour simuler des échecs.
+        return getattr(self._real, name)
+
 
 @pytest.fixture
 def env():

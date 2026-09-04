@@ -40,6 +40,25 @@ class UnknownCandidateError(Exception):
     """Aucun profil candidat ne correspond à l'``candidate_id`` fourni."""
 
 
+def _matches_filters(
+    offer: Offer, contract_type: str | None, skills: list[str]
+) -> bool:
+    """Filtre déterministe appliqué **avant** le classement (donc avant ``limit``).
+
+    - ``contract_type`` : correspondance exacte au type (déjà normalisé) de l'offre ;
+      ``None`` = pas de contrainte.
+    - ``skills`` : sémantique **ALL** — l'offre doit mentionner *toutes* les compétences
+      demandées (comparaison insensible à la casse) ; liste vide = pas de contrainte.
+    """
+    if contract_type is not None and offer.contract_type != contract_type:
+        return False
+    if skills:
+        owned = {s.lower() for s in offer.skills}
+        if not all(s.lower() in owned for s in skills):
+            return False
+    return True
+
+
 @dataclass(frozen=True)
 class OfferRecommendation:
     """Une offre recommandée à un candidat, avec sa justification."""
@@ -77,10 +96,15 @@ class RecommendationService:
         min_score: int | None = None,
         high: int = DEFAULT_HIGH,
         medium: int = DEFAULT_MEDIUM,
+        filters: dict | None = None,
     ) -> list[OfferRecommendation]:
         """Retourne les offres recommandées au candidat, classées par score décroissant.
 
         - ``min_score`` : seuil d'inclusion ; les offres en dessous sont écartées.
+        - ``filters`` (optionnel) : restreint le stock **avant** scoring et coupe ``limit``,
+          via ``contract_type`` (correspondance exacte) et ``skills`` (sémantique ALL). La
+          normalisation/validation des valeurs incombe à l'appelant ; ici on applique un
+          dict déjà propre ``{"contract_type": str | None, "skills": list[str]}``.
         - Les offres **non évaluables** (score ``None``, aucune dimension mesurable)
           sont exclues du classement.
         - ``limit`` : nombre maximal de recommandations retournées.
@@ -96,8 +120,13 @@ class RecommendationService:
         if profile is None:
             raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
 
+        contract_type = (filters or {}).get("contract_type")
+        skills = (filters or {}).get("skills") or []
+
         recommendations: list[OfferRecommendation] = []
         for offer in self.offers.list_all():
+            if not _matches_filters(offer, contract_type, skills):
+                continue
             explanation = explain_score(match_offer_to_profile(offer, profile))
             score = explanation.score
             if score is None:  # non évaluable → non classable

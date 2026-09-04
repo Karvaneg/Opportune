@@ -124,6 +124,14 @@ class DecisionService:
         """Retourne la décision d'identifiant ``decision_ref``, ou ``None`` si absente."""
         return self.decisions.get(decision_ref)
 
+    def list_for_candidate(self, candidate_id: str) -> list[Decision]:
+        """Retourne toutes les décisions persistées d'un candidat, en **une** lecture.
+
+        Sert à résoudre en lot l'état de décision courant de plusieurs recommandations
+        (p. ex. la consultation paginée d'un run) sans un appel ``get`` par offre.
+        """
+        return self.decisions.list_for_candidate(candidate_id)
+
     def validate_by_id(
         self, decision_ref: str, status: str, *, comment: str | None = None
     ) -> Decision:
