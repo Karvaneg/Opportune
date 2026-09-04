@@ -133,6 +133,31 @@ def test_foreign_resource_is_404_not_403(env, path):
     assert resp.status == 404
 
 
+@pytest.mark.parametrize("existing,missing", [
+    ("/runs/run-1", "/runs/ghost"),
+    ("/runs/run-1/recommendations", "/runs/ghost/recommendations"),
+    (f"/recommendations/{_RID}", f"/recommendations/{decision_id('cand-1', 'ghost')}"),
+])
+def test_foreign_and_missing_are_indistinguishable(env, existing, missing):
+    """Anti-énumération : une ressource existante hors périmètre et une ressource
+    inexistante renvoient un 404 au **corps identique** — sinon l'existence fuite."""
+    api, _ = env
+    foreign = api.dispatch("GET", existing, None, _hdr("tok-str"))   # existe, pas à str
+    absent = api.dispatch("GET", missing, None, _hdr("tok-str"))     # n'existe pas
+    assert foreign.status == absent.status == 404
+    assert foreign.body == absent.body
+
+
+def test_sensitive_action_foreign_and_missing_indistinguishable(env):
+    """Même garantie sur les actions sensibles (cible existante d'autrui vs inexistante)."""
+    api, _ = env
+    ghost = decision_id("cand-1", "ghost")
+    foreign = api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True}, _hdr("tok-str"))
+    absent = api.dispatch("POST", f"/applications/{ghost}/confirm", {"confirm": True}, _hdr("tok-str"))
+    assert foreign.status == absent.status == 404
+    assert foreign.body == absent.body
+
+
 def test_post_recommendations_foreign_candidate_is_404(env):
     api, _ = env
     resp = api.dispatch(

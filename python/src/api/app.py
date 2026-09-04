@@ -88,6 +88,10 @@ _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferr
 # Clés de filtre acceptées par POST /recommendations (toute autre clé → 400 explicite).
 _ALLOWED_FILTER_KEYS = {"contract_type", "skills"}
 
+# Corps 404 générique en mode authentifié : « absent » et « hors périmètre » doivent être
+# indistinguables pour ne pas révéler l'existence d'une ressource d'autrui (anti-énumération).
+_NOT_FOUND = "ressource introuvable"
+
 
 class HermesApi:
     """Adapte l'orchestrateur Hermes en une API requête → réponse, sans transport."""
@@ -199,13 +203,24 @@ class HermesApi:
         ouvert (``user is None``), aucune restriction.
         """
         if user is not None and not user.owns(candidate_id):
-            raise ApiError(404, "ressource introuvable")
+            raise ApiError(404, _NOT_FOUND)
 
     @staticmethod
     def _guard_reviewer(user: User | None) -> None:
         """Exige le rôle ``reviewer`` (403) — pour une ressource que l'utilisateur possède déjà."""
         if user is not None and not user.is_reviewer:
             raise ApiError(403, "rôle reviewer requis")
+
+    @staticmethod
+    def _not_found(user: User | None, open_message: str) -> ApiError:
+        """404 pour une ressource absente, **indistinguable** d'un refus de propriété.
+
+        En mode authentifié (``user is not None``), le corps est le **même** message
+        générique que ``_guard_owner`` : sans quoi un appelant distinguerait « n'existe
+        pas » de « existe mais hors périmètre » et pourrait énumérer les ressources
+        d'autrui. En mode ouvert, aucun enjeu d'énumération → message descriptif conservé.
+        """
+        return ApiError(404, _NOT_FOUND if user is not None else open_message)
 
     def _post_recommendations(
         self, candidate_id: str, body: dict, user: User | None
@@ -284,7 +299,7 @@ class HermesApi:
     def _get_run(self, run_id: str, user: User | None) -> Response:
         run = self.orchestrator.get_run(run_id)
         if run is None:
-            raise ApiError(404, f"run inconnu : {run_id}")
+            raise self._not_found(user, f"run inconnu : {run_id}")
         # Propriété résolue depuis le run persisté (jamais depuis un id du corps).
         self._guard_owner(user, run.candidate_id)
         return Response(200, self._serialize_run(run))
@@ -315,7 +330,7 @@ class HermesApi:
 
         run = self.orchestrator.get_run(run_id)
         if run is None:
-            raise ApiError(404, f"run inconnu : {run_id}")
+            raise self._not_found(user, f"run inconnu : {run_id}")
         self._guard_owner(user, run.candidate_id)
         items = self.orchestrator.get_run_recommendation_items(
             run, advisory_status=advisory_status, decision_status=decision_status
@@ -358,7 +373,7 @@ class HermesApi:
     def _get_recommendation(self, recommendation_id: str, user: User | None) -> Response:
         decision = self.orchestrator.get_recommendation(recommendation_id)
         if decision is None:
-            raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
+            raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
         # Propriété résolue depuis la décision persistée (son ``candidate_id``).
         self._guard_owner(user, decision.candidate_id)
         return Response(200, self._serialize_decision(decision))
@@ -369,7 +384,7 @@ class HermesApi:
         if user is not None:
             decision = self.orchestrator.get_recommendation(recommendation_id)
             if decision is None:
-                raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
+                raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
             self._guard_owner(user, decision.candidate_id)
             self._guard_reviewer(user)
         verb = body.get("decision")
@@ -388,7 +403,7 @@ class HermesApi:
                 recommendation_id, status, comment=comment
             )
         except UnknownDecisionError:
-            raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
+            raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
         return Response(200, self._serialize_decision(decision))
 
     def _post_application_confirm(
@@ -437,7 +452,8 @@ class HermesApi:
             return
         decision = self.orchestrator.get_recommendation(target_id)
         if decision is None:
-            raise ApiError(404, "cible inconnue")
+            # Authentifié : même 404 que le refus de propriété (anti-énumération).
+            raise self._not_found(user, "cible inconnue")
         self._guard_owner(user, decision.candidate_id)
         self._guard_reviewer(user)
 
