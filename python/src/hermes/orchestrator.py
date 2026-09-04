@@ -139,22 +139,7 @@ class HermesOrchestrator:
             human_decision = orchestrator.validate_decision(cand, offer, ...)  # définitive
         """
         recommendations = self.recommendations.recommend(candidate_id, limit=limit)
-
-        approved: list[OfferRecommendation] = []
-        pending: list[OfferRecommendation] = []
-        rejected: list[OfferRecommendation] = []
-        buckets = {"approved": approved, "pending": pending, "rejected": rejected}
-
-        for recommendation in recommendations:
-            outcome = self.decisions.evaluate(recommendation)
-            buckets[outcome.status].append(recommendation)
-
-        return {
-            "candidate_id": candidate_id,
-            "recommendations": approved,
-            "pending_review": pending,
-            "rejected": rejected,
-        }
+        return self._bucket(candidate_id, recommendations)
 
     def run_for_candidate(
         self,
@@ -174,12 +159,49 @@ class HermesOrchestrator:
         retournée. Propage ``UnknownCandidateError`` (candidat inconnu) et ``ValueError``
         (``limit`` négatif) *avant* toute écriture : aucun run n'est alors enregistré.
         """
+        recommendations = self.recommendations.recommend(candidate_id, limit=limit)
+        run, _ = self._execute(candidate_id, recommendations)
+        return run
+
+    def run_and_evaluate_for_candidate(
+        self,
+        candidate_id: str,
+        limit: int = 10,
+    ) -> tuple[HermesRun, dict]:
+        """Recommande **une seule fois**, journalise l'exécution *et* pré-évalue, d'un bloc.
+
+        Combine ``run_for_candidate`` (persistance + trace) et ``evaluate_for_candidate``
+        (tri par statut) en une **unique** passe de recommandation — au lieu de dérouler
+        deux fois le pipeline. Surtout, garantit la cohérence entre ce qui est persisté et
+        ce qui est présenté : une offre dont la décision échoue est tracée dans
+        ``run.errors`` et **exclue** des buckets renvoyés (jamais présentée comme évaluée).
+
+        Retourne le couple ``(run, buckets)``, ``buckets`` ayant la forme
+        d'``evaluate_for_candidate``. Propage ``UnknownCandidateError`` et ``ValueError``
+        avant toute écriture.
+        """
+        recommendations = self.recommendations.recommend(candidate_id, limit=limit)
+        run, persisted = self._execute(candidate_id, recommendations)
+        return run, self._bucket(candidate_id, persisted)
+
+    def _execute(
+        self,
+        candidate_id: str,
+        recommendations: list[OfferRecommendation],
+    ) -> tuple[HermesRun, list[OfferRecommendation]]:
+        """Persiste une décision par recommandation en journalisant l'exécution.
+
+        Chaque erreur **par offre** est capturée dans le run et n'interrompt pas les
+        suivantes (reprise idempotente à l'exécution suivante). Retourne le run — persisté
+        si un dépôt ``runs`` est configuré — et la sous-liste des recommandations
+        effectivement persistées (offres en erreur exclues).
+        """
         run_id = self._run_id()
         executed_at = self._now()
-        recommendations = self.recommendations.recommend(candidate_id, limit=limit)
 
         evaluations: list[OfferEvaluation] = []
         errors: list[str] = []
+        persisted: list[OfferRecommendation] = []
         for recommendation in recommendations:
             offer_id = recommendation.offer.id
             try:
@@ -197,6 +219,7 @@ class HermesOrchestrator:
                     decision_status=decision.status,
                 )
             )
+            persisted.append(recommendation)
 
         run = HermesRun(
             run_id=run_id,
@@ -207,4 +230,30 @@ class HermesOrchestrator:
         )
         if self.runs is not None:
             self.runs.save(run)
-        return run
+        return run, persisted
+
+    def _bucket(
+        self,
+        candidate_id: str,
+        recommendations: list[OfferRecommendation],
+    ) -> dict:
+        """Trie des recommandations par statut de **pré-évaluation automatique**.
+
+        Délègue le triage à ``DecisionService.evaluate`` (pur, sans persistance) et
+        regroupe par statut, en préservant l'ordre de classement au sein de chaque groupe.
+        """
+        approved: list[OfferRecommendation] = []
+        pending: list[OfferRecommendation] = []
+        rejected: list[OfferRecommendation] = []
+        buckets = {"approved": approved, "pending": pending, "rejected": rejected}
+
+        for recommendation in recommendations:
+            outcome = self.decisions.evaluate(recommendation)
+            buckets[outcome.status].append(recommendation)
+
+        return {
+            "candidate_id": candidate_id,
+            "recommendations": approved,
+            "pending_review": pending,
+            "rejected": rejected,
+        }
