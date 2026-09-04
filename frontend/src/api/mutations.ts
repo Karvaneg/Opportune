@@ -28,7 +28,12 @@ export function useApiMutation<TData, TVariables = void>({
   const queryClient = useQueryClient();
 
   return useMutation<TData, Error, TVariables>({
-    mutationFn: (variables) => mutationFn(variables, token!),
+    mutationFn: (variables) => {
+      // Garde le contrat robuste : plutôt qu'un `token!` qui laisserait filer un
+      // `Bearer null` (→ 401 opaque), on échoue clairement si aucun jeton n'est actif.
+      if (!token) throw new Error("useApiMutation : aucun jeton actif");
+      return mutationFn(variables, token);
+    },
     onSuccess: (data, variables) => {
       for (const queryKey of invalidateKeys?.(variables, data) ?? []) {
         queryClient.invalidateQueries({ queryKey });
