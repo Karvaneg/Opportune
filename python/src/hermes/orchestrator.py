@@ -26,6 +26,7 @@ Contrat de coordination :
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -167,22 +168,30 @@ class HermesOrchestrator:
         self,
         candidate_id: str,
         limit: int = 10,
-    ) -> tuple[HermesRun, dict]:
+        *,
+        filters: dict | None = None,
+    ) -> HermesRun:
         """Recommande **une seule fois**, journalise l'exécution *et* pré-évalue, d'un bloc.
 
-        Combine ``run_for_candidate`` (persistance + trace) et ``evaluate_for_candidate``
-        (tri par statut) en une **unique** passe de recommandation — au lieu de dérouler
-        deux fois le pipeline. Surtout, garantit la cohérence entre ce qui est persisté et
-        ce qui est présenté : une offre dont la décision échoue est tracée dans
-        ``run.errors`` et **exclue** des buckets renvoyés (jamais présentée comme évaluée).
+        Combine ``run_for_candidate`` (persistance + trace) et la pré-évaluation en une
+        **unique** passe de recommandation — au lieu de dérouler deux fois le pipeline.
+        Surtout, garantit la cohérence entre ce qui est persisté et ce qui est présenté :
+        une offre dont la décision échoue est tracée dans ``run.errors`` et **exclue** des
+        évaluations du run (jamais présentée comme évaluée).
 
-        Retourne le couple ``(run, buckets)``, ``buckets`` ayant la forme
-        d'``evaluate_for_candidate``. Propage ``UnknownCandidateError`` et ``ValueError``
-        avant toute écriture.
+        ``filters`` (optionnel) restreint le stock **avant** classement et coupe ``limit``
+        (cf. ``RecommendationService.recommend``) : seules les offres retenues sont donc
+        évaluées, persistées et tracées dans le run.
+
+        Retourne le ``run`` : chaque ``OfferEvaluation`` y fige déjà son ``advisory_status``
+        (pré-éval automatique), rendant un tri en buckets superflu ici. Propage
+        ``UnknownCandidateError`` et ``ValueError`` avant toute écriture.
         """
-        recommendations = self.recommendations.recommend(candidate_id, limit=limit)
-        run, persisted = self._execute(candidate_id, recommendations)
-        return run, self._bucket(candidate_id, persisted)
+        recommendations = self.recommendations.recommend(
+            candidate_id, limit=limit, filters=filters
+        )
+        run, _ = self._execute(candidate_id, recommendations)
+        return run
 
     def _execute(
         self,
@@ -212,11 +221,21 @@ class HermesOrchestrator:
                 # au lieu d'être noyée dans un message anonyme.
                 errors.append(f"{offer_id}: {type(exc).__name__}: {exc}")
                 continue
+            # Snapshot riche figé au run-time (cf. OfferEvaluation) : pré-éval automatique
+            # (advisory_status/action) + contexte offre, pour une restitution paginée stable
+            # sans re-dérouler le pipeline. ``decision_status`` est la photo initiale ; l'état
+            # humain courant est relu en direct par ``get_run_recommendation_items``.
+            advisory_status = self.decisions.evaluate(recommendation).status
             evaluations.append(
                 OfferEvaluation(
                     offer_id=offer_id,
                     score=recommendation.score,
                     decision_status=decision.status,
+                    advisory_status=advisory_status,
+                    action=recommendation.action,
+                    title=recommendation.offer.title,
+                    company=recommendation.offer.company,
+                    justification=recommendation.justification,
                 )
             )
             persisted.append(recommendation)
@@ -263,6 +282,42 @@ class HermesOrchestrator:
     def get_run(self, run_id: str) -> HermesRun | None:
         """Retourne l'exécution journalisée d'``run_id``, ou ``None`` (dépôt absent inclus)."""
         return None if self.runs is None else self.runs.get(run_id)
+
+    def get_run_recommendation_items(
+        self,
+        run: HermesRun,
+        *,
+        advisory_status: str | None = None,
+        decision_status: str | None = None,
+    ) -> list[OfferEvaluation]:
+        """Restitue les recommandations **persistées** d'un run, statut humain rafraîchi.
+
+        Le ``run`` déjà chargé est passé par l'appelant (évite une seconde lecture du
+        dépôt). Pour chaque offre du run :
+
+        - ``advisory_status`` / ``action`` / ``title`` / ``company`` / ``justification`` /
+          ``score`` restent le **snapshot figé** (stable même si l'offre a changé) ;
+        - ``decision_status`` est **résolu au courant** : ``DecisionStore`` d'abord, puis
+          la valeur du snapshot en **fallback** (décision jamais persistée ou supprimée).
+
+        L'état des décisions est chargé en **une seule** lecture (``list_for_candidate``),
+        pas un appel par offre. Les filtres ``advisory_status`` / ``decision_status`` sont
+        appliqués **après** résolution du statut courant. L'ordre du run est préservé.
+        """
+        current = {
+            d.offer_id: d.status
+            for d in self.decisions.list_for_candidate(run.candidate_id)
+        }
+        items: list[OfferEvaluation] = []
+        for evaluation in run.evaluations:
+            live = current.get(evaluation.offer_id, evaluation.decision_status)
+            evaluation = replace(evaluation, decision_status=live)
+            if advisory_status is not None and evaluation.advisory_status != advisory_status:
+                continue
+            if decision_status is not None and evaluation.decision_status != decision_status:
+                continue
+            items.append(evaluation)
+        return items
 
     def get_recommendation(self, recommendation_id: str) -> Decision | None:
         """Retourne la décision (recommandation persistée) d'identifiant donné, ou ``None``.

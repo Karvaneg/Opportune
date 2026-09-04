@@ -68,7 +68,16 @@ class RunStore:
         """Insère l'exécution (le ``ON CONFLICT`` ne protège que le ré-enregistrement du même ``run_id``)."""
         evaluations = json.dumps(
             [
-                {"offer_id": e.offer_id, "score": e.score, "decision_status": e.decision_status}
+                {
+                    "offer_id": e.offer_id,
+                    "score": e.score,
+                    "decision_status": e.decision_status,
+                    "advisory_status": e.advisory_status,
+                    "action": e.action,
+                    "title": e.title,
+                    "company": e.company,
+                    "justification": e.justification,
+                }
                 for e in run.evaluations
             ],
             ensure_ascii=False,

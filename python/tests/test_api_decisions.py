@@ -70,9 +70,16 @@ def test_get_run_returns_execution(env):
     assert resp.body["run_id"] == "run-1"
     assert resp.body["candidate_id"] == "cand-1"
     assert resp.body["executed_at"] == "2026-09-04T12:00:00+00:00"
-    assert resp.body["evaluations"] == [
-        {"offer_id": "off-app", "score": 100, "decision_status": "pending"}
-    ]
+    assert len(resp.body["evaluations"]) == 1
+    ev = resp.body["evaluations"][0]
+    assert ev["offer_id"] == "off-app"
+    assert ev["score"] == 100
+    assert ev["decision_status"] == "pending"  # photo au run-time
+    assert ev["advisory_status"] == "approved"
+    assert ev["action"] == "postuler"
+    assert ev["title"] == "App"
+    assert ev["company"] == "Acme"
+    assert "Score 100/100" in ev["justification"]
     assert resp.body["errors"] == []
 
 

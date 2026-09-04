@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.decision import Decision
+from app.decision import PENDING, Decision
 from app.recommendation_service import OfferRecommendation
 
 
@@ -26,11 +26,30 @@ class HermesRecommendation:
 
 @dataclass(frozen=True)
 class OfferEvaluation:
-    """Trace d'une offre évaluée lors d'une exécution : son score et le statut de décision."""
+    """Snapshot riche d'une offre évaluée lors d'une exécution (OPP-095).
+
+    Fige, **au moment du run**, ce qu'il faut pour restituer une recommandation paginée
+    sans re-dérouler le pipeline — donc stable même si l'offre évolue ou disparaît :
+
+    - ``score``, ``advisory_status`` et ``action`` : la pré-évaluation *automatique* figée
+      (``advisory_status`` ∈ approved | pending | rejected ; ``action`` ∈ postuler |
+      a_etudier | ignorer) ;
+    - ``title`` / ``company`` / ``justification`` : le contexte de l'offre au run-time ;
+    - ``decision_status`` : le statut de décision **au run-time** (``pending`` au départ).
+      L'état de validation *humain* courant se relit en direct dans le ``DecisionStore`` —
+      ce champ n'en est que la photo initiale (fallback).
+
+    Les nouveaux champs ont un défaut : les runs sérialisés avant OPP-095 restent relisibles.
+    """
 
     offer_id: str
     score: int
-    decision_status: str  # statut de la décision persistée (``pending`` au départ)
+    decision_status: str = PENDING  # statut de décision au run-time (pending au départ)
+    advisory_status: str = PENDING  # pré-éval auto figée : approved | pending | rejected
+    action: str = ""  # action auto figée : postuler | a_etudier | ignorer
+    title: str = ""
+    company: str = ""
+    justification: str = ""
 
 
 @dataclass(frozen=True)

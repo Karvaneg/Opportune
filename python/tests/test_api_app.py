@@ -6,6 +6,7 @@ pour l'en-tête ``Content-Length`` invalide.
 """
 
 import itertools
+import json
 import socket
 import threading
 
@@ -68,7 +69,7 @@ def _seed_one_per_bucket(offers):
                        location="Lyon", seniority="Lead"))  # 0 → rejected
 
 
-def test_post_recommendations_returns_buckets_and_run_id(env):
+def test_post_recommendations_returns_items_and_run_id(env):
     api, offers, decisions, runs = env
     _seed_one_per_bucket(offers)
 
@@ -76,10 +77,12 @@ def test_post_recommendations_returns_buckets_and_run_id(env):
 
     assert resp.status == 200
     assert resp.body["run_id"] == "run-1"
-    assert resp.body["evaluated_count"] == 3
-    assert [r["offer_id"] for r in resp.body["approved"]] == ["off-app"]
-    assert [r["offer_id"] for r in resp.body["pending_review"]] == ["off-pend"]
-    assert [r["offer_id"] for r in resp.body["rejected"]] == ["off-rej"]
+    assert resp.body["total"] == 3
+    # Items à plat, classés par score décroissant (plus de buckets dans la réponse POST).
+    assert [r["offer_id"] for r in resp.body["items"]] == ["off-app", "off-pend", "off-rej"]
+    assert [r["advisory_status"] for r in resp.body["items"]] == [
+        "approved", "pending", "rejected"
+    ]
     assert resp.body["errors"] == []  # aucune offre en erreur
     # Trace et décisions persistées (mais rien de plus : pas de candidature).
     assert runs.get("run-1") is not None
@@ -90,13 +93,15 @@ def test_recommendation_payload_shape(env):
     api, offers, _, _ = env
     offers.save(_offer(id="off-app", title="App", company="Acme", url="http://app"))
     resp = api.dispatch("POST", "/candidates/cand-1/recommendations", {"limit": 10})
-    reco = resp.body["approved"][0]
+    reco = resp.body["items"][0]
     assert reco["recommendation_id"] == decision_id("cand-1", "off-app")
     assert reco["offer_id"] == "off-app"
     assert reco["title"] == "App"
     assert reco["company"] == "Acme"
     assert reco["score"] == 100
     assert reco["action"] == "postuler"
+    assert reco["advisory_status"] == "approved"
+    assert reco["decision_status"] == "pending"  # photo initiale, pas encore validée
     assert "Score 100/100" in reco["justification"]
 
 
@@ -105,7 +110,7 @@ def test_default_limit_when_absent(env):
     _seed_one_per_bucket(offers)
     resp = api.dispatch("POST", "/candidates/cand-1/recommendations", {})
     assert resp.status == 200
-    assert resp.body["evaluated_count"] == 3
+    assert resp.body["total"] == 3
 
 
 def test_unknown_candidate_returns_404(env):
@@ -116,15 +121,16 @@ def test_unknown_candidate_returns_404(env):
     assert runs.count() == 0  # aucun run enregistré
 
 
-def test_filters_not_supported_yet_returns_400(env):
+def test_unknown_filter_key_returns_400(env):
     api, offers, _, runs = env
     _seed_one_per_bucket(offers)
+    # Clé de filtre inconnue : rejet strict (ne jamais ignorer un filtre en silence).
     resp = api.dispatch(
         "POST", "/candidates/cand-1/recommendations",
-        {"limit": 10, "filters": {"contract_type": "freelance"}},
+        {"limit": 10, "filters": {"seniority": "Lead"}},
     )
     assert resp.status == 400
-    assert "filters" in resp.body["error"]
+    assert "inconnu" in resp.body["error"]
     assert runs.count() == 0  # rien exécuté
 
 
@@ -172,24 +178,43 @@ class _FailingDecide:
         return self._real.evaluate(recommendation)
 
 
-def test_offer_error_is_reported_and_excluded_from_buckets(env):
+def test_offer_error_is_reported_and_excluded_from_items(env):
     api, offers, decisions, _ = env
     _seed_one_per_bucket(offers)
     # decide() échoue pour l'offre approuvée : elle doit être tracée dans "errors" et
-    # absente des buckets (jamais présentée comme évaluée), les autres passant normalement.
+    # absente des items (jamais présentée comme évaluée), les autres passant normalement.
     api.orchestrator.decisions = _FailingDecide(api.orchestrator.decisions, {"off-app"})
 
     resp = api.dispatch("POST", "/candidates/cand-1/recommendations", {"limit": 20})
 
     assert resp.status == 200
-    assert [r["offer_id"] for r in resp.body["approved"]] == []  # exclue du résultat
-    assert [r["offer_id"] for r in resp.body["pending_review"]] == ["off-pend"]
-    assert [r["offer_id"] for r in resp.body["rejected"]] == ["off-rej"]
-    assert resp.body["evaluated_count"] == 2  # seules les offres persistées comptent
+    assert [r["offer_id"] for r in resp.body["items"]] == ["off-pend", "off-rej"]
+    assert resp.body["total"] == 2  # seules les offres persistées comptent
     assert len(resp.body["errors"]) == 1
     assert resp.body["errors"][0].startswith("off-app: ")
     # La décision de l'offre en erreur n'est pas persistée.
     assert decisions.get(decision_id("cand-1", "off-app")) is None
+
+
+def test_errors_field_present_and_json_serializable(env):
+    api, offers, _, _ = env
+    _seed_one_per_bucket(offers)
+
+    # Run sain : ``errors`` présent et vide, réponse JSON-sérialisable de bout en bout
+    # (le serveur la renvoie telle quelle sur le socket).
+    ok = api.dispatch("POST", "/candidates/cand-1/recommendations", {"limit": 20})
+    assert ok.body["errors"] == []
+    assert json.loads(json.dumps(ok.body))["errors"] == []
+
+    # Run avec une offre en échec : ``errors`` est une liste de chaînes, fidèlement
+    # sérialisée (round-trip JSON identique).
+    api.orchestrator.decisions = _FailingDecide(api.orchestrator.decisions, {"off-app"})
+    ko = api.dispatch("POST", "/candidates/cand-1/recommendations", {"limit": 20})
+    assert isinstance(ko.body["errors"], list)
+    assert all(isinstance(e, str) for e in ko.body["errors"])
+    round_tripped = json.loads(json.dumps(ko.body))
+    assert round_tripped["errors"] == ko.body["errors"]
+    assert round_tripped["errors"][0].startswith("off-app: ")
 
 
 @pytest.fixture

@@ -39,6 +39,8 @@ class DecisionRepository(Protocol):
 
     def get(self, decision_id: str) -> Decision | None: ...
 
+    def list_for_candidate(self, candidate_id: str) -> list[Decision]: ...
+
 
 class DecisionStore:
     """Dépôt SQLite de décisions (crée sa table au besoin)."""
