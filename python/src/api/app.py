@@ -6,6 +6,7 @@ C'est là que vit le routage ; ``server.py`` n'en est que l'adaptateur socket.
 
 Endpoints :
 
+    GET  /me                                           (OPP-103, sonde d'auth + identité)
     POST /candidates/{candidate_id}/recommendations   (OPP-093, filtres OPP-095)
     GET  /runs/{run_id}                                (OPP-094)
     GET  /runs/{run_id}/recommendations                (OPP-095, paginé + filtres)
@@ -74,6 +75,7 @@ class ApiError(Exception):
 
 
 # Routes connues (chemin sans query string).
+_ME = re.compile(r"^/me$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
 _RUN_RECOMMENDATIONS = re.compile(r"^/runs/(?P<run_id>[^/]+)/recommendations$")
 _RUN = re.compile(r"^/runs/(?P<run_id>[^/]+)$")
@@ -149,6 +151,10 @@ class HermesApi:
     def _route(
         self, method: str, path: str, body: dict, query: dict, user: User | None
     ) -> Response:
+        if _ME.match(path):
+            self._require(method, "GET", path)
+            return self._get_me(user)
+
         match = _RECOMMENDATIONS.match(path)
         if match:
             self._require(method, "POST", path)
@@ -192,6 +198,26 @@ class HermesApi:
     def _require(method: str, expected: str, path: str) -> None:
         if method != expected:
             raise ApiError(405, f"méthode {method} non autorisée sur {path}")
+
+    @staticmethod
+    def _get_me(user: User | None) -> Response:
+        """Identité du porteur du jeton — sonde de validation d'authentification.
+
+        Route protégée sans ressource : un jeton invalide/absent est déjà rejeté en amont
+        (401) par ``_authenticate``. Elle permet à un client de vérifier qu'un jeton est
+        **accepté** (et d'afficher qui il est) sans deviner d'identifiant de ressource. En
+        mode ouvert (``user is None``, tests), il n'existe aucune identité applicative.
+        """
+        if user is None:
+            return Response(200, {"id": None, "role": None, "owned_count": 0})
+        return Response(
+            200,
+            {
+                "id": user.id,
+                "role": user.role,
+                "owned_count": len(user.owned_candidates),
+            },
+        )
 
     # --- Autorisation (propriété / rôle) : résolue depuis la ressource persistée ---
 
