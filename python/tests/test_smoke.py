@@ -1,10 +1,10 @@
-"""Test de fumée : l'ossature du projet Python s'importe et s'exécute (OPP-070)."""
+"""Test de fumée : le package métier Python s'importe et s'exécute."""
 
 from app import __version__, healthcheck
 
 
 def test_package_importable():
-    assert __version__ == "0.1.0"
+    assert __version__ == "1.0.0"
 
 
 def test_healthcheck_ok():

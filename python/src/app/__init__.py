@@ -1,12 +1,14 @@
-"""Opportune — ossature de la stack cible Python (V2, OPP-070).
+"""Opportune — cœur métier de la stack V2 (Python).
 
-À ce stade, le package ne contient que le strict nécessaire pour valider
-l'environnement : version et test de fumée. Aucune logique métier n'est encore
-portée depuis la base Node.js (cf. OPP-071 Docker/WSL, OPP-072 SQLite,
-OPP-073 Ollama, puis le pivot fonctionnel).
+Ce package porte le métier de la V2 : ingestion et analyse d'offres, profil candidat,
+matching, scoring, recommandation, décision et sa validation humaine, actions sensibles,
+plus les accès techniques (SQLite via ``db``, LLM via ``llm``/``llm_client``,
+authentification via ``auth``). L'orchestration vit dans ``hermes`` et l'exposition HTTP
+dans ``api``. ``version`` et ``healthcheck`` restent le point de contrôle minimal de
+l'environnement.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 
 def healthcheck() -> str:
