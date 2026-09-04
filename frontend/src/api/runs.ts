@@ -3,9 +3,11 @@ import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "./client";
 import type { RunDetail, RunRecommendationsPage, RunsPage } from "./types";
 
-// Clés de cache stables et hiérarchiques (invalidation ciblée par run plus tard).
+// Clés de cache stables et hiérarchiques. `run(runId)` est le préfixe commun à `detail`
+// et `recommendations` : l'invalider rafraîchit toutes les vues d'un run (cf. OPP-105).
 export const runKeys = {
   list: (page: number) => ["runs", page] as const,
+  run: (runId: string) => ["run", runId] as const,
   detail: (runId: string) => ["run", runId, "detail"] as const,
   recommendations: (runId: string, page: number) =>
     ["run", runId, "recommendations", page] as const,

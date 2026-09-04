@@ -37,8 +37,18 @@ function messageFor(status: number, body: ApiErrorBody | null): string {
   }
 }
 
+/** Interprète la réponse : JSON typé `T` si 2xx, `ApiHttpError` (status préservé) sinon. */
+async function parseOrThrow<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
+    throw new ApiHttpError(response.status, messageFor(response.status, body), body);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 /**
- * Appel authentifié à l'API. Renvoie le JSON typé `T` en cas de succès,
+ * Lecture authentifiée de l'API (GET). Renvoie le JSON typé `T` en cas de succès,
  * lève un `ApiHttpError` (status préservé) sinon.
  */
 export async function apiFetch<T>(path: string, token: string): Promise<T> {
@@ -49,10 +59,24 @@ export async function apiFetch<T>(path: string, token: string): Promise<T> {
     },
   });
 
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
-    throw new ApiHttpError(response.status, messageFor(response.status, body), body);
-  }
+  return parseOrThrow<T>(response);
+}
 
-  return response.json() as Promise<T>;
+/**
+ * Écriture authentifiée de l'API (POST + corps JSON). Même contrat d'erreur qu'`apiFetch`
+ * (`ApiHttpError` porteur du `status`) — indispensable pour que la couche d'auth réagisse
+ * au 401 et que l'appelant distingue 400/403/404/409 (cf. OPP-105).
+ */
+export async function apiPost<T>(path: string, token: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+
+  return parseOrThrow<T>(response);
 }

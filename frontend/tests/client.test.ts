@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiHttpError, apiFetch } from "../src/api/client";
+import { ApiHttpError, apiFetch, apiPost } from "../src/api/client";
 
 function stubFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue({
@@ -64,5 +64,48 @@ describe("apiFetch", () => {
       status: 500,
       message: "Une erreur est survenue.",
     });
+  });
+});
+
+describe("apiPost", () => {
+  it("POST + corps JSON, Bearer et Content-Type, renvoie le JSON en cas de succès", async () => {
+    const fetchMock = stubFetch(200, { action_id: "a1", status: "simulated" });
+    const data = await apiPost<{ action_id: string }>(
+      "/applications/rec-1/confirm",
+      "tok",
+      { confirm: true },
+    );
+
+    expect(data).toEqual({ action_id: "a1", status: "simulated" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/applications/rec-1/confirm",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+        headers: expect.objectContaining({
+          Authorization: "Bearer tok",
+          "Content-Type": "application/json",
+        }),
+      }),
+    );
+  });
+
+  it("409 → ApiHttpError avec status préservé (ex. candidature sans décision approuvée)", async () => {
+    stubFetch(409, { error: "décision approuvée requise" });
+    const err = await apiPost("/applications/x/confirm", "tok", { confirm: true }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiHttpError);
+    expect((err as ApiHttpError).status).toBe(409);
+    expect((err as ApiHttpError).body).toEqual({ error: "décision approuvée requise" });
+  });
+
+  it("corps absent → envoie un objet vide (jamais `undefined` dans le body)", async () => {
+    const fetchMock = stubFetch(200, {});
+    await apiPost("/x", "tok", undefined);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/x",
+      expect.objectContaining({ body: "{}" }),
+    );
   });
 });
