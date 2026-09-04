@@ -1,15 +1,15 @@
-# Configuration du projet Python — stack cible d'Opportune (V2, OPP-070).
-# À ce stade : uniquement l'ossature (packaging, environnement, tests). Aucune
-# dépendance métier (FastAPI, SQLAlchemy, Ollama…) ni logique portée — cela viendra
-# avec OPP-071 (Docker/WSL), OPP-072 (SQLite), OPP-073 (Ollama) et la suite.
+# Configuration du projet Python — cœur métier de la V2 d'Opportune.
+# Métier + orchestrateur Hermes + API HTTP, écrits en bibliothèque standard
+# (sqlite3, urllib, http.server) : aucune dépendance de production. Seul pytest
+# est requis, et uniquement pour les tests (extra « dev »).
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "opportune"
-version = "0.1.0"
-description = "Opportune — stack cible Python (V2). Ossature initiale."
+version = "1.0.0"
+description = "Opportune — cœur métier V2 (Python) : métier, orchestrateur Hermes et API HTTP."
 requires-python = ">=3.11"
 dependencies = []
 
