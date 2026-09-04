@@ -10,9 +10,11 @@ Exécution : ``python -m api.server`` (base SQLite via ``OPPORTUNE_DB_PATH``).
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from api.app import HermesApi
+from app.auth import REVIEWER, AuthProvider, TokenRecord, User
 
 
 def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
@@ -108,10 +110,60 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     return HermesApi(orchestrator, actions, auth)
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _ttl_to_expires_at(ttl_seconds: int, *, issued_at: datetime | None = None) -> str:
+    """Échéance ISO 8601 = instant d'émission + ``ttl_seconds`` (émission = maintenant UTC)."""
+    return ((issued_at or _utcnow()) + timedelta(seconds=ttl_seconds)).isoformat()
+
+
+def parse_ttl_seconds(raw: str | None) -> int | None:
+    """Valide ``OPPORTUNE_API_TOKEN_TTL`` : entier **strictement positif** de secondes, ou ``None``.
+
+    ``None``/chaîne vide → ``None`` (jeton sans échéance, rétro-compat). Toute autre valeur
+    non conforme (non entière, nulle ou négative) → ``ValueError`` explicite : on refuse de
+    démarrer sur une échéance ambiguë plutôt que d'émettre un jeton mort-né ou de planter
+    sur un ``int()`` brut. Cohérent avec le fail-fast du jeton manquant.
+    """
+    if raw is None or raw == "":
+        return None
+    try:
+        ttl = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"OPPORTUNE_API_TOKEN_TTL invalide ({raw!r}) : entier positif de secondes attendu."
+        ) from None
+    if ttl <= 0:
+        raise ValueError(
+            f"OPPORTUNE_API_TOKEN_TTL invalide ({ttl}) : doit être strictement positif."
+        )
+    return ttl
+
+
+def build_auth(
+    token: str,
+    owned_candidates,
+    *,
+    expires_at: str | None = None,
+    now=None,
+) -> AuthProvider:
+    """Compose un ``AuthProvider`` mono-jeton (rôle ``reviewer``), échéance optionnelle.
+
+    ``expires_at=None`` → jeton **sans expiration** (``User`` nu) ; sinon un ``TokenRecord``
+    porteur de l'échéance. ``now`` (horloge de vérification) est transmis tel quel à
+    ``AuthProvider``. Isolé de ``main`` pour être testable sans démarrer de serveur.
+    """
+    user = User(id="demo", role=REVIEWER, owned_candidates=frozenset(owned_candidates))
+    record: User | TokenRecord = user if expires_at is None else TokenRecord(user, expires_at)
+    kwargs = {} if now is None else {"now": now}
+    return AuthProvider({token: record}, **kwargs)
+
+
 def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     import os
 
-    from app.auth import REVIEWER, AuthProvider, User
     from app.db import connect
 
     token = os.environ.get("OPPORTUNE_API_TOKEN")
@@ -119,8 +171,15 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
         raise SystemExit(
             "OPPORTUNE_API_TOKEN manquant : l'API ne démarre jamais sans authentification."
         )
-    owned = frozenset(c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c)
-    auth = AuthProvider({token: User(id="demo", role=REVIEWER, owned_candidates=owned)})
+    owned = [c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c]
+    # Expiration réelle si OPPORTUNE_API_TOKEN_TTL (secondes) est fourni ; sinon jeton sans
+    # échéance (rétro-compat). Câblage pur : toute la logique vit dans AuthProvider.
+    try:
+        ttl = parse_ttl_seconds(os.environ.get("OPPORTUNE_API_TOKEN_TTL"))
+    except ValueError as err:
+        raise SystemExit(str(err)) from err
+    expires_at = _ttl_to_expires_at(ttl) if ttl is not None else None
+    auth = build_auth(token, owned, expires_at=expires_at)
 
     server = create_server(assemble_api(connect(), auth))
     host, port = server.server_address
