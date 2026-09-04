@@ -60,6 +60,24 @@ export interface RunRecommendationsPage {
   total_pages: number;
 }
 
+/** Résumé d'un run pour le listing (`GET /runs`) — volumétrie sans le détail. */
+export interface RunSummary {
+  run_id: string;
+  candidate_id: string;
+  executed_at: string; // ISO 8601
+  evaluation_count: number;
+  error_count: number;
+}
+
+/** Réponse paginée de `GET /runs`. */
+export interface RunsPage {
+  items: RunSummary[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
 /** Identité du porteur du jeton (`GET /me`) — sonde d'authentification. */
 export interface Me {
   id: string | null;

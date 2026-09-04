@@ -1,14 +1,26 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "./client";
-import type { RunDetail, RunRecommendationsPage } from "./types";
+import type { RunDetail, RunRecommendationsPage, RunsPage } from "./types";
 
 // Clés de cache stables et hiérarchiques (invalidation ciblée par run plus tard).
 export const runKeys = {
+  list: (page: number) => ["runs", page] as const,
   detail: (runId: string) => ["run", runId, "detail"] as const,
   recommendations: (runId: string, page: number) =>
     ["run", runId, "recommendations", page] as const,
 };
+
+/** Listing paginé des runs du périmètre : `GET /runs`. */
+export function useRuns(page: number) {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: runKeys.list(page),
+    queryFn: () => apiFetch<RunsPage>(`/runs?page=${page}`, token!),
+    enabled: Boolean(token),
+    placeholderData: keepPreviousData, // évite le clignotement entre pages
+  });
+}
 
 /** Détail d'un run : `GET /runs/{run_id}`. */
 export function useRunDetail(runId: string) {
