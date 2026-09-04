@@ -74,6 +74,8 @@ def create_server(
 
 
 def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
+    from app.action_service import ActionService
+    from app.action_store import ApplicationActionStore, OutboundMessageActionStore
     from app.db import connect
     from app.decision_service import DecisionService
     from app.decision_store import DecisionStore
@@ -84,12 +86,16 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from hermes.run_store import RunStore
 
     conn = connect()
+    decisions = DecisionService(DecisionStore(conn))
     orchestrator = HermesOrchestrator(
         RecommendationService(ProfileStore(conn), OfferStore(conn)),
-        DecisionService(DecisionStore(conn)),
+        decisions,
         runs=RunStore(conn),
     )
-    server = create_server(HermesApi(orchestrator))
+    actions = ActionService(
+        decisions, ApplicationActionStore(conn), OutboundMessageActionStore(conn)
+    )
+    server = create_server(HermesApi(orchestrator, actions))
     host, port = server.server_address
     print(f"API Hermes à l'écoute sur http://{host}:{port}")
     server.serve_forever()

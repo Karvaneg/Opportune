@@ -11,6 +11,8 @@ Endpoints :
     GET  /runs/{run_id}/recommendations                (OPP-095, paginé + filtres)
     GET  /recommendations/{recommendation_id}          (OPP-094)
     POST /recommendations/{recommendation_id}/decision (OPP-094)
+    POST /applications/{recommendation_id}/confirm      (OPP-096, action sensible)
+    POST /messages/{contact_id}/confirm                 (OPP-096, action sensible)
 
 Le POST recommande et pré-évalue les offres du candidat (filtrables via ``filters`` :
 ``contract_type`` exact, ``skills`` en ALL), journalise l'exécution (``run_id``, snapshot
@@ -22,6 +24,12 @@ la consultation détaillée se fait paginée via ``GET /runs/{run_id}/recommenda
 automatique** figée ; ``decision_status`` est l'**état de validation humaine courant**
 (relu en direct). Les endpoints de décision **enregistrent une décision humaine**
 (approve/reject/defer), persistée et historisée.
+
+Les endpoints ``/confirm`` (OPP-096) déclenchent des **actions sensibles** (candidature,
+message) sous **confirmation explicite obligatoire** (``{"confirm": true}``) : un statut
+``approved`` seul ne suffit **jamais**. La candidature exige en plus une décision humaine
+``approved`` (sinon 409) ; ils sont idempotents (``already_confirmed``) et **simulés** à ce
+stade. Ces routes ne sont montées que si un ``ActionService`` est fourni à ``HermesApi``.
 """
 
 from __future__ import annotations
@@ -30,6 +38,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote
 
+from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.decision import VALIDATION_STATUSES, Decision, decision_id
 from app.decision_service import PRE_EVALUATION_STATUSES, UnknownDecisionError
 from app.offer_normalization import normalize_contract, normalize_skills
@@ -61,6 +70,8 @@ _RUN_RECOMMENDATIONS = re.compile(r"^/runs/(?P<run_id>[^/]+)/recommendations$")
 _RUN = re.compile(r"^/runs/(?P<run_id>[^/]+)$")
 _RECOMMENDATION_DECISION = re.compile(r"^/recommendations/(?P<rid>[^/]+)/decision$")
 _RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
+_APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
+_MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -72,8 +83,16 @@ _ALLOWED_FILTER_KEYS = {"contract_type", "skills"}
 class HermesApi:
     """Adapte l'orchestrateur Hermes en une API requête → réponse, sans transport."""
 
-    def __init__(self, orchestrator: HermesOrchestrator) -> None:
+    def __init__(
+        self,
+        orchestrator: HermesOrchestrator,
+        actions: ActionService | None = None,
+    ) -> None:
         self.orchestrator = orchestrator
+        # Service des actions sensibles (candidature/message). Optionnel : si absent, les
+        # routes /applications|/messages ne sont pas montées (404), l'API reste utilisable
+        # pour la recommandation et les décisions.
+        self.actions = actions
 
     def dispatch(self, method: str, path: str, body: dict | None = None) -> Response:
         """Route ``(method, path, body)`` vers un handler ; convertit toute ``ApiError``.
@@ -117,6 +136,18 @@ class HermesApi:
         if match:
             self._require(method, "GET", path)
             return self._get_recommendation(unquote(match["rid"]))
+
+        # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
+        if self.actions is not None:
+            match = _APPLICATION_CONFIRM.match(path)
+            if match:
+                self._require(method, "POST", path)
+                return self._post_application_confirm(unquote(match["rid"]), body)
+
+            match = _MESSAGE_CONFIRM.match(path)
+            if match:
+                self._require(method, "POST", path)
+                return self._post_message_confirm(unquote(match["cid"]), body)
 
         raise ApiError(404, f"route inconnue : {method} {path}")
 
@@ -288,6 +319,53 @@ class HermesApi:
         except UnknownDecisionError:
             raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
         return Response(200, self._serialize_decision(decision))
+
+    def _post_application_confirm(self, recommendation_id: str, body: dict) -> Response:
+        """Confirme (explicitement) l'intention de candidater à une recommandation.
+
+        Exige ``{"confirm": true}`` (sinon 400) *et* une décision humaine ``approved``
+        (sinon 409). Idempotent : une seconde confirmation renvoie la même action avec
+        ``already_confirmed: true``.
+        """
+        self._require_confirm(body)
+        try:
+            action, already = self.actions.confirm_application(recommendation_id)
+        except ActionNotAllowedError as exc:
+            raise ApiError(409, str(exc))
+        return Response(200, self._serialize_action(action, already))
+
+    def _post_message_confirm(self, contact_id: str, body: dict) -> Response:
+        """Confirme (explicitement) l'intention d'envoyer un message à une cible.
+
+        Exige ``{"confirm": true}`` (sinon 400) ; cible inconnue → 404. Idempotent par
+        ``contact_id``.
+        """
+        self._require_confirm(body)
+        try:
+            action, already = self.actions.confirm_message(contact_id)
+        except UnknownTargetError:
+            raise ApiError(404, f"cible inconnue : {contact_id}")
+        return Response(200, self._serialize_action(action, already))
+
+    @staticmethod
+    def _require_confirm(body: dict) -> None:
+        """Garde anti-déclenchement : ``confirm`` doit valoir **strictement** ``true``.
+
+        ``is True`` (et non un simple test de véracité) : un ``1``, une chaîne ``"true"`` ou
+        toute autre valeur truthy est rejetée en 400 — la confirmation d'une action sensible
+        doit être un booléen explicite.
+        """
+        if body.get("confirm") is not True:
+            raise ApiError(400, "confirm doit valoir true (booléen)")
+
+    @staticmethod
+    def _serialize_action(action, already_confirmed: bool) -> dict:
+        """Réponse d'une confirmation d'action (candidature ou message)."""
+        return {
+            "action_id": action.action_id,
+            "status": action.status,
+            "already_confirmed": already_confirmed,
+        }
 
     @staticmethod
     def _serialize_item(candidate_id: str, evaluation: OfferEvaluation) -> dict:
