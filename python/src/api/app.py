@@ -4,23 +4,31 @@
 une ``Response`` (statut + corps JSON-sérialisable), **sans dépendre du transport HTTP**.
 C'est là que vit le routage ; ``server.py`` n'en est que l'adaptateur socket.
 
-Endpoint de cette étape (OPP-093) :
+Endpoints :
 
-    POST /candidates/{candidate_id}/recommendations
+    POST /candidates/{candidate_id}/recommendations   (OPP-093)
+    GET  /runs/{run_id}                                (OPP-094)
+    GET  /recommendations/{recommendation_id}          (OPP-094)
+    POST /recommendations/{recommendation_id}/decision (OPP-094)
 
-Il recommande et pré-évalue les offres du candidat, journalise l'exécution (``run_id``) et
-crée des décisions ``pending`` — mais **ne déclenche aucune candidature ni message**. Les
-statuts ``approved`` / ``pending_review`` / ``rejected`` sont ceux de la **pré-évaluation
-automatique** (advisory), pas des décisions humaines définitives.
+Le premier recommande et pré-évalue les offres du candidat, journalise l'exécution
+(``run_id``) et crée des décisions ``pending`` — mais **ne déclenche aucune candidature ni
+message**. Les statuts ``approved`` / ``pending_review`` / ``rejected`` sont ceux de la
+**pré-évaluation automatique** (advisory), pas des décisions humaines définitives. Les
+suivants consultent une exécution/recommandation et **enregistrent une décision humaine**
+(approve/reject/defer), persistée et historisée.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from urllib.parse import unquote
 
-from app.decision import decision_id
+from app.decision import Decision, decision_id
+from app.decision_service import UnknownDecisionError
 from app.recommendation_service import OfferRecommendation, UnknownCandidateError
+from hermes.models import HermesRun
 from hermes.orchestrator import HermesOrchestrator
 
 
@@ -43,6 +51,12 @@ class ApiError(Exception):
 
 # Routes connues (chemin sans query string).
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
+_RUN = re.compile(r"^/runs/(?P<run_id>[^/]+)$")
+_RECOMMENDATION_DECISION = re.compile(r"^/recommendations/(?P<rid>[^/]+)/decision$")
+_RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
+
+# Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
+_DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
 
 
 class HermesApi:
@@ -61,14 +75,38 @@ class HermesApi:
             return self._route(method.upper(), path, body or {})
         except ApiError as exc:
             return Response(exc.status, {"error": exc.message})
+        except Exception:  # noqa: BLE001 — filet de sécurité : jamais de connexion coupée
+            # Toute erreur inattendue devient un 500 propre plutôt qu'une exception non
+            # gérée qui remonterait jusqu'au socket (réponse absente / connexion tuée).
+            return Response(500, {"error": "erreur interne"})
 
     def _route(self, method: str, path: str, body: dict) -> Response:
         match = _RECOMMENDATIONS.match(path)
         if match:
-            if method != "POST":
-                raise ApiError(405, f"méthode {method} non autorisée sur {path}")
-            return self._post_recommendations(match["candidate_id"], body)
+            self._require(method, "POST", path)
+            return self._post_recommendations(unquote(match["candidate_id"]), body)
+
+        match = _RUN.match(path)
+        if match:
+            self._require(method, "GET", path)
+            return self._get_run(unquote(match["run_id"]))
+
+        match = _RECOMMENDATION_DECISION.match(path)
+        if match:
+            self._require(method, "POST", path)
+            return self._post_decision(unquote(match["rid"]), body)
+
+        match = _RECOMMENDATION.match(path)
+        if match:
+            self._require(method, "GET", path)
+            return self._get_recommendation(unquote(match["rid"]))
+
         raise ApiError(404, f"route inconnue : {method} {path}")
+
+    @staticmethod
+    def _require(method: str, expected: str, path: str) -> None:
+        if method != expected:
+            raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
     def _post_recommendations(self, candidate_id: str, body: dict) -> Response:
         limit = body.get("limit", 10)
@@ -110,6 +148,38 @@ class HermesApi:
             },
         )
 
+    def _get_run(self, run_id: str) -> Response:
+        run = self.orchestrator.get_run(run_id)
+        if run is None:
+            raise ApiError(404, f"run inconnu : {run_id}")
+        return Response(200, self._serialize_run(run))
+
+    def _get_recommendation(self, recommendation_id: str) -> Response:
+        decision = self.orchestrator.get_recommendation(recommendation_id)
+        if decision is None:
+            raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
+        return Response(200, self._serialize_decision(decision))
+
+    def _post_decision(self, recommendation_id: str, body: dict) -> Response:
+        verb = body.get("decision")
+        # ``verb`` vient du JSON client : un tableau/objet n'est pas hashable et ferait
+        # lever ``dict.get`` — on écarte tout ce qui n'est pas une chaîne connue.
+        status = _DECISION_VERBS.get(verb) if isinstance(verb, str) else None
+        if status is None:
+            raise ApiError(
+                400, "decision doit valoir approve, reject ou defer"
+            )
+        comment = body.get("comment")
+        if comment is not None and not isinstance(comment, str):
+            raise ApiError(400, "comment doit être une chaîne")
+        try:
+            decision = self.orchestrator.record_human_decision(
+                recommendation_id, status, comment=comment
+            )
+        except UnknownDecisionError:
+            raise ApiError(404, f"recommandation inconnue : {recommendation_id}")
+        return Response(200, self._serialize_decision(decision))
+
     @staticmethod
     def _serialize(candidate_id: str, reco: OfferRecommendation) -> dict:
         """Représentation JSON d'une recommandation, avec un id stable réutilisable."""
@@ -121,4 +191,36 @@ class HermesApi:
             "score": reco.score,
             "action": reco.action,
             "justification": reco.justification,
+        }
+
+    @staticmethod
+    def _serialize_run(run: HermesRun) -> dict:
+        """Représentation JSON d'une exécution journalisée."""
+        return {
+            "run_id": run.run_id,
+            "candidate_id": run.candidate_id,
+            "executed_at": run.executed_at,
+            "evaluations": [
+                {"offer_id": e.offer_id, "score": e.score, "decision_status": e.decision_status}
+                for e in run.evaluations
+            ],
+            "errors": list(run.errors),
+        }
+
+    @staticmethod
+    def _serialize_decision(decision: Decision) -> dict:
+        """Représentation JSON d'une décision, historique inclus (recommandation d'origine préservée)."""
+        return {
+            "recommendation_id": decision.id,
+            "candidate_id": decision.candidate_id,
+            "offer_id": decision.offer_id,
+            "action": decision.action,
+            "score": decision.score,
+            "justification": decision.justification,
+            "status": decision.status,
+            "comment": decision.comment,
+            "history": [
+                {"status": ev.status, "at": ev.at, "comment": ev.comment}
+                for ev in decision.history
+            ],
         }
