@@ -67,3 +67,17 @@ class HermesRun:
     executed_at: str  # ISO 8601
     evaluations: tuple[OfferEvaluation, ...]
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class HermesRunSummary:
+    """Résumé d'un run pour le **listing** (OPP-101) : identité + volumétrie, sans les
+    snapshots d'offres (lourds). Les compteurs sont calculés côté dépôt sans désérialiser
+    les évaluations ; le détail complet se consulte via ``GET /runs/{run_id}``.
+    """
+
+    run_id: str
+    candidate_id: str
+    executed_at: str  # ISO 8601
+    evaluation_count: int
+    error_count: int
