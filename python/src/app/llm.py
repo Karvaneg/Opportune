@@ -19,9 +19,10 @@ from functools import partial
 from typing import Callable
 
 # Hôte du serveur Ollama et modèle par défaut, surchargeables par variables d'env
-# (voir docker-compose : service `ollama` + OLLAMA_HOST / OLLAMA_MODEL).
+# (voir docker-compose : OLLAMA_HOST pointe sur l'Ollama natif de l'hôte via
+# `host.docker.internal`, OLLAMA_MODEL sur le modèle installé).
 DEFAULT_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "ministral")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "ministral-3:3b")
 
 # Délai maximal (secondes) d'un appel au serveur Ollama.
 DEFAULT_TIMEOUT = 60

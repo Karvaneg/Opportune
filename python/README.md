@@ -139,15 +139,19 @@ Accès au modèle via un client minimal (`app.llm` / `app.llm_client`) qui parle
 d'Ollama avec `urllib` — **aucune dépendance**. Le transport est **injectable** : les tests
 n'ont besoin d'aucun serveur Ollama.
 
-- `OLLAMA_HOST` (défaut `http://localhost:11434`) et `OLLAMA_MODEL` (défaut `ministral`)
-  sont surchargeables par variables d'environnement.
-- Sous Docker Compose, l'app pointe sur le service `ollama` ; les modèles sont persistés
-  dans le volume `ollama-models`.
+- `OLLAMA_HOST` (défaut `http://localhost:11434`) et `OLLAMA_MODEL` (défaut
+  `ministral-3:3b`) sont surchargeables par variables d'environnement.
+- Sous Docker Compose, l'app s'appuie sur l'Ollama **natif de l'hôte** (pas de conteneur
+  Ollama) : elle le joint via `host.docker.internal:11434` (`extra_hosts` :
+  `host-gateway`), avec le modèle `ministral-3:3b`. Le design conteneurisé (service
+  `ollama` + volume `ollama-models`) reste dans l'historique git, à réactiver le jour du
+  packaging portable (cf. OPP-113).
+
+Prérequis côté hôte : un serveur Ollama en écoute et le modèle déjà présent.
 
 ```bash
-cd python
-docker compose up -d ollama                       # démarre le serveur Ollama
-docker compose exec ollama ollama pull ministral  # télécharge le modèle (une fois)
+ollama serve                 # sur l'hôte (Windows/WSL), si pas déjà lancé
+ollama pull ministral-3:3b   # télécharge le modèle (une fois)
 ```
 
 ### Sous Windows / WSL2
@@ -156,3 +160,6 @@ docker compose exec ollama ollama pull ministral  # télécharge le modèle (une
   dans la distribution WSL.
 - Travailler depuis le système de fichiers Linux de WSL (par ex. `~/Opportune`) plutôt que
   `/mnt/c/...` : les montages de volumes y sont nettement plus rapides.
+- Pour que le conteneur joigne l'Ollama natif Windows, lancer le serveur avec
+  `OLLAMA_HOST=0.0.0.0` et autoriser le port `11434` depuis le réseau Hyper-V/WSL dans le
+  pare-feu Windows.
