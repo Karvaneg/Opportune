@@ -1,9 +1,12 @@
 # Vision & stack cible
 
-> ⚠️ Ce document décrit la **vision produit** et la **stack cible** d'Opportune.
-> Il ne reflète pas l'implémentation actuelle du dépôt (Node.js, sans dépendances
-> hors `@notionhq/client` + `dotenv`, stockage en fichiers JSON). C'est une cible
-> vers laquelle le projet peut évoluer, pas un état des lieux.
+> ℹ️ Ce document décrit la **vision produit** et la **stack cible** d'Opportune.
+> L'implémentation actuelle est la **V2 Python** (cœur métier, orchestrateur Hermes,
+> API HTTP — bibliothèque standard, SQLite), qui réalise déjà une bonne partie de cette
+> cible : scoring des offres, génération de lettre de motivation (Ollama/Ministral) et
+> validation humaine via Discord (cœur composé et testé). Restent notamment en chantier
+> la **collecte réelle** des offres, le **CV adapté** et le message LinkedIn, et le
+> **récepteur Discord live**. L'ancienne implémentation Node.js/JSON n'a plus cours.
 
 ## Objectif
 
@@ -24,7 +27,7 @@ offre sélectionnée → dossier personnalisé → validation → envoi manuel o
 | **Ministral + Ollama**    | Analyse et rédaction                          |
 | **Anthropic**             | Contrôle qualité des candidatures importantes |
 | **Kyutai**                | Commandes vocales et notes vocales            |
-| **Discord**               | Interface de validation                       |
+| **Discord**               | Interface de validation (push-to-triage, MVP) |
 | **SQLite**                | Suivi des offres et candidatures              |
 | **Python / Docker / WSL** | Orchestration                                 |
 
