@@ -163,3 +163,21 @@ ollama pull ministral-3:3b   # télécharge le modèle (une fois)
 - Pour que le conteneur joigne l'Ollama natif Windows, lancer le serveur avec
   `OLLAMA_HOST=0.0.0.0` et autoriser le port `11434` depuis le réseau Hyper-V/WSL dans le
   pare-feu Windows.
+
+## Validation humaine — revue Discord (push-to-triage)
+
+Quand un dossier est prêt (offre + lettre générée), il est **poussé** dans un salon
+Discord avec trois boutons Approuver / Rejeter / Différer ; le clic est routé vers la
+décision métier existante (`POST /recommendations/{id}/decision`, OPP-094).
+
+- `app.discord_review` : builders purs (payload embed + boutons), encodage
+  `custom_id` ↔ (verbe, recommandation), et `handle_interaction` qui route un clic vers
+  un décideur injecté (idempotent — le back autorise la re-validation).
+- `app.discord_transport` : envoi via `urllib` (**aucune dépendance**), transport
+  **injectable** — les tests n'ont besoin d'aucun serveur Discord.
+- `DISCORD_BOT_TOKEN` (variable d'environnement) porte le token du bot ; il n'apparaît
+  que dans l'en-tête `Authorization` des requêtes sortantes, jamais en dur.
+
+Le récepteur *live* des clics (gateway ou endpoint d'interactions signé) n'est pas fourni
+ici : il introduirait une dépendance de prod. Le cœur — construction du message, mapping
+message↔recommandation, routage d'un clic vers la décision — est complet et testé.
