@@ -1,17 +1,24 @@
 # Environnement de développement Docker (V2, OPP-071/072/073).
-# - app    : l'application Python. SQLite (OPP-072) est embarquée (volume dédié).
-# - ollama : serveur LLM local (OPP-073) servant le modèle Ministral.
+# - app : l'application Python. SQLite (OPP-072) est embarquée (volume dédié).
+#
+# LLM local (OPP-073) : on s'appuie sur l'Ollama **natif Windows** de la machine de
+# dev (GPU, modèle déjà présent) plutôt que sur un conteneur Ollama. L'app le joint
+# via `host.docker.internal`. Design conteneurisé (service `ollama`) conservé dans
+# l'historique git — à réactiver le jour du packaging portable (cf. OPP-113).
 services:
   app:
     build: .
     image: opportune-py:dev
     working_dir: /app
+    # Résolution de `host.docker.internal` vers l'hôte (Ollama natif Windows/WSL2).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Chemin de la base SQLite dans le conteneur (persistée via le volume ci-dessous).
       - OPPORTUNE_DB_PATH=/app/data/opportune.db
-      # Accès au LLM local : le service `ollama` ci-dessous et le modèle par défaut.
-      - OLLAMA_HOST=http://ollama:11434
-      - OLLAMA_MODEL=ministral
+      # Accès au LLM local : Ollama natif de l'hôte + modèle installé.
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - OLLAMA_MODEL=ministral-3:3b
     volumes:
       # Montage du code pour un cycle de dev rapide (l'install éditable pointe sur src/).
       - ./src:/app/src
@@ -21,17 +28,5 @@ services:
     # Par défaut, lance les tests ; surchargeable : `docker compose run --rm app <cmd>`.
     command: pytest
 
-  # Serveur Ollama. Démarrage : `docker compose up -d ollama`, puis récupérer le
-  # modèle une fois : `docker compose exec ollama ollama pull ministral`.
-  # Non requis pour les tests (le transport est injecté), d'où l'absence de depends_on.
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      # Persistance des modèles téléchargés (évite de re-télécharger Ministral).
-      - ollama-models:/root/.ollama
-
 volumes:
   opportune-data:
-  ollama-models:
