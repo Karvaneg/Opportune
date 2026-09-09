@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from app.cover_letter import CoverLetter
+from app.discord_authz import ReviewerAllowlist, extract_discord_user_id
 from app.discord_transport import DiscordTransport
 from app.offer import Offer
 
@@ -64,6 +65,9 @@ _CONFIRMATION = {
     "reject": "❌ Dossier rejeté.",
     "defer": "🕓 Dossier différé.",
 }
+
+# Retour éphémère lorsqu'un cliqueur hors allowlist tente de valider (OPP-124).
+_UNAUTHORIZED = "⛔ Tu n'es pas autorisé·e à valider ce dossier."
 
 
 class InteractionError(Exception):
@@ -222,16 +226,29 @@ class DiscordReviewer:
 DecideFn = Callable[[str, str, "str | None"], object]
 
 
-def handle_interaction(interaction: dict, decide: DecideFn) -> dict:
-    """Route un clic de bouton vers la décision métier et confirme au cliqueur.
+def handle_interaction(
+    interaction: dict, decide: DecideFn, *, allowlist: ReviewerAllowlist
+) -> dict:
+    """Route un clic de bouton vers la décision métier, après contrôle d'autorisation.
 
     ``interaction`` est le payload envoyé par Discord au clic ; ``decide`` applique la
-    décision (idempotente côté back). Retourne une réponse d'interaction éphémère.
-    Lève ``InteractionError`` si le clic n'est pas une décision reconnue.
+    décision (idempotente côté back) ; ``allowlist`` porte les IDs Discord habilités à
+    valider (OPP-124). Le flux : décoder le clic, **vérifier que le cliqueur est autorisé**,
+    puis seulement décider. Un cliqueur hors allowlist reçoit un refus éphémère et
+    **aucune décision n'est enregistrée** (``decide`` n'est pas appelé). Retourne une
+    réponse d'interaction éphémère ; lève ``InteractionError`` si le clic n'est pas une
+    décision reconnue.
     """
     data = interaction.get("data") if isinstance(interaction, dict) else None
     custom_id = data.get("custom_id") if isinstance(data, dict) else None
     verb, recommendation_id = decode_custom_id(custom_id)
+
+    if not allowlist.is_allowed(extract_discord_user_id(interaction)):
+        return {
+            "type": _RESPONSE_CHANNEL_MESSAGE,
+            "data": {"content": _UNAUTHORIZED, "flags": _EPHEMERAL},
+        }
+
     decide(recommendation_id, verb, None)
     return {
         "type": _RESPONSE_CHANNEL_MESSAGE,

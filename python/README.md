@@ -171,12 +171,19 @@ Discord avec trois boutons Approuver / Rejeter / Différer ; le clic est routé 
 décision métier existante (`POST /recommendations/{id}/decision`, OPP-094).
 
 - `app.discord_review` : builders purs (payload embed + boutons), encodage
-  `custom_id` ↔ (verbe, recommandation), et `handle_interaction` qui route un clic vers
-  un décideur injecté (idempotent — le back autorise la re-validation).
+  `custom_id` ↔ (verbe, recommandation), et `handle_interaction` qui **contrôle l'identité
+  du cliqueur** (allowlist, cf. ci-dessous) puis route un clic autorisé vers un décideur
+  injecté (idempotent — le back autorise la re-validation).
+- `app.discord_authz` : autorisation des interactions — extrait l'identité Discord
+  (`member.user` en salon, `user` en message privé) et la confronte à une `ReviewerAllowlist`.
+  Un clic hors allowlist reçoit un refus **éphémère** et **n'enregistre aucune décision**.
 - `app.discord_transport` : envoi via `urllib` (**aucune dépendance**), transport
   **injectable** — les tests n'ont besoin d'aucun serveur Discord.
-- `DISCORD_BOT_TOKEN` (variable d'environnement) porte le token du bot ; il n'apparaît
-  que dans l'en-tête `Authorization` des requêtes sortantes, jamais en dur.
+- `DISCORD_BOT_TOKEN` porte le token du bot (en-tête `Authorization` sortant, jamais en dur).
+  `DISCORD_REVIEWER_IDS` (CSV d'IDs Discord) définit **qui** peut valider — **fail-closed** :
+  absente ou vide, personne n'est autorisé. La garantie d'authenticité du canal
+  (signature / token) prouve « vient de Discord » ; l'allowlist prouve « d'une personne
+  autorisée » — les deux sont nécessaires.
 
 Le récepteur *live* des clics (gateway ou endpoint d'interactions signé) n'est pas fourni
 ici : il introduirait une dépendance de prod. Le cœur — construction du message, mapping

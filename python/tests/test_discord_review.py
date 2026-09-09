@@ -15,12 +15,22 @@ from app.discord_review import (
     encode_custom_id,
     handle_interaction,
 )
+from app.discord_authz import ReviewerAllowlist
 from app.discord_transport import MockDiscordTransport
 from app.offer import Offer
 
 # Une recommandation dont l'id contient un « : » (forme candidate:offre) — vérifie que
 # l'encodage/décodage du custom_id le préserve verbatim.
 RID = "cand-1:abc123def456"
+
+# Reviewer autorisé + allowlist le contenant, pour les tests de handle_interaction.
+REVIEWER_ID = "discord-user-1"
+ALLOWLIST = ReviewerAllowlist(frozenset({REVIEWER_ID}))
+
+
+def _click(custom_id: str, *, user_id: str = REVIEWER_ID) -> dict:
+    """Payload d'interaction (contexte salon : identité sous ``member.user``)."""
+    return {"data": {"custom_id": custom_id}, "member": {"user": {"id": user_id}}}
 
 
 def _offer() -> Offer:
@@ -155,8 +165,8 @@ def test_handle_interaction_routes_click_to_decision():
     def decide(rid, verb, comment):
         calls.append((rid, verb, comment))
 
-    interaction = {"data": {"custom_id": encode_custom_id("approve", RID)}}
-    response = handle_interaction(interaction, decide)
+    interaction = _click(encode_custom_id("approve", RID))
+    response = handle_interaction(interaction, decide, allowlist=ALLOWLIST)
 
     assert calls == [(RID, "approve", None)]
     assert response["type"] == 4  # message avec source
@@ -169,9 +179,49 @@ def test_handle_interaction_rejects_foreign_custom_id():
         raise AssertionError("decide ne doit pas être appelé")
 
     with pytest.raises(InteractionError):
-        handle_interaction({"data": {"custom_id": "other:x:y"}}, decide)
+        handle_interaction(_click("other:x:y"), decide, allowlist=ALLOWLIST)
 
 
 def test_handle_interaction_rejects_missing_data():
     with pytest.raises(InteractionError):
-        handle_interaction({}, lambda *a: None)
+        handle_interaction({}, lambda *a: None, allowlist=ALLOWLIST)
+
+
+def test_handle_interaction_refuses_unauthorized_clicker():
+    def decide(rid, verb, comment):  # ne doit jamais être appelé
+        raise AssertionError("aucune décision ne doit être enregistrée")
+
+    interaction = _click(encode_custom_id("approve", RID), user_id="intrus")
+    response = handle_interaction(interaction, decide, allowlist=ALLOWLIST)
+
+    # Refus éphémère, aucune décision : le back n'est jamais sollicité.
+    assert response["type"] == 4
+    assert response["data"]["flags"] == 64
+    assert "autorisé" in response["data"]["content"]
+
+
+def test_handle_interaction_refuses_when_identity_absent():
+    def decide(rid, verb, comment):
+        raise AssertionError("aucune décision ne doit être enregistrée")
+
+    # Payload sans member ni user : identité introuvable → refus (fail-closed).
+    interaction = {"data": {"custom_id": encode_custom_id("approve", RID)}}
+    response = handle_interaction(interaction, decide, allowlist=ALLOWLIST)
+
+    assert "autorisé" in response["data"]["content"]
+
+
+def test_handle_interaction_accepts_direct_message_identity():
+    calls = []
+
+    def decide(rid, verb, comment):
+        calls.append((rid, verb, comment))
+
+    # En message privé, l'identité est au niveau racine ``user`` (pas ``member``).
+    interaction = {
+        "data": {"custom_id": encode_custom_id("defer", RID)},
+        "user": {"id": REVIEWER_ID},
+    }
+    handle_interaction(interaction, decide, allowlist=ALLOWLIST)
+
+    assert calls == [(RID, "defer", None)]
