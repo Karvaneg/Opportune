@@ -181,3 +181,31 @@ décision métier existante (`POST /recommendations/{id}/decision`, OPP-094).
 Le récepteur *live* des clics (gateway ou endpoint d'interactions signé) n'est pas fourni
 ici : il introduirait une dépendance de prod. Le cœur — construction du message, mapping
 message↔recommandation, routage d'un clic vers la décision — est complet et testé.
+
+## Lancer la boucle push (offre → run → lettre → carte Discord)
+
+`hermes.push_runner` est l'**adaptateur mince** qui exécute la boucle *push* de bout en
+bout : ingestion d'une offre collée → run Hermes → résolution amont → génération de lettre
+(Ollama) → envoi des cartes de revue dans Discord. Toute la logique vit dans les modules
+testés en aval ; le runner ne fait que les câbler et lire l'environnement.
+
+```bash
+export DISCORD_BOT_TOKEN=...                    # requis (transport Discord)
+export DISCORD_CHANNEL_ID=123456789            # requis : salon où poster les cartes
+export OPPORTUNE_CANDIDATE_ID=cand-marie        # requis : candidat ciblé
+export OPPORTUNE_LLM_TIMEOUT=300                # timeout LLM (s) — défaut 300, généreux
+# export OPPORTUNE_OFFER_SOURCE=collée          # optionnel : provenance de l'offre
+# OLLAMA_HOST / OLLAMA_MODEL / OPPORTUNE_DB_PATH : cf. sections dédiées
+
+pbpaste | python -m hermes.push_runner          # l'offre collée est lue sur stdin
+python -m hermes.push_runner < offre.txt        # ou depuis un fichier ; stdin vide → stock existant
+```
+
+Le timeout LLM est **volontairement large** (défaut 300 s) : une lettre complète dépasse le
+défaut 60 s d'`app.llm` à froid.
+
+Un échec partiel du lot lève `BatchReviewError` : le lot **s'arrête à la première carte en
+échec** en rapportant celles déjà poussées (la progression n'est pas perdue). Attention :
+relancer le runner **re-pousse** les cartes `postuler` encore `pending` — le dédoublonnage
+repose sur la décision humaine, qui fait sortir la décision de `pending` (validation via
+Discord, OPP-125). Tant qu'un dossier n'est pas tranché, un nouveau run le renverra.
