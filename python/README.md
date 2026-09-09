@@ -185,9 +185,28 @@ décision métier existante (`POST /recommendations/{id}/decision`, OPP-094).
   (signature / token) prouve « vient de Discord » ; l'allowlist prouve « d'une personne
   autorisée » — les deux sont nécessaires.
 
-Le récepteur *live* des clics (gateway ou endpoint d'interactions signé) n'est pas fourni
-ici : il introduirait une dépendance de prod. Le cœur — construction du message, mapping
-message↔recommandation, routage d'un clic vers la décision — est complet et testé.
+### Récepteur live des clics — gateway (option B)
+
+`hermes.discord_gateway` connecte un **bot** à la gateway Discord (connexion **sortante**,
+aucune URL publique, rien d'exposé sur la machine) et route chaque clic de bouton vers la
+décision métier, en process. La logique risquée reste isolée du réseau :
+
+- **pur/testable** : `build_decider` (le `decide` réel : verbe → statut →
+  `record_human_decision`) et `process_interaction` (routage résilient — allowlist appliquée,
+  jamais d'exception qui ferait tomber la boucle) ;
+- **coquille async** (`run_gateway`/`main`) : connexion, heartbeat et reconnexion délégués à
+  `discord.py`, importé **paresseusement**. La dépendance est **confinée à l'extra `[discord]`** :
+  le cœur reste sans dépendance et testable sans elle.
+
+```bash
+pip install -e ".[discord]"                 # installe discord.py (hors cœur)
+export DISCORD_BOT_TOKEN=...                 # requis
+export DISCORD_REVIEWER_IDS=123,456          # requis : reviewers autorisés (fail-closed)
+python -m hermes.discord_gateway            # se connecte et écoute les clics
+```
+
+Voie B tranchée vs endpoint HTTP signé (A) : pas d'exposition machine ni de migration de
+persistance. Vercel + base hébergée reste la cible produit ultérieure.
 
 ## Lancer la boucle push (offre → run → lettre → carte Discord)
 

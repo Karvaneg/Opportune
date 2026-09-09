@@ -16,6 +16,9 @@ dependencies = []
 [project.optional-dependencies]
 # Dépendances de développement (tests). Installées via : pip install -e ".[dev]".
 dev = ["pytest>=8"]
+# Récepteur live des clics Discord (gateway, option B, OPP-125). Confiné ici : le cœur
+# métier reste sans dépendance et testable. Installé via : pip install -e ".[discord]".
+discord = ["discord.py>=2.3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

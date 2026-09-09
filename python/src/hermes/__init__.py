@@ -12,6 +12,11 @@ Le point d'entrée est ``HermesOrchestrator.recommend_for_candidate``.
 
 from __future__ import annotations
 
+from hermes.discord_gateway import (
+    build_decider,
+    build_gateway_decider,
+    process_interaction,
+)
 from hermes.models import HermesRecommendation, HermesRun, OfferEvaluation
 from hermes.orchestrator import HermesOrchestrator
 from hermes.push_runner import PushOutcome, PushRunner, build_push_runner
@@ -27,6 +32,9 @@ __all__ = [
     "PushRunner",
     "ResolvedRun",
     "RunStore",
+    "build_decider",
+    "build_gateway_decider",
     "build_push_runner",
+    "process_interaction",
     "resolve_run_review_items",
 ]
