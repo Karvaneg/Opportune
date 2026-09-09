@@ -37,13 +37,53 @@ Onglet **OAuth2** › **URL Generator** :
 
 Ouvrir l'URL générée, choisir le serveur, autoriser. Le bot doit avoir accès au salon cible.
 
+> Il te faut donc un serveur Discord **déjà créé** pour l'y inviter. Si ce n'est pas le cas,
+> crée-le d'abord (cf. § 4.a) puis reviens ouvrir l'URL.
+
+> ⚠️ **Onglet _Installation_ — deux réglages, ne pas les confondre.** Sur une app **privée**
+> (Public Bot désactivé), Discord bloque avec *« Une application privée ne peut pas avoir de
+> lien d'autorisation par défaut… »*. Le déblocage tient à **deux** réglages de cet onglet,
+> à sauvegarder ensemble :
+>
+> 1. **Install Link** (menu déroulant) → **None / Aucun**. C'est *ce* réglage qui lève
+>    l'erreur « application privée » (le lien d'autorisation par défaut n'est permis que pour
+>    une app publique).
+> 2. **Installation Contexts** → **« Installation sur un serveur » (Guild Install) activé**.
+>    Indispensable : sans lui, l'ajout du bot à un serveur échoue avec *« type d'installation
+>    non prise en charge »*.
+>
+> Ne PAS se contenter de cocher « Installation pour un utilisateur » : le bot doit être
+> installé **sur un serveur** pour poster dans un salon. L'invitation réelle se fait ensuite
+> via l'URL Generator ci-dessus (scope `bot`), pas via ce lien par défaut.
+
 ## 4. Récupérer les identifiants
 
-Activer le **Mode développeur** (Discord › Paramètres › Avancés › Mode développeur), puis :
+> ⚠️ **Deux endroits distincts.** Les étapes 1-3 se passent dans le **portail développeur**
+> (création de l'appli et du bot). Le **serveur** et le **salon**, eux, n'existent pas là-bas :
+> ils se créent dans le **client Discord** (l'app de chat habituelle). `DISCORD_CHANNEL_ID` et
+> `DISCORD_REVIEWER_IDS` s'y récupèrent, pas dans le portail.
 
-- **Salon cible** : clic droit sur le salon → *Copier l'identifiant* → `DISCORD_CHANNEL_ID`.
+### 4.a Créer le serveur et le salon (si tu n'en as pas déjà)
+
+Dans le client Discord :
+
+1. Colonne de gauche → **+** (*Ajouter un serveur*) → *Créer mon propre serveur*. C'est là
+   qu'atterrira le bot invité à l'étape 3.
+2. Dans ce serveur, créer (ou réutiliser) un **salon textuel** cible où les cartes seront
+   postées (p. ex. `#candidatures`).
+
+### 4.b Copier les identifiants
+
+Activer le **Mode développeur** (Discord › Paramètres › Avancés › Mode développeur), puis,
+toujours dans le client Discord :
+
+- **Salon cible** : clic droit sur le salon → *Copier l'identifiant du salon* →
+  `DISCORD_CHANNEL_ID`.
 - **Reviewers autorisés** : clic droit sur chaque personne → *Copier l'identifiant* →
   `DISCORD_REVIEWER_IDS` (séparés par des virgules).
+
+> Ne pas confondre avec l'*Application ID* (Client ID) du portail : celui-ci sert uniquement à
+> générer l'URL d'invitation (étape 3) et **ne va pas** dans le `.env`.
 
 > 🔒 L'allowlist est **fail-closed** : si `DISCORD_REVIEWER_IDS` est vide, personne ne peut
 > valider. La garantie d'authenticité du canal (token du bot) prouve « vient de Discord » ;
@@ -59,6 +99,14 @@ cp .env.example .env          # puis renseigner les valeurs (voir .env.example)
 Variables indispensables pour le bot : `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID`,
 `DISCORD_REVIEWER_IDS`. Pour la génération de lettre côté push : `OLLAMA_HOST` /
 `OLLAMA_MODEL` (cf. README « LLM local »).
+
+> 🐧 **WSL2 + Ollama natif Windows.** Ne pas mettre `OLLAMA_HOST=http://localhost:11434` :
+> depuis WSL2, `localhost` désigne WSL, pas l'hôte Windows où tourne Ollama → `Connection
+> refused`. Utiliser l'IP de la passerelle WSL, récupérable par
+> `ip route | awk '/^default/{print $3}'` (souvent `172.18.224.1`), d'où
+> `OLLAMA_HOST=http://172.18.224.1:11434`. Cette IP peut changer au redémarrage de WSL ;
+> la revérifier si le LLM devient injoignable. Côté Windows, Ollama doit écouter au-delà de
+> `localhost` (`OLLAMA_HOST=0.0.0.0`) et le pare-feu autoriser le port `11434`.
 
 ## 6. Installer la dépendance Discord (extra confiné)
 

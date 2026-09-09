@@ -7,6 +7,7 @@ plus la garde « token absent » de l'implémentation HTTP.
 import pytest
 
 from app.discord_transport import (
+    DISCORD_USER_AGENT,
     DiscordError,
     DiscordTransport,
     HttpDiscordTransport,
@@ -25,6 +26,9 @@ def test_build_send_request_targets_channel_with_bot_auth():
     assert url == "https://api.test/v10/channels/123/messages"
     assert headers["Authorization"] == "Bot secret"
     assert headers["Content-Type"] == "application/json"
+    # User-Agent obligatoire : sans lui, Cloudflare bannit urllib (403, code 1010).
+    assert headers["User-Agent"] == DISCORD_USER_AGENT
+    assert headers["User-Agent"].startswith("DiscordBot (")
     assert b"salut" in data
 
 
