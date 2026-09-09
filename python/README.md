@@ -208,6 +208,10 @@ python -m hermes.discord_gateway            # se connecte et écoute les clics
 Voie B tranchée vs endpoint HTTP signé (A) : pas d'exposition machine ni de migration de
 persistance. Vercel + base hébergée reste la cible produit ultérieure.
 
+**Mise en route pas à pas** (création du bot, intents/permissions minimaux, `.env`,
+lancement) : voir [`docs/runbook-bot-discord.md`](docs/runbook-bot-discord.md). Le gabarit
+de configuration versionné (sans secret) est [`.env.example`](.env.example).
+
 ## Lancer la boucle push (offre → run → lettre → carte Discord)
 
 `hermes.push_runner` est l'**adaptateur mince** qui exécute la boucle *push* de bout en
