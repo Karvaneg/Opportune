@@ -41,8 +41,11 @@ def test_low_score_recommends_ignorer():
 
 
 def test_threshold_bounds_are_inclusive():
-    assert recommend_action(75).action == "postuler"  # ≥ high
-    assert recommend_action(50).action == "a_etudier"  # ≥ medium
+    # Seuils par défaut alignés sur OPP-003 : postuler ≥ 80, à étudier ≥ 60 (OPP-129).
+    assert recommend_action(80).action == "postuler"  # ≥ high
+    assert recommend_action(79).action == "a_etudier"  # juste sous high
+    assert recommend_action(60).action == "a_etudier"  # ≥ medium
+    assert recommend_action(59).action == "ignorer"  # juste sous medium
 
 
 def test_none_score_is_indeterminee_not_ignorer():

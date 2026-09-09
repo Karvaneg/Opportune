@@ -195,7 +195,7 @@ def test_injected_clock_stamps_decision_history(env):
 def _seed_one_per_bucket(offers):
     """Sème 3 offres calibrées pour tomber dans chacun des 3 statuts de triage.
 
-    Profil : Python+SQL, CDI, Paris, 6 ans. Seuils 75 / 50. Poids skills .45 /
+    Profil : Python+SQL, CDI, Paris, 6 ans. Seuils 80 / 60. Poids skills .45 /
     contrat .30 / séniorité .15 / lieu .10.
     """
     # Parfaite → 100 → postuler → approved.
