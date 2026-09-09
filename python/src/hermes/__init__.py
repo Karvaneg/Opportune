@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from hermes.models import HermesRecommendation, HermesRun, OfferEvaluation
 from hermes.orchestrator import HermesOrchestrator
+from hermes.review_resolution import ResolvedRun, resolve_run_review_items
 from hermes.run_store import RunStore
 
 __all__ = [
@@ -21,5 +22,7 @@ __all__ = [
     "HermesRecommendation",
     "HermesRun",
     "OfferEvaluation",
+    "ResolvedRun",
     "RunStore",
+    "resolve_run_review_items",
 ]
