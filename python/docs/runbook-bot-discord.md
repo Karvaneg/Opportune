@@ -68,7 +68,23 @@ Variables indispensables pour le bot : `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID`
 pip install -e ".[discord]"
 ```
 
-## 7. Lancer
+## 7. Préparer la base (données de démo)
+
+Sans profil candidat en base, le run push échoue (`UnknownCandidateError`). Le seed pose un
+profil + une offre de démo alignés (score élevé → `postuler`, donc une carte à pousser) :
+
+```bash
+set -a && source .env && set +a          # charge OPPORTUNE_CANDIDATE_ID, OPPORTUNE_DB_PATH…
+python -m hermes.seed_demo               # idempotent (rejouable sans doublon)
+```
+
+> Utilitaire de **démo** : il écrit dans la base pointée par `OPPORTUNE_DB_PATH`. Il ne
+> **remplace pas** un profil déjà présent sous `OPPORTUNE_CANDIDATE_ID` (tes données réelles
+> sont préservées) : il ne pose le profil de démo que s'il manque. Pour un vrai usage,
+> alimente la base par tes propres offres (`hermes.push_runner` sait ingérer une offre collée
+> sur stdin).
+
+## 8. Lancer
 
 Charger le `.env` dans le shell puis démarrer les deux côtés (deux terminaux) :
 
