@@ -235,7 +235,12 @@ Le timeout LLM est **volontairement large** (défaut 300 s) : une lettre complè
 défaut 60 s d'`app.llm` à froid.
 
 Un échec partiel du lot lève `BatchReviewError` : le lot **s'arrête à la première carte en
-échec** en rapportant celles déjà poussées (la progression n'est pas perdue). Attention :
-relancer le runner **re-pousse** les cartes `postuler` encore `pending` — le dédoublonnage
-repose sur la décision humaine, qui fait sortir la décision de `pending` (validation via
-Discord, OPP-125). Tant qu'un dossier n'est pas tranché, un nouveau run le renverra.
+échec** en rapportant celles déjà poussées (la progression n'est pas perdue).
+
+**Idempotence du re-run (OPP-131)** : le runner suit les cartes poussées dans un
+`SubmissionStore` (`app.submission_store`) et n'en **re-pousse aucune tant qu'elle est
+encore en attente** — chaque carte est mémorisée **dès son envoi**, donc même une reprise
+après un `BatchReviewError` (ou une interruption) ne redouble jamais les cartes déjà poussées. Ce suivi est **distinct du statut de validation**
+(une carte reste `pending` jusqu'au clic humain, pour rester validable via Discord, OPP-125).
+Si un message est supprimé côté Discord, `SubmissionStore.forget(recommendation_id)` autorise
+une re-soumission au prochain run.
