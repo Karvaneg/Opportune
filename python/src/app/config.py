@@ -9,5 +9,5 @@ from __future__ import annotations
 
 # Seuils de recommandation (bornes basses incluses) : score ≥ high → postuler,
 # score ≥ medium → à étudier, sinon → ignorer.
-RECOMMENDATION_HIGH = 75
-RECOMMENDATION_MEDIUM = 50
+RECOMMENDATION_HIGH = 80
+RECOMMENDATION_MEDIUM = 60
