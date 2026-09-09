@@ -20,6 +20,11 @@ from typing import Protocol, runtime_checkable
 DISCORD_API_BASE = "https://discord.com/api/v10"
 DEFAULT_TIMEOUT = 15
 
+# En-tête ``User-Agent`` exigé par Discord (format ``DiscordBot (url, version)``). Sans lui,
+# ``urllib`` envoie ``Python-urllib/x.y``, que le Cloudflare devant l'API bannit (403, code
+# 1010). Voir https://discord.com/developers/docs/reference#user-agent.
+DISCORD_USER_AGENT = "DiscordBot (https://github.com/Karvaneg/Opportune, 0.1)"
+
 
 class DiscordError(Exception):
     """Échec d'un appel à l'API Discord."""
@@ -46,6 +51,7 @@ def build_send_request(
     headers = {
         "Authorization": f"Bot {token}",
         "Content-Type": "application/json",
+        "User-Agent": DISCORD_USER_AGENT,
     }
     return url, data, headers
 
