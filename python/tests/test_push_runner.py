@@ -22,6 +22,7 @@ from app.profile_store import ProfileStore
 from app.recommendation_service import RecommendationService, UnknownCandidateError
 from app.redacteur import LLMRedacteur
 from app.review_pipeline import BatchReviewError
+from app.submission_store import SubmissionStore
 
 from hermes.orchestrator import HermesOrchestrator
 from hermes.push_runner import (
@@ -56,7 +57,8 @@ def _offer(offer_id: str, **overrides) -> Offer:
     return Offer(**data)
 
 
-def _build(conn, *, intake=None, redacteur=None, transport=None, limit=10, with_profile=True):
+def _build(conn, *, intake=None, redacteur=None, transport=None, limit=10,
+           with_profile=True, with_submissions=False):
     """Assemble un PushRunner sur de vrais dépôts, LLM/Discord mockés."""
     offers = OfferStore(conn)
     profiles = ProfileStore(conn)
@@ -77,6 +79,7 @@ def _build(conn, *, intake=None, redacteur=None, transport=None, limit=10, with_
         redacteur=redacteur or LLMRedacteur(MockLLMClient([LETTER] * 5)),
         reviewer=DiscordReviewer(transport, channel_id="chan-1"),
         intake_client=intake or MockLLMClient([_analysis()] * 5),
+        submissions=SubmissionStore(conn) if with_submissions else None,
         limit=limit,
     )
     return runner, transport
@@ -143,6 +146,49 @@ def test_run_unknown_candidate_raises_before_any_ingest(conn):
     # Échec net : rien n'a été analysé ni persisté à vide.
     assert intake.calls == []
     assert runner.offers.count() == 0
+
+
+# --- idempotence du re-run (OPP-131) -----------------------------------------
+
+
+def test_rerun_does_not_repush_pending_card(conn):
+    runner, transport = _build(conn, with_submissions=True)
+    runner.offers.save(_offer("strong"))
+
+    first = runner.push_for_candidate("cand-1")
+    second = runner.push_for_candidate("cand-1")  # décision toujours pending, carte déjà là
+
+    assert [r.recommendation_id for r in first.reviewed] == ["cand-1:strong"]
+    assert second.reviewed == []  # rien de re-poussé
+    assert len(transport.sent) == 1  # une seule carte au total
+    assert runner.submissions.has_open_submission("cand-1:strong") is True
+
+
+def test_rerun_repushes_after_forget(conn):
+    runner, transport = _build(conn, with_submissions=True)
+    runner.offers.save(_offer("strong"))
+
+    runner.push_for_candidate("cand-1")
+    runner.submissions.forget("cand-1:strong")  # carte supprimée côté Discord → re-soumission
+    second = runner.push_for_candidate("cand-1")
+
+    assert [r.recommendation_id for r in second.reviewed] == ["cand-1:strong"]
+    assert len(transport.sent) == 2
+
+
+def test_partial_failure_records_pushed_cards_for_resumption(conn):
+    # Deux offres éligibles ; la 2de carte échoue. La 1re, déjà poussée, doit être
+    # mémorisée pour qu'une reprise ne la redouble pas.
+    transport = _FailOnNthTransport(fail_on=2)
+    runner, _ = _build(conn, transport=transport, with_submissions=True)
+    runner.offers.save(_offer("a"))
+    runner.offers.save(_offer("b"))
+
+    with pytest.raises(BatchReviewError) as err:
+        runner.push_for_candidate("cand-1")
+
+    pushed_id = err.value.results[0].recommendation_id
+    assert runner.submissions.has_open_submission(pushed_id) is True
 
 
 # --- échec partiel ------------------------------------------------------------

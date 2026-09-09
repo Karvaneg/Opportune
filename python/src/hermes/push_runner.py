@@ -36,7 +36,12 @@ from app.offer_store import OfferRepository, OfferStore
 from app.profile_store import ProfileStore
 from app.recommendation_service import RecommendationService, UnknownCandidateError
 from app.redacteur import LLMRedacteur, Redacteur
-from app.review_pipeline import ReviewedCandidature, submit_pending_reviews
+from app.review_pipeline import (
+    ReviewedCandidature,
+    only_unsubmitted,
+    submit_pending_reviews,
+)
+from app.submission_store import SubmissionRepository, SubmissionStore
 
 from hermes.models import HermesRun
 from hermes.orchestrator import HermesOrchestrator
@@ -104,6 +109,7 @@ class PushRunner:
         redacteur: Redacteur,
         reviewer: DiscordReviewer,
         intake_client: LLMClient,
+        submissions: "SubmissionRepository | None" = None,
         limit: int = 10,
     ) -> None:
         self.orchestrator = orchestrator
@@ -113,6 +119,9 @@ class PushRunner:
         self.redacteur = redacteur
         self.reviewer = reviewer
         self.intake_client = intake_client
+        # Suivi des soumissions (OPP-131) : idempotence du re-run. Optionnel — sans lui, le
+        # runner garde son comportement d'origine (peut re-pousser une carte encore pending).
+        self.submissions = submissions
         self.limit = limit
 
     def ingest(self, raw_texts: list[str], *, source: str, url: str = "") -> list[Offer]:
@@ -161,18 +170,43 @@ class PushRunner:
         return self._push(profile, limit=limit)
 
     def _push(self, profile: CandidateProfile, *, limit: int | None) -> PushOutcome:
-        """Cœur partagé : run → résolution amont → génération + push, profil déjà résolu."""
+        """Cœur partagé : run → résolution amont → génération + push, profil déjà résolu.
+
+        Avec un suivi des soumissions (OPP-131), écarte les dossiers déjà poussés et encore
+        en attente (idempotence du re-run) et enregistre **chaque carte dès son envoi** — y
+        compris avant un ``BatchReviewError`` — pour qu'une reprise ne les redouble jamais.
+        """
         run = self.orchestrator.run_and_evaluate_for_candidate(
             profile.id, limit=self.limit if limit is None else limit
         )
         resolved = resolve_run_review_items(
             run, decisions=self.decisions, offers=self.offers
         )
+        # Sans suivi : comportement d'origine (défaut de submit_pending_reviews, pas de
+        # mémorisation). Avec suivi : filtre idempotent + enregistrement au grain de l'envoi.
+        tracking: dict = {}
+        if self.submissions is not None:
+            tracking["should_review"] = only_unsubmitted(self.submissions)
+            tracking["on_submitted"] = self._record
         reviewed = submit_pending_reviews(
-            resolved.items, profile, redacteur=self.redacteur, reviewer=self.reviewer
+            resolved.items,
+            profile,
+            redacteur=self.redacteur,
+            reviewer=self.reviewer,
+            **tracking,
         )
         return PushOutcome(
             run=run, reviewed=reviewed, missing_offers=resolved.missing_offers
+        )
+
+    def _record(self, candidature: ReviewedCandidature) -> None:
+        """Persiste une carte poussée dans le suivi des soumissions (no-op sans suivi)."""
+        if self.submissions is None:
+            return
+        self.submissions.record(
+            candidature.recommendation_id,
+            candidature.submission.message_id,
+            candidature.submission.channel_id,
         )
 
     def _require_profile(self, candidate_id: str) -> CandidateProfile:
@@ -234,6 +268,7 @@ def build_push_runner(
             HttpDiscordTransport(token=bot_token), channel_id=channel_id
         ),
         intake_client=llm_client,
+        submissions=SubmissionStore(conn),  # idempotence du re-run (OPP-131)
         limit=limit,
     )
 

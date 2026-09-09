@@ -16,9 +16,12 @@ from app.decision import validate
 from app.review_pipeline import (
     BatchReviewError,
     ReviewedCandidature,
+    only_unsubmitted,
     prepare_and_submit_review,
     submit_pending_reviews,
 )
+from app.submission_store import SubmissionStore
+from app.db import connect
 
 LETTER = ("Madame, Monsieur, " + "texte de motivation " * 15).strip()
 
@@ -115,6 +118,29 @@ def test_prepare_and_submit_review_does_not_push_when_letter_fails():
             _decision(), _offer(), _profile(), redacteur=redacteur, reviewer=reviewer
         )
     assert transport.sent == []
+
+
+# --- only_unsubmitted (idempotence, OPP-131) ---------------------------------
+
+
+def test_only_unsubmitted_excludes_already_submitted():
+    conn = connect(":memory:")
+    submissions = SubmissionStore(conn)
+    decision = _decision(offer_id="off-a", action="postuler")
+    guard = only_unsubmitted(submissions)
+
+    assert guard(decision) is True  # jamais soumise → éligible
+    submissions.record(decision.id, "msg-1", "chan-1")
+    assert guard(decision) is False  # déjà une carte vivante → écartée
+    conn.close()
+
+
+def test_only_unsubmitted_keeps_base_eligibility():
+    conn = connect(":memory:")
+    guard = only_unsubmitted(SubmissionStore(conn))
+    # Non éligible au départ (a_etudier) : le suivi ne l'ouvre pas.
+    assert guard(_decision(offer_id="off-b", action="a_etudier")) is False
+    conn.close()
 
 
 # --- submit_pending_reviews --------------------------------------------------
