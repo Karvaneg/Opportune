@@ -29,3 +29,26 @@ def test_skills_dedupe_case_insensitive_keep_order():
 
 def test_skills_drop_empty_entries():
     assert normalize_skills(["  ", "Docker", ""]) == ["Docker"]
+
+
+def test_skills_atomize_parenthesised_enumeration():
+    # « Back-end (PostgreSQL, Express) » doit être éclaté en éléments atomiques.
+    assert normalize_skills(["Back-end (PostgreSQL, Express)"]) == [
+        "Back-end",
+        "PostgreSQL",
+        "Express",
+    ]
+
+
+def test_skills_atomize_slash_group():
+    assert normalize_skills(["HTML/CSS/JS"]) == ["HTML", "CSS", "JS"]
+
+
+def test_skills_keep_atomic_slash_acronyms_whole():
+    # CI/CD, TCP/IP… sont atomiques : ne pas les éclater sur le « / ».
+    assert normalize_skills(["CI/CD", "TCP/IP"]) == ["CI/CD", "TCP/IP"]
+
+
+def test_skills_atomize_then_dedupe_across_entries():
+    # Éclatement puis dédoublonnage casse-insensible entre entrées distinctes.
+    assert normalize_skills(["React, Node", "node", "React"]) == ["React", "Node"]

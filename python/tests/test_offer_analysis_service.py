@@ -36,6 +36,14 @@ def test_prompt_is_deterministic_and_contains_offer():
     assert "title" in a and "attention_points" in a  # clés attendues annoncées
 
 
+def test_prompt_requires_atomic_skills():
+    # Le prompt doit exiger des compétences atomiques : c'est ce qui évite les blocs
+    # composés qui cassent le match exact de compare_skills (une techno par élément).
+    prompt = build_analysis_prompt("Offre XYZ")
+    assert "ATOMIQUES" in prompt
+    assert "Back-end (PostgreSQL, Express)" in prompt  # contre-exemple explicite
+
+
 def test_prompt_trims_and_rejects_empty():
     assert build_analysis_prompt("  Offre  ").endswith("Offre")
     with pytest.raises(ValueError):
