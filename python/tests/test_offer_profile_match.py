@@ -123,6 +123,26 @@ def test_location_unknown_when_profile_missing():
     assert result.status == "unknown"
 
 
+def test_location_not_blocking_when_offer_is_remote():
+    # OPP-140 : offre en télétravail → écart de lieu non bloquant, même profil non mobile.
+    result = compare_location(
+        _offer(location="Paris (BnF, M6) - Télétravail possible"),
+        _profile(location="Gironde"),
+    )
+    assert result.status == "not_blocking"
+    assert result.reason == "offer-remote"
+
+
+def test_location_remote_detected_outside_location_field():
+    # Revue OPP-140 : le télétravail est souvent hors du champ lieu (ici dans le summary).
+    result = compare_location(
+        _offer(location="Lyon", summary="Poste full remote, équipe distribuée."),
+        _profile(location="Paris"),
+    )
+    assert result.status == "not_blocking"
+    assert result.reason == "offer-remote"
+
+
 # --- Séniorité / expérience --------------------------------------------------
 
 
@@ -150,6 +170,49 @@ def test_seniority_unknown_when_label_unrecognized():
 def test_seniority_not_required_when_unspecified():
     result = compare_seniority(_offer(seniority="Non précisé"), _profile(total_experience_years=6))
     assert result.status == "not_required"
+
+
+def test_seniority_range_takes_lowest_level():
+    # OPP-140 : « Junior à Confirmé » → seuil le plus bas (junior=0). 2 ans suffisent.
+    result = compare_seniority(
+        _offer(seniority="Junior à Confirmé"), _profile(total_experience_years=2)
+    )
+    assert result.required_years == 0
+    assert result.status == "ok"
+
+
+def test_seniority_range_insufficient_below_lowest():
+    # « Senior à Lead » → min(5, 8) = 5 ; 2 ans < 5 → insuffisant.
+    result = compare_seniority(
+        _offer(seniority="Senior à Lead"), _profile(total_experience_years=2)
+    )
+    assert result.required_years == 5
+    assert result.status == "insufficient"
+
+
+def test_seniority_range_with_slash_separator():
+    result = compare_seniority(
+        _offer(seniority="Confirmé/Senior"), _profile(total_experience_years=4)
+    )
+    assert result.required_years == 3  # min(confirmé=3, senior=5)
+    assert result.status == "ok"
+
+
+def test_seniority_exclusion_is_not_permissive():
+    # Revue OPP-140 : une exclusion (« débutants s'abstenir ») ne doit pas être lue comme
+    # un seuil bas permissif → non évaluable plutôt que « ok » pour 2 ans.
+    result = compare_seniority(
+        _offer(seniority="Senior, débutants s'abstenir"),
+        _profile(total_experience_years=2),
+    )
+    assert result.status == "unknown"
+
+
+def test_seniority_negation_of_level_falls_back_to_unknown():
+    result = compare_seniority(
+        _offer(seniority="Confirmé, pas de junior"), _profile(total_experience_years=1)
+    )
+    assert result.status == "unknown"  # ne pas créditer via le « junior » nié
 
 
 # --- Point d'entrée ----------------------------------------------------------

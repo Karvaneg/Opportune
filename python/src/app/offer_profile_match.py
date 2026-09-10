@@ -93,6 +93,15 @@ _MOBILITY_MARKERS = re.compile(
 # prudente : en cas de négation, on ne requalifie pas un écart de lieu).
 _NEGATION_MARKERS = re.compile(r"\b(non|pas|aucune?|sans|jamais)\b", re.IGNORECASE)
 
+# Marqueurs de télétravail **côté offre** : une offre remote-friendly désamorce un écart
+# de lieu, même si le profil n'est pas explicitement mobile. NB : « hybride » impose une
+# présence partielle sur site — on le traite comme non bloquant (heuristique permissive
+# assumée), à raffiner quand le lieu pèsera davantage dans le scoring (poids actuel 0.1).
+_OFFER_REMOTE_MARKERS = re.compile(
+    r"t[ée]l[ée]travail|remote|distanciel|hybride|home\s*office|full\s*remote",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class LocationMatch:
@@ -110,8 +119,20 @@ def _is_highly_mobile(profile: CandidateProfile) -> bool:
     return not _NEGATION_MARKERS.search(mobility)
 
 
+def _offer_allows_remote(offer: Offer) -> bool:
+    """L'offre propose-t-elle du télétravail ?
+
+    Le télétravail est rarement dans le champ ``location`` (souvent une ville) : on cherche
+    les marqueurs aussi dans ``title``, ``summary`` et ``attention_points``, là où il est
+    réellement mentionné.
+    """
+    parts: list[str] = [offer.location, offer.title, offer.summary, *offer.attention_points]
+    haystack = " ".join(part for part in parts if isinstance(part, str))
+    return bool(_OFFER_REMOTE_MARKERS.search(haystack))
+
+
 def compare_location(offer: Offer, profile: CandidateProfile) -> LocationMatch:
-    """Compare les lieux ; un profil mobile rend un écart « non bloquant »."""
+    """Compare les lieux ; un profil mobile **ou une offre en télétravail** rend l'écart non bloquant."""
     base_offer = offer.location or None
     base_profile = profile.location or None
 
@@ -127,6 +148,10 @@ def compare_location(offer: Offer, profile: CandidateProfile) -> LocationMatch:
 
     if _is_highly_mobile(profile):
         return LocationMatch(base_offer, base_profile, "not_blocking", "profile-mobility")
+
+    # Télétravail proposé par l'offre → l'écart géographique ne bloque pas.
+    if _offer_allows_remote(offer):
+        return LocationMatch(base_offer, base_profile, "not_blocking", "offer-remote")
 
     if offer_loc and prof_loc:
         return LocationMatch(base_offer, base_profile, "mismatch")
@@ -157,6 +182,31 @@ _SENIORITY_YEARS = {
 # Valeurs de séniorité équivalant à « aucune exigence ».
 _SENIORITY_NONE = {"", "non précisé", "non precise", "n/a", "aucune"}
 
+# Marqueurs d'**exclusion** de niveau (« pas de junior », « débutants s'abstenir/exclus ») :
+# leur présence rend la plage ambiguë (quel niveau est exclu ?) → non évaluable plutôt que
+# trop permissif. Cohérent avec ``_is_highly_mobile`` qui désamorce déjà sur négation.
+_SENIORITY_EXCLUSION = re.compile(
+    r"\b(?:non|pas|sans|aucune?|jamais)\b|abstenir|exclus?", re.IGNORECASE
+)
+
+
+def _min_required_years(normalized: str) -> int | None:
+    """Seuil d'années le plus BAS des niveaux connus cités dans un label de séniorité.
+
+    Gère les **plages** (« Junior à Confirmé », « Confirmé/Senior », « mid-level ») : on
+    isole les mots, on retient ceux reconnus dans ``_SENIORITY_YEARS`` et on prend leur
+    minimum — interprétation permissive (l'offre accepte dès le niveau le plus bas cité).
+
+    ``None`` si aucun niveau connu n'apparaît, **ou** si le label porte une exclusion
+    (« pas de junior », « débutants s'abstenir ») : on refuse d'inférer un seuil bas qui
+    contredirait l'exigence, quitte à retomber sur « non évaluable ».
+    """
+    if _SENIORITY_EXCLUSION.search(normalized):
+        return None
+    tokens = re.split(r"[^0-9a-zàâäéèêëîïôöûùüç]+", normalized)
+    years = [_SENIORITY_YEARS[token] for token in tokens if token in _SENIORITY_YEARS]
+    return min(years) if years else None
+
 
 @dataclass(frozen=True)
 class SeniorityMatch:
@@ -175,8 +225,12 @@ def compare_seniority(offer: Offer, profile: CandidateProfile) -> SeniorityMatch
     if normalized in _SENIORITY_NONE:
         return SeniorityMatch(label or None, None, owned, "not_required")
 
+    # Label simple (lookup direct) puis, à défaut, plage multi-niveaux (« Junior à
+    # Confirmé ») → seuil le plus bas des niveaux cités.
     required = _SENIORITY_YEARS.get(normalized)
-    if required is None:  # label non reconnu → non évaluable
+    if required is None:
+        required = _min_required_years(normalized)
+    if required is None:  # aucun niveau connu → non évaluable
         return SeniorityMatch(label or None, None, owned, "unknown")
     if owned is None:  # profil ne déclare pas son total
         return SeniorityMatch(label, required, None, "unknown")
