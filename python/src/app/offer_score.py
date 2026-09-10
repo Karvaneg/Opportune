@@ -86,7 +86,8 @@ def _location_eval(location: LocationMatch) -> _Eval:
     if location.status == "match":
         return 1.0, [("positive", f"Lieu correspondant ({location.offer})")]
     if location.status == "not_blocking":
-        return 1.0, [("positive", "Lieu non bloquant (profil mobile)")]
+        motif = "télétravail proposé" if location.reason == "offer-remote" else "profil mobile"
+        return 1.0, [("positive", f"Lieu non bloquant ({motif})")]
     if location.status == "mismatch":
         return 0.0, [("negative", f"Lieu différent (offre {location.offer}, profil {location.profile})")]
     return None, [("unknown", "Lieu non évalué")]
