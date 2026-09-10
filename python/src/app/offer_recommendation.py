@@ -24,8 +24,9 @@ from app.offer_score import score_match
 DEFAULT_HIGH = RECOMMENDATION_HIGH
 DEFAULT_MEDIUM = RECOMMENDATION_MEDIUM
 
-# Codes d'action stables (exploitables) + libellés affichables.
-_LABELS = {
+# Codes d'action stables (exploitables) + libellés affichables. Public : partagé avec les
+# adaptateurs d'affichage (cf. discord_review._ACTION_STYLE) pour une seule source de vérité.
+ACTION_LABELS = {
     "postuler": "Candidater",
     "a_etudier": "À étudier",
     "ignorer": "Ignorer",
@@ -61,7 +62,7 @@ def recommend_action(
     validate_thresholds(high, medium)
 
     if score is None:
-        return Recommendation("indeterminee", _LABELS["indeterminee"], None)
+        return Recommendation("indeterminee", ACTION_LABELS["indeterminee"], None)
 
     # bool est un int en Python : on l'exclut explicitement d'un score valide.
     if isinstance(score, bool) or not isinstance(score, int):
@@ -75,7 +76,7 @@ def recommend_action(
         action = "a_etudier"
     else:
         action = "ignorer"
-    return Recommendation(action, _LABELS[action], score)
+    return Recommendation(action, ACTION_LABELS[action], score)
 
 
 def recommend_for_match(

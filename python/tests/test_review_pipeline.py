@@ -138,8 +138,8 @@ def test_only_unsubmitted_excludes_already_submitted():
 def test_only_unsubmitted_keeps_base_eligibility():
     conn = connect(":memory:")
     guard = only_unsubmitted(SubmissionStore(conn))
-    # Non éligible au départ (a_etudier) : le suivi ne l'ouvre pas.
-    assert guard(_decision(offer_id="off-b", action="a_etudier")) is False
+    # Non éligible au départ (ignorer, sous le seuil) : le suivi ne l'ouvre pas.
+    assert guard(_decision(offer_id="off-b", action="ignorer")) is False
     conn.close()
 
 
@@ -147,10 +147,15 @@ def test_only_unsubmitted_keeps_base_eligibility():
 
 
 def test_submit_pending_reviews_only_pushes_eligible_by_default():
-    # Par défaut, seules les décisions « postuler » sont poussées.
+    # Par défaut, « postuler » ET « à étudier » sont poussées (OPP-141) ; « ignorer » non.
     postuler = _decision(offer_id="off-a", action="postuler")
     a_etudier = _decision(offer_id="off-b", action="a_etudier")
-    items = [(postuler, _offer("off-a")), (a_etudier, _offer("off-b"))]
+    ignorer = _decision(offer_id="off-c", action="ignorer")
+    items = [
+        (postuler, _offer("off-a")),
+        (a_etudier, _offer("off-b")),
+        (ignorer, _offer("off-c")),
+    ]
     transport = MockDiscordTransport()
     reviewer = DiscordReviewer(transport, channel_id="chan-1")
 
@@ -160,8 +165,8 @@ def test_submit_pending_reviews_only_pushes_eligible_by_default():
         reviewer=reviewer,
     )
 
-    assert [r.recommendation_id for r in results] == [postuler.id]
-    assert len(transport.sent) == 1
+    assert [r.recommendation_id for r in results] == [postuler.id, a_etudier.id]
+    assert len(transport.sent) == 2  # ignorer reste hors revue
 
 
 def test_submit_pending_reviews_skips_already_decided_by_default():

@@ -96,6 +96,22 @@ def test_build_message_carries_offer_letter_and_three_buttons():
     ]
 
 
+def test_build_message_distinguishes_action_visually():
+    # OPP-141 : « à étudier » doit être reconnaissable (emoji + couleur + libellé) d'un
+    # « candidater », pour que l'humain sache sur quoi son jugement est requis.
+    postuler = build_review_message(
+        _offer(), _letter(), RID, score=82, action="postuler", justification="—"
+    )["embeds"][0]
+    a_etudier = build_review_message(
+        _offer(), _letter(), RID, score=70, action="a_etudier", justification="—"
+    )["embeds"][0]
+
+    assert postuler["color"] != a_etudier["color"]
+    assert postuler["title"].startswith("🟢") and a_etudier["title"].startswith("🟡")
+    assert any(f["value"] == "Candidater" for f in postuler["fields"])
+    assert any(f["value"] == "À étudier" for f in a_etudier["fields"])
+
+
 def test_build_message_truncates_long_letter_under_discord_limit():
     message = build_review_message(
         _offer(), _letter("A" * 5000), RID, score=10, action="ignorer", justification="—"

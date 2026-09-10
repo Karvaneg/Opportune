@@ -190,8 +190,13 @@ def test_items_alimentent_submit_pending_reviews(stores):
     offers, decisions = stores
     offers.save(_offer("a"))
     offers.save(_offer("b"))
-    # 'a' à candidater (poussée), 'b' à étudier (filtrée par le défaut de la glu).
-    run = _run(_evaluation("a", action="postuler"), _evaluation("b", action="a_etudier"))
+    offers.save(_offer("c"))
+    # 'a' à candidater et 'b' à étudier sont poussées (OPP-141) ; 'c' à ignorer est filtrée.
+    run = _run(
+        _evaluation("a", action="postuler"),
+        _evaluation("b", action="a_etudier"),
+        _evaluation("c", action="ignorer"),
+    )
 
     resolved = resolve_run_review_items(run, decisions=decisions, offers=offers)
 
@@ -199,9 +204,14 @@ def test_items_alimentent_submit_pending_reviews(stores):
     results = submit_pending_reviews(
         resolved.items,
         create_profile(name="Marie", skills=["Python"], contract_type="CDI"),
-        redacteur=LLMRedacteur(MockLLMClient(["Madame, Monsieur, " + "motivation " * 20])),
+        redacteur=LLMRedacteur(
+            MockLLMClient(["Madame, Monsieur, " + "motivation " * 20] * 2)
+        ),
         reviewer=DiscordReviewer(transport, channel_id="chan-1"),
     )
 
-    assert [r.recommendation_id for r in results] == [decision_id("cand-1", "a")]
-    assert len(transport.sent) == 1
+    assert [r.recommendation_id for r in results] == [
+        decision_id("cand-1", "a"),
+        decision_id("cand-1", "b"),
+    ]
+    assert len(transport.sent) == 2  # 'c' (ignorer) reste hors revue
