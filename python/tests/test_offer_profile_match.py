@@ -51,6 +51,16 @@ def test_skills_matched_and_missing_case_insensitive():
     assert result.missing == ["Go"]
 
 
+def test_skills_matched_via_alias_and_family():
+    # Scénario Holis (OPP-139) : l'offre exige JavaScript et PostgreSQL ; le profil ne
+    # les nomme pas littéralement mais couvre les deux (React⇒JavaScript, alias Postgres).
+    offer = _offer(skills=["JavaScript", "PostgreSQL", "Rust"])
+    profile = _profile(skills=["React", "TypeScript", "Postgres"])
+    result = compare_skills(offer, profile)
+    assert result.matched == ["JavaScript", "PostgreSQL"]  # plus de faux négatif
+    assert result.missing == ["Rust"]  # réellement absent → toujours manquant
+
+
 # --- Type de contrat ---------------------------------------------------------
 
 

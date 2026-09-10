@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from app.candidate_profile import CandidateProfile
 from app.offer import Offer
+from app.skill_matching import canonicalize, expand_skills
 
 # --- Compétences -------------------------------------------------------------
 
@@ -29,16 +30,18 @@ class SkillMatch:
 
 
 def compare_skills(offer: Offer, profile: CandidateProfile) -> SkillMatch:
-    """Recouvrement compétences offre vs profil (casse-insensible).
+    """Recouvrement compétences offre vs profil, **moins littéral** (OPP-139).
 
-    ``missing`` = exigées par l'offre mais absentes du profil. Les libellés d'origine
-    de l'offre sont conservés.
+    Le profil est étendu par ``expand_skills`` (alias + familles : un profil TypeScript/React
+    couvre « JavaScript ») ; chaque compétence d'offre est comparée sous forme canonique.
+    ``missing`` = exigées par l'offre mais non couvertes. Les libellés d'origine de l'offre
+    sont conservés à l'affichage.
     """
-    owned = {skill.lower() for skill in profile.skills}
+    owned = expand_skills(profile.skills)
     matched: list[str] = []
     missing: list[str] = []
     for skill in offer.skills:
-        (matched if skill.lower() in owned else missing).append(skill)
+        (matched if canonicalize(skill) in owned else missing).append(skill)
     return SkillMatch(matched=matched, missing=missing)
 
 
