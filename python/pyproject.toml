@@ -19,6 +19,9 @@ dev = ["pytest>=8"]
 # Récepteur live des clics Discord (gateway, option B, OPP-125). Confiné ici : le cœur
 # métier reste sans dépendance et testable. Installé via : pip install -e ".[discord]".
 discord = ["discord.py>=2.3"]
+# Extraction de texte d'un CV PDF (runner d'intake de profil, OPP-137). Confiné en extra :
+# le cœur métier reste sans dépendance. Installé via : pip install -e ".[pdf]".
+pdf = ["pypdf>=4.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

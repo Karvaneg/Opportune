@@ -14,3 +14,6 @@ handoffs/
 
 # Données personnelles (profil candidat sauvegardé)
 data/
+
+# CV personnels (jamais versionnés — données personnelles)
+docs/cv/
