@@ -15,6 +15,12 @@ import uuid
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from datetime import date
+from typing import TYPE_CHECKING
+
+from app.offer_normalization import normalize_skills
+
+if TYPE_CHECKING:
+    from app.profile_analysis import ProfileAnalysis
 
 # Types de contrat reconnus (préférence du candidat).
 CONTRACT_TYPES = ("CDI", "freelance", "les deux")
@@ -24,6 +30,12 @@ AVAILABILITY_OPTIONS = ("immédiate", "sous 1 mois", "sous 3 mois")
 
 # Champs sans lesquels le profil n'est pas exploitable par l'analyse d'offres.
 REQUIRED_FIELDS = ("name", "skills", "contract_type")
+
+# Faits portés par un CV (cf. ``from_analysis``) : une préférence ne peut pas
+# reprendre l'une de ces clés, elle entrerait en collision avec la valeur du CV.
+_ANALYSIS_FACT_KEYS = frozenset(
+    {"name", "skills", "location", "languages", "total_experience_years"}
+)
 
 
 class ProfileValidationError(Exception):
@@ -49,6 +61,54 @@ class CandidateProfile:
     languages: list[str] = field(default_factory=list)
     availability: str | None = None
     constraints: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_analysis(
+        cls,
+        analysis: "ProfileAnalysis",
+        *,
+        contract_type: str,
+        id: str | None = None,
+        **preferences: object,
+    ) -> "CandidateProfile":
+        """Assemble un profil validé depuis les **faits** d'un CV et les **préférences**.
+
+        Un CV ne porte pas les préférences (type de contrat, prétentions, mobilité,
+        disponibilité) : elles sont fournies par l'appelant via ``contract_type``
+        (obligatoire) et ``preferences`` (target_salary, mobility, remote, availability,
+        constraints…). Les faits (``name``, ``skills``, ``location``, ``languages``,
+        ``total_experience_years``) viennent de l'analyse ; les ``skills`` passent par
+        ``normalize_skills`` (atomisation OPP-135) avant la validation de ``create_profile``.
+
+        Passer un fait (name/skills/location/languages/total_experience_years) dans
+        ``preferences`` lève ``ProfileValidationError`` : il entrerait en collision avec
+        la valeur issue du CV. Un CV dont l'analyse ne remonte aucune compétence est
+        rejeté explicitement (profil non exploitable pour le matching).
+        """
+        collisions = _ANALYSIS_FACT_KEYS & preferences.keys()
+        if collisions:
+            raise ProfileValidationError(
+                "préférences en collision avec des faits du CV : "
+                + ", ".join(sorted(collisions))
+            )
+
+        skills = normalize_skills(analysis.skills)
+        if not skills:
+            raise ProfileValidationError(
+                "Aucune compétence détectée dans le CV : "
+                "profil non exploitable pour le matching"
+            )
+
+        return create_profile(
+            id=id,
+            name=analysis.name,
+            skills=skills,
+            contract_type=contract_type,
+            location=analysis.location,
+            languages=analysis.languages,
+            total_experience_years=analysis.total_experience_years,
+            **preferences,
+        )
 
 
 def _clean_str_list(value: object, field_name: str) -> list[str]:
