@@ -12,7 +12,7 @@ du texte d'offre), donc directement testable.
 from __future__ import annotations
 
 from app.llm_client import LLMClient
-from app.offer_analysis import OfferAnalysis
+from app.offer_analysis import OFFER_ANALYSIS_SCHEMA, OfferAnalysis
 
 # Consigne déterministe imposant une sortie JSON stricte aux clés attendues. Séparée du
 # texte d'offre pour rester testable et éviter toute interpolation d'accolades.
@@ -44,5 +44,8 @@ def analyze_offer(offer_text: str, client: LLMClient) -> OfferAnalysis:
     sous-classes) et ``OfferAnalysisError`` (réponse non conforme).
     """
     prompt = build_analysis_prompt(offer_text)
-    response = client.generate(prompt)
+    # ``fmt`` contraint le décodage au schéma d'``OfferAnalysis`` : le petit modèle local ne
+    # peut plus émettre de prose ni de JSON malformé autour de l'objet (cause d'échec de
+    # l'intake réel). Le prompt guide toujours le *contenu* (défaut « Non précisé »).
+    response = client.generate(prompt, fmt=OFFER_ANALYSIS_SCHEMA)
     return OfferAnalysis.from_json(response.text)

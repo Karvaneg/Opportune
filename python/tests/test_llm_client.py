@@ -61,6 +61,30 @@ def test_ollama_propagates_model_and_host():
     assert seen["model"] == "ministral:8b"
 
 
+def test_ollama_threads_format_into_payload():
+    seen = {}
+
+    def fake_transport(url, payload):
+        seen["payload"] = payload
+        return {"response": "ok"}
+
+    schema = {"type": "object", "required": ["title"]}
+    client = OllamaLLMClient(transport=fake_transport)
+    client.generate("prompt", fmt=schema)
+    assert seen["payload"]["format"] == schema
+
+
+def test_ollama_without_format_omits_it():
+    seen = {}
+
+    def fake_transport(url, payload):
+        seen["payload"] = payload
+        return {"response": "ok"}
+
+    OllamaLLMClient(transport=fake_transport).generate("prompt")
+    assert "format" not in seen["payload"]  # non-régression : texte libre
+
+
 def test_ollama_per_call_model_overrides_default():
     seen = {}
 
@@ -127,6 +151,13 @@ def test_mock_replays_scripted_responses_in_order_and_records_calls():
     assert client.generate("B", model="mistral").text == "seconde"
     assert [c["prompt"] for c in client.calls] == ["A", "B"]
     assert client.calls[1]["model"] == "mistral"
+
+
+def test_mock_records_format_argument():
+    client = MockLLMClient(["ok"])
+    schema = {"type": "object"}
+    client.generate("A", fmt=schema)
+    assert client.calls[0]["fmt"] == schema
 
 
 def test_mock_accepts_single_string():
