@@ -8,7 +8,7 @@ import json
 import pytest
 
 from app.llm_client import LLMError, MockLLMClient
-from app.offer_analysis import OfferAnalysis, OfferAnalysisError
+from app.offer_analysis import OFFER_ANALYSIS_SCHEMA, OfferAnalysis, OfferAnalysisError
 from app.offer_analysis_service import analyze_offer, build_analysis_prompt
 
 VALID_RESPONSE = json.dumps(
@@ -53,6 +53,14 @@ def test_analyze_offer_returns_structured_result():
     assert analysis.title == "Développeur Python"
     # Le prompt réellement envoyé au LLM porte le texte de l'offre.
     assert "Texte de l'offre" in client.calls[0]["prompt"]
+
+
+def test_analyze_offer_constrains_decoding_with_schema():
+    # Le service contraint le décodage au schéma d'OfferAnalysis (structured outputs) :
+    # c'est ce qui empêche le petit modèle local d'émettre du JSON malformé.
+    client = MockLLMClient([VALID_RESPONSE])
+    analyze_offer("Texte de l'offre", client)
+    assert client.calls[0]["fmt"] is OFFER_ANALYSIS_SCHEMA
 
 
 def test_analyze_offer_rejects_invalid_json():

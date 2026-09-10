@@ -65,7 +65,9 @@ class LLMClient(Protocol):
     d'échec, et ``ValueError`` si le prompt est vide.
     """
 
-    def generate(self, prompt: str, *, model: str | None = None) -> LLMResponse: ...
+    def generate(
+        self, prompt: str, *, model: str | None = None, fmt: object | None = None
+    ) -> LLMResponse: ...
 
 
 class OllamaLLMClient:
@@ -90,9 +92,11 @@ class OllamaLLMClient:
         self.timeout = timeout
         self._transport = transport or llm.default_transport(timeout=timeout)
 
-    def generate(self, prompt: str, *, model: str | None = None) -> LLMResponse:
+    def generate(
+        self, prompt: str, *, model: str | None = None, fmt: object | None = None
+    ) -> LLMResponse:
         url, payload = llm.build_generate_request(
-            prompt, model=model or self.model, host=self.host
+            prompt, model=model or self.model, host=self.host, fmt=fmt
         )
         logger.debug("Génération LLM (modèle=%s, url=%s)", payload["model"], url)
         try:
@@ -139,11 +143,15 @@ class MockLLMClient:
         self.error = error
         self.calls: list[dict] = []
 
-    def generate(self, prompt: str, *, model: str | None = None) -> LLMResponse:
+    def generate(
+        self, prompt: str, *, model: str | None = None, fmt: object | None = None
+    ) -> LLMResponse:
         # Valide le prompt comme le fait le vrai client (via build_generate_request).
         if not isinstance(prompt, str) or prompt.strip() == "":
             raise ValueError("Le prompt est requis")
-        self.calls.append({"prompt": prompt, "model": model or self.model})
+        # ``fmt`` est enregistré (et non consommé) pour que les tests vérifient que le métier
+        # transmet bien le schéma attendu au client réel.
+        self.calls.append({"prompt": prompt, "model": model or self.model, "fmt": fmt})
         if self.error is not None:
             raise self.error
         if not self._responses:

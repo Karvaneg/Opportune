@@ -17,6 +17,20 @@ from dataclasses import dataclass
 _TEXT_FIELDS = ("title", "company", "location", "seniority", "contract_type", "summary")
 _LIST_FIELDS = ("skills", "attention_points")
 
+# Schéma JSON dérivé des **mêmes** tuples de champs, pour contraindre le décodage du LLM
+# (« structured outputs » d'Ollama : passé en ``format`` de la requête, cf. ``app.llm``).
+# Source unique de vérité avec la validation ci-dessous : le schéma qui force le modèle et
+# les contrôles qui le vérifient ne peuvent pas diverger. Contraindre les clés et les types
+# à la génération épargne au petit modèle local le JSON malformé qui faisait échouer l'intake.
+OFFER_ANALYSIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        **{name: {"type": "string"} for name in _TEXT_FIELDS},
+        **{name: {"type": "array", "items": {"type": "string"}} for name in _LIST_FIELDS},
+    },
+    "required": [*_TEXT_FIELDS, *_LIST_FIELDS],
+}
+
 
 class OfferAnalysisError(Exception):
     """La réponse fournie n'est pas une analyse d'offre exploitable."""

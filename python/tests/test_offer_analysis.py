@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.offer_analysis import OfferAnalysis, OfferAnalysisError
+from app.offer_analysis import OFFER_ANALYSIS_SCHEMA, OfferAnalysis, OfferAnalysisError
 
 VALID = {
     "title": "Développeur Python",
@@ -16,6 +16,26 @@ VALID = {
     "skills": ["Python", "SQL"],
     "attention_points": ["Astreintes"],
 }
+
+
+def test_schema_covers_every_validated_field():
+    # Le schéma qui contraint le LLM et la validation stricte doivent lister les mêmes
+    # champs : une réponse conforme au schéma passe la validation d'OfferAnalysis.
+    assert set(OFFER_ANALYSIS_SCHEMA["required"]) == set(VALID)
+    assert set(OFFER_ANALYSIS_SCHEMA["properties"]) == set(VALID)
+    assert OFFER_ANALYSIS_SCHEMA["properties"]["title"] == {"type": "string"}
+    assert OFFER_ANALYSIS_SCHEMA["properties"]["skills"] == {
+        "type": "array",
+        "items": {"type": "string"},
+    }
+
+
+def test_schema_output_passes_validation():
+    # Preuve du contrat : un objet couvrant exactement les clés du schéma est accepté.
+    payload = {name: "Non précisé" for name in OFFER_ANALYSIS_SCHEMA["required"]}
+    payload["skills"] = []
+    payload["attention_points"] = []
+    assert isinstance(OfferAnalysis.from_dict(payload), OfferAnalysis)
 
 
 def test_from_json_valid():

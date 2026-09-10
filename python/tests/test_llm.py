@@ -22,6 +22,22 @@ def test_build_request_overrides_and_trailing_slash():
     assert payload["model"] == "mistral"
 
 
+def test_build_request_omits_format_by_default():
+    _, payload = build_generate_request("Bonjour")
+    assert "format" not in payload  # non-régression : texte libre par défaut
+
+
+def test_build_request_threads_format_schema():
+    schema = {"type": "object", "required": ["title"]}
+    _, payload = build_generate_request("Bonjour", fmt=schema)
+    assert payload["format"] == schema
+
+
+def test_build_request_accepts_json_string_format():
+    _, payload = build_generate_request("Bonjour", fmt="json")
+    assert payload["format"] == "json"
+
+
 def test_build_request_empty_prompt_raises():
     with pytest.raises(ValueError):
         build_generate_request("   ")

@@ -31,8 +31,18 @@ DEFAULT_TIMEOUT = 60
 Transport = Callable[[str, dict], dict]
 
 
-def build_generate_request(prompt: str, *, model: str | None = None, host: str | None = None):
+def build_generate_request(
+    prompt: str,
+    *,
+    model: str | None = None,
+    host: str | None = None,
+    fmt: object | None = None,
+):
     """Construit l'URL et la charge utile d'une génération Ollama (``/api/generate``).
+
+    ``fmt`` (optionnel) contraint le décodage : ``"json"`` force une syntaxe JSON valide,
+    un dict force un schéma JSON (clés + types), cf. « structured outputs » d'Ollama. Absent
+    → aucun champ ``format`` dans la charge (génération de texte libre, comportement d'origine).
 
     Pur (aucun appel réseau), donc directement testable. Lève ``ValueError`` si le
     prompt est vide.
@@ -42,6 +52,8 @@ def build_generate_request(prompt: str, *, model: str | None = None, host: str |
 
     url = f"{(host or DEFAULT_OLLAMA_HOST).rstrip('/')}/api/generate"
     payload = {"model": model or DEFAULT_MODEL, "prompt": prompt, "stream": False}
+    if fmt is not None:
+        payload["format"] = fmt
     return url, payload
 
 
