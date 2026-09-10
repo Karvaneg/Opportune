@@ -26,6 +26,7 @@ from app.cover_letter import CoverLetter
 from app.discord_authz import ReviewerAllowlist, extract_discord_user_id
 from app.discord_transport import DiscordTransport
 from app.offer import Offer
+from app.offer_recommendation import ACTION_LABELS
 
 # Verbes de décision (identiques à ceux de l'API, cf. _DECISION_VERBS dans api/app.py).
 DECISION_VERBS = ("approve", "reject", "defer")
@@ -146,6 +147,16 @@ def _decision_buttons(recommendation_id: str) -> dict:
     }
 
 
+# Style d'embed par action, pour distinguer d'un coup d'œil « Candidater » de « À étudier »
+# dans le salon (OPP-141) : (emoji de titre, couleur d'embed). Le libellé affichable vient
+# d'``ACTION_LABELS`` (source unique, cf. offer_recommendation) — pas de recopie ici.
+_ACTION_STYLE = {
+    "postuler": ("🟢", 0x2ECC71),
+    "a_etudier": ("🟡", 0xE67E22),
+}
+_DEFAULT_ACTION_STYLE = ("⚪", 0x95A5A6)
+
+
 def build_review_message(
     offer: Offer,
     cover_letter: CoverLetter,
@@ -159,14 +170,16 @@ def build_review_message(
 
     Pur et déterministe. L'embed résume l'offre (titre, entreprise, score, action
     automatique, justification) et porte la lettre générée ; les trois boutons
-    encodent la recommandation. Les textes sont tronqués sous les limites Discord —
-    par champ *et* sous la limite globale de 6000 caractères de l'embed —, et aucun
-    champ n'est laissé vide.
+    encodent la recommandation. Le titre est préfixé d'un emoji et l'embed coloré selon
+    l'action (🟢 candidater / 🟡 à étudier), pour que l'humain repère d'emblée les dossiers
+    « à creuser » (OPP-141). Les textes sont tronqués sous les limites Discord — par champ
+    *et* sous la limite globale de 6000 caractères —, et aucun champ n'est laissé vide.
     """
-    title = _truncate(f"{offer.title} — {offer.company}", _TITLE_MAX) or _PLACEHOLDER
+    emoji, color = _ACTION_STYLE.get(action, _DEFAULT_ACTION_STYLE)
+    title = _truncate(f"{emoji} {offer.title} — {offer.company}", _TITLE_MAX) or _PLACEHOLDER
     fields = [
         _field("Score", str(score), inline=True),
-        _field("Action auto", action, inline=True),
+        _field("Action auto", ACTION_LABELS.get(action, action), inline=True),
         _field("Justification", justification, inline=False),
     ]
     # Budget restant pour la description sous la limite globale de l'embed (6000) :
@@ -174,7 +187,7 @@ def build_review_message(
     used = len(title) + sum(len(f["name"]) + len(f["value"]) for f in fields)
     description_limit = min(_LETTER_MAX, _EMBED_TOTAL_MAX - used)
     description = _truncate(cover_letter.body, description_limit) or _PLACEHOLDER
-    embed = {"title": title, "description": description, "fields": fields}
+    embed = {"title": title, "description": description, "fields": fields, "color": color}
     return {"embeds": [embed], "components": [_decision_buttons(recommendation_id)]}
 
 

@@ -27,15 +27,22 @@ if TYPE_CHECKING:
     from app.submission_store import SubmissionRepository
 
 
+# Actions dont un dossier mérite une revue humaine (OPP-141). Au-delà du seul « postuler » :
+# les « à étudier » (60 ≤ score < 80) sont justement les cas où le jugement humain est le
+# plus utile — on les fait donc remonter aussi. « ignorer » / « indeterminee » restent hors
+# revue (sous le seuil, ou score indéterminé).
+_REVIEWABLE_ACTIONS = ("postuler", "a_etudier")
+
+
 def _default_should_review(decision: Decision) -> bool:
-    """Éligibilité par défaut : dossiers à candidater **encore en attente de validation**.
+    """Éligibilité par défaut : dossiers à **candidater ou à étudier**, encore en attente.
 
     On exclut les décisions déjà tranchées par un humain (``status`` ≠ ``pending``) :
-    l'action automatique restant immuable (``postuler``), filtrer sur elle seule
-    re-pousserait en revue un dossier déjà approuvé/rejeté/différé si l'appelant
-    resoumet un lot. Le prédicat est ainsi **sûr aux re-runs**, sans dédoublonnage aval.
+    l'action automatique restant immuable, filtrer sur elle seule re-pousserait en revue
+    un dossier déjà approuvé/rejeté/différé si l'appelant resoumet un lot. Le prédicat est
+    ainsi **sûr aux re-runs**, sans dédoublonnage aval.
     """
-    return decision.action == "postuler" and decision.status == PENDING
+    return decision.action in _REVIEWABLE_ACTIONS and decision.status == PENDING
 
 
 def only_unsubmitted(
@@ -45,7 +52,7 @@ def only_unsubmitted(
 ) -> Callable[[Decision], bool]:
     """Restreint ``base`` aux décisions **pas déjà soumises** en revue (idempotence, OPP-131).
 
-    Combine l'éligibilité de ``base`` (défaut : ``postuler`` encore ``pending``) avec le
+    Combine l'éligibilité de ``base`` (défaut : ``postuler``/``a_etudier`` encore ``pending``) avec le
     registre des soumissions : une recommandation dont une carte vit déjà dans Discord est
     écartée, pour qu'un re-run ne la re-pousse pas tant qu'elle n'est pas tranchée. Le suivi
     reste dans le ``SubmissionRepository`` — ce prédicat ne fait que le consulter.
@@ -132,7 +139,7 @@ def submit_pending_reviews(
     """Pousse en revue les décisions éligibles d'un lot de couples ``(décision, offre)``.
 
     Ordre d'entrée préservé. ``should_review`` filtre les décisions (défaut : dossiers
-    ``postuler`` encore ``pending``). Traitement **séquentiel** : une erreur interrompt
+    ``postuler``/``a_etudier`` encore ``pending``). Traitement **séquentiel** : une erreur interrompt
     le lot en levant ``BatchReviewError``, qui porte les dossiers déjà poussés et la
     décision fautive — la progression n'est jamais perdue, la reprise reste sans doublon.
 
