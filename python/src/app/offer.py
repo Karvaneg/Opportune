@@ -3,9 +3,13 @@
 ``Offer`` est l'offre normalisée et persistable, dérivée d'une ``OfferAnalysis`` : on
 normalise contrat/localisation/compétences, on conserve les données d'origine
 (``raw_text``) et la provenance (``source``, ``url``), et on lui attribue un **id
-stable** dérivé de la provenance (``url`` en priorité, sinon ``company + title``) — ce
-qui permet l'upsert (ré-analyser la même offre met à jour la ligne au lieu de la
+stable** dérivé de la provenance (``url`` en priorité, sinon le ``raw_text`` d'origine)
+— ce qui permet l'upsert (ré-analyser la même offre met à jour la ligne au lieu de la
 dupliquer), y compris quand le LLM reformule le titre entre deux analyses.
+
+**L'identité ne dépend jamais d'une sortie du LLM** (``title``/``company``, non
+déterministes) : sans url, ré-ingérer le même texte collé produirait sinon un doublon
+dès que le modèle reformule le titre. On s'appuie donc sur le texte brut, invariant.
 """
 
 from __future__ import annotations
@@ -21,17 +25,20 @@ from app.offer_normalization import (
 )
 
 
-def compute_offer_id(source: str, url: str, company: str, title: str) -> str:
-    """Identifiant stable d'une offre.
+def compute_offer_id(source: str, url: str, raw_text: str) -> str:
+    """Identifiant stable d'une offre, indépendant de toute sortie du LLM.
 
     Quand une ``url`` est fournie, elle sert seule de discriminant (avec la
     ``source``) : l'id reste **stable** même si le LLM reformule le titre à la
-    ré-analyse. Sans url, on retombe sur ``company + title`` — le meilleur
-    discriminant disponible pour distinguer deux offres et limiter les collisions.
+    ré-analyse. Sans url (offre collée), on retombe sur le ``raw_text`` d'origine —
+    invariant déterministe, antérieur à l'analyse : ré-ingérer le même texte donne le
+    même id (donc un upsert, pas un doublon), quelle que soit la reformulation du LLM.
+
+    Le texte brut est **normalisé** (casse ignorée, suites d'espaces/retours ligne
+    réduites à une espace) pour qu'un simple reformatage du collage — repli de lignes,
+    espaces en trop — ne fabrique pas une offre distincte.
     """
-    identity = url.strip().lower() or "\n".join(
-        part.strip().lower() for part in (company, title)
-    )
+    identity = url.strip().lower() or " ".join(raw_text.split()).lower()
     key = source.strip().lower() + "\n" + identity
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
@@ -73,7 +80,7 @@ class Offer:
             raise ValueError("Le texte d'origine de l'offre est requis")
 
         return cls(
-            id=compute_offer_id(source, url, analysis.company, analysis.title),
+            id=compute_offer_id(source, url, raw_text),
             title=analysis.title,
             company=analysis.company,
             location=normalize_location(analysis.location),

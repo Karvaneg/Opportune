@@ -18,24 +18,39 @@ ANALYSIS = OfferAnalysis(
 
 
 def test_compute_offer_id_is_stable_and_deterministic():
-    a = compute_offer_id("indeed", "http://x", "Acme", "Dev")
-    b = compute_offer_id("  Indeed ", "http://x", "Acme", "  dev ")  # casse/espaces ignorés
-    assert a == b
+    a = compute_offer_id("indeed", "http://x", "texte de l'offre")
+    b = compute_offer_id("  Indeed ", "http://x", "peu importe")  # url présente → texte ignoré
+    assert a == b  # casse/espaces de la source ignorés, url seule discrimine
 
 
 def test_compute_offer_id_stable_across_title_drift_when_url_present():
-    # Avec une url, l'id ne dépend que de source+url : le LLM peut reformuler le
-    # titre à la ré-analyse sans casser l'upsert.
-    assert compute_offer_id("indeed", "http://x", "Acme", "Dev") == compute_offer_id(
-        "indeed", "http://x", "Acme", "Développeur Python H/F"
+    # Avec une url, l'id ne dépend que de source+url : le raw_text (et donc toute
+    # reformulation LLM en aval) n'entre pas en jeu, l'upsert tient.
+    assert compute_offer_id("indeed", "http://x", "texte A") == compute_offer_id(
+        "indeed", "http://x", "texte B tout autre"
     )
 
 
-def test_compute_offer_id_disambiguates_by_company_without_url():
-    # Sans url, deux offres de même titre mais d'entreprises distinctes ne doivent
-    # pas se télescoper (sinon écrasement silencieux).
-    assert compute_offer_id("indeed", "", "Acme", "Data Engineer") != compute_offer_id(
-        "indeed", "", "Globex", "Data Engineer"
+def test_compute_offer_id_stable_on_same_raw_text_without_url():
+    # Le cœur du correctif : sans url, le même texte collé donne le même id — même si
+    # le LLM reformule titre/entreprise à la ré-analyse (cause du doublon « Holis »).
+    raw = "Développeur Full-Stack chez Holis — ACV, React, PostgreSQL…"
+    assert compute_offer_id("collée", "", raw) == compute_offer_id("collée", "", raw)
+
+
+def test_compute_offer_id_ignores_whitespace_reformatting_of_raw_text():
+    # Un simple reformatage du collage (repli de lignes, espaces en trop) ne doit pas
+    # fabriquer une offre distincte.
+    assert compute_offer_id("collée", "", "Dev Python\n\n  Paris   CDI") == (
+        compute_offer_id("collée", "", "  Dev Python Paris CDI  ")
+    )
+
+
+def test_compute_offer_id_disambiguates_distinct_raw_texts_without_url():
+    # Sans url, deux textes d'offre réellement différents ne se télescopent pas
+    # (sinon écrasement silencieux).
+    assert compute_offer_id("collée", "", "Offre A chez Acme") != compute_offer_id(
+        "collée", "", "Offre B chez Globex"
     )
 
 
@@ -49,7 +64,7 @@ def test_from_analysis_normalizes_and_keeps_provenance():
     assert offer.source == "indeed"
     assert offer.url == "http://x"
     assert offer.raw_text == "texte brut"
-    assert offer.id == compute_offer_id("indeed", "http://x", "Acme", "Développeur Python")
+    assert offer.id == compute_offer_id("indeed", "http://x", "texte brut")
 
 
 def test_from_analysis_requires_source():

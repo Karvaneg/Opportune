@@ -71,6 +71,19 @@ def test_intake_upserts_despite_title_drift_when_url_present():
     assert len(store.offers) == 1
 
 
+def test_intake_upserts_despite_title_drift_without_url():
+    # Scénario « Holis » : offre collée (pas d'url), le LLM reformule le titre entre
+    # deux ingestions du MÊME texte. L'id étant dérivé du raw_text, l'offre est mise à
+    # jour, pas dupliquée — c'est le correctif de dédup à l'intake.
+    store = FakeOfferStore()
+    drifted = json.dumps({**json.loads(VALID_RESPONSE), "title": "Développeur Python chez Acme"})
+    client = MockLLMClient([VALID_RESPONSE, drifted])
+    first = intake_offer("même texte collé", source="collée", client=client, store=store)
+    second = intake_offer("même texte collé", source="collée", client=client, store=store)
+    assert first.id == second.id
+    assert len(store.offers) == 1  # pas de doublon malgré la dérive du titre
+
+
 def test_intake_rejects_invalid_analysis_and_persists_nothing():
     store = FakeOfferStore()
     client = MockLLMClient(["pas du json"])
