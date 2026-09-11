@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
-import { apiFetch, apiPost } from "./client";
+import { apiDelete, apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
 import type {
   AdvisoryStatus,
@@ -49,6 +49,18 @@ export function useLaunchRun() {
         token,
         {},
       ),
+    invalidateKeys: () => [["runs"]],
+  });
+}
+
+/**
+ * Supprime un run : `DELETE /runs/{id}` (OPP-144). Variable = run_id. Au succès, invalide
+ * la liste des runs → la ligne disparaît. Le back garde la propriété + le rôle reviewer.
+ */
+export function useDeleteRun() {
+  return useApiMutation<{ deleted: string }, string>({
+    mutationFn: (runId, token) =>
+      apiDelete<{ deleted: string }>(`/runs/${encodeURIComponent(runId)}`, token),
     invalidateKeys: () => [["runs"]],
   });
 }

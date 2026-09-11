@@ -290,6 +290,14 @@ class HermesOrchestrator:
         """Retourne l'exécution journalisée d'``run_id``, ou ``None`` (dépôt absent inclus)."""
         return None if self.runs is None else self.runs.get(run_id)
 
+    def delete_run(self, run_id: str) -> bool:
+        """Supprime une exécution journalisée ; ``True`` si retirée (OPP-144).
+
+        ``False`` si le dépôt est absent ou le run inconnu. Les décisions persistées ne
+        sont pas touchées (elles vivent dans ``DecisionStore``).
+        """
+        return False if self.runs is None else self.runs.delete(run_id)
+
     def list_run_summaries(
         self,
         candidate_ids: Collection[str] | None = None,

@@ -123,6 +123,66 @@ describe("RunsListPage", () => {
     );
   });
 
+  it("supprime un run après confirmation explicite (reviewer)", async () => {
+    let deleted = false;
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/runs/") && init?.method === "DELETE") {
+          deleted = true;
+          return okJson({ deleted: "r-a2" });
+        }
+        const items = deleted ? PAGE.items.filter((i) => i.run_id !== "r-a2") : PAGE.items;
+        return okJson({ ...PAGE, items, total: items.length }); // GET /runs
+      }),
+    );
+    renderList();
+
+    await screen.findByText("r-a2");
+    // Premier clic : demande de confirmation (ne supprime pas).
+    await userEvent.click(screen.getByRole("button", { name: "Supprimer le run r-a2" }));
+    expect(deleted).toBe(false);
+    // Confirmation explicite → DELETE → la ligne disparaît après invalidation.
+    await userEvent.click(screen.getByRole("button", { name: "Confirmer" }));
+    await waitFor(() => expect(screen.queryByText("r-a2")).toBeNull());
+    expect(screen.getByText("r-a1")).toBeInTheDocument();
+  });
+
+  it("affiche l'erreur si la suppression échoue et conserve la ligne", async () => {
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/runs/") && init?.method === "DELETE")
+          // 403 : le message est neutralisé par `messageFor` côté client.
+          return Promise.resolve({
+            ok: false,
+            status: 403,
+            json: () => Promise.resolve({ error: "rôle reviewer requis" }),
+          } as Response);
+        return okJson(PAGE); // GET /runs
+      }),
+    );
+    renderList();
+
+    await screen.findByText("r-a2");
+    await userEvent.click(screen.getByRole("button", { name: "Supprimer le run r-a2" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirmer" }));
+    // Échec → message affiché, ligne toujours là, retour au bouton « Supprimer ».
+    expect(await screen.findByRole("alert")).toHaveTextContent("Accès refusé");
+    expect(screen.getByText("r-a2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Supprimer le run r-a2" })).toBeInTheDocument();
+  });
+
   it("navigue vers la page suivante au clic sur « Suivant »", async () => {
     stubPaginatedFetch({
       1: {

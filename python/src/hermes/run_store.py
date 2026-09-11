@@ -41,6 +41,8 @@ class RunRepository(Protocol):
 
     def get(self, run_id: str) -> HermesRun | None: ...
 
+    def delete(self, run_id: str) -> bool: ...
+
     def list_run_summaries(
         self,
         candidate_ids: Collection[str] | None = None,
@@ -114,6 +116,17 @@ class RunStore:
             "SELECT * FROM hermes_runs WHERE run_id = ?", (run_id,)
         ).fetchone()
         return None if row is None else self._row_to_run(row)
+
+    def delete(self, run_id: str) -> bool:
+        """Supprime l'exécution d'``run_id`` ; ``True`` si une ligne a été retirée (OPP-144).
+
+        Idempotent : une seconde suppression du même ``run_id`` retourne ``False`` (rien à
+        retirer) — l'appelant en fait un 404 neutre. Ne touche pas aux décisions : celles-ci
+        vivent dans ``DecisionStore`` et gardent leur historique de validation humaine.
+        """
+        cursor = self.conn.execute("DELETE FROM hermes_runs WHERE run_id = ?", (run_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
 
     def list_for_candidate(self, candidate_id: str) -> list[HermesRun]:
         """Retourne les exécutions d'un candidat, dans l'ordre chronologique.
