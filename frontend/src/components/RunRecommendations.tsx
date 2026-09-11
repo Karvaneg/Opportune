@@ -83,6 +83,11 @@ export function RunRecommendations({ runId }: { runId: string }) {
         </p>
       ) : (
         <>
+          {/* Légende : chaque offre porte deux badges de registres distincts (OPP-149). */}
+          <p className="text-xs text-slate-400">
+            Pour chaque offre : score, puis <span className="text-slate-500">pré-évaluation
+            automatique</span> et <span className="text-slate-500">décision humaine</span>.
+          </p>
           <ul className="space-y-2">
             {data.items.map((item) => (
               <li
