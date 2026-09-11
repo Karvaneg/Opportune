@@ -50,6 +50,32 @@ export interface RecommendationItem {
   justification: string;
 }
 
+/** Un événement de l'historique de validation d'une décision. */
+export interface DecisionHistoryEvent {
+  status: DecisionStatus;
+  at: string; // ISO 8601
+  comment: string | null;
+}
+
+/**
+ * Détail d'une recommandation (`GET /recommendations/{id}`) — la décision persistée,
+ * historique inclus. `title`/`company` sont résolus depuis l'offre d'origine (OPP-112) ;
+ * `null` si l'offre a disparu, auquel cas le front retombe sur `offer_id`.
+ */
+export interface RecommendationDetail {
+  recommendation_id: string;
+  candidate_id: string;
+  offer_id: string;
+  action: OfferAction;
+  score: number;
+  title: string | null;
+  company: string | null;
+  justification: string;
+  status: DecisionStatus;
+  comment: string | null;
+  history: DecisionHistoryEvent[];
+}
+
 /** Réponse paginée de `GET /runs/{run_id}/recommendations`. */
 export interface RunRecommendationsPage {
   run_id: string;

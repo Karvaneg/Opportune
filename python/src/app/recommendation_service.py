@@ -35,6 +35,8 @@ class ProfileSource(Protocol):
 class OfferSource(Protocol):
     def list_all(self) -> list[Offer]: ...
 
+    def get(self, offer_id: str) -> Offer | None: ...
+
 
 class UnknownCandidateError(Exception):
     """Aucun profil candidat ne correspond à l'``candidate_id`` fourni."""

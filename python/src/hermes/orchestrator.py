@@ -33,6 +33,7 @@ from typing import Callable
 
 from app.decision import Decision
 from app.decision_service import DecisionService
+from app.offer import Offer
 from app.recommendation_service import OfferRecommendation, RecommendationService
 
 from hermes.models import (
@@ -347,6 +348,15 @@ class HermesOrchestrator:
         ``recommendation_id`` est l'id stable du couple candidat/offre (cf. ``decision_id``).
         """
         return self.decisions.get(recommendation_id)
+
+    def get_offer(self, offer_id: str) -> Offer | None:
+        """Retourne l'offre d'``id`` donné, ou ``None`` si absente.
+
+        Sert à enrichir une recommandation (``title``/``company``) pour l'affichage : la
+        décision persistée ne porte que l'``offer_id``. ``None`` si l'offre a disparu —
+        l'appelant retombe alors sur l'``offer_id`` (cf. OPP-112).
+        """
+        return self.recommendations.offers.get(offer_id)
 
     def record_human_decision(
         self, recommendation_id: str, status: str, *, comment: str | None = None

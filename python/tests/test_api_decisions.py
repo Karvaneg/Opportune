@@ -97,7 +97,29 @@ def test_get_recommendation_returns_decision(env):
     assert resp.body["status"] == "pending"
     assert resp.body["action"] == "postuler"
     assert resp.body["score"] == 100
+    # OPP-112 : le détail porte désormais title/company, résolus depuis l'offre d'origine.
+    assert resp.body["title"] == "App"
+    assert resp.body["company"] == "Acme"
     assert [ev["status"] for ev in resp.body["history"]] == ["pending"]
+
+
+def test_get_recommendation_title_company_fallback_when_offer_gone(env):
+    # OPP-112 : offre disparue → title/company None (le front retombe sur offer_id),
+    # sans régression sur le reste de la réponse.
+    resp_before = env.dispatch("GET", f"/recommendations/{_RID}", None)
+    assert resp_before.body["title"] == "App"
+
+    # Supprime l'offre via l'orchestrateur (même store que l'API).
+    env.orchestrator.recommendations.offers.conn.execute(
+        "DELETE FROM offers WHERE id = ?", ("off-app",)
+    )
+    env.orchestrator.recommendations.offers.conn.commit()
+
+    resp = env.dispatch("GET", f"/recommendations/{_RID}", None)
+    assert resp.status == 200
+    assert resp.body["title"] is None
+    assert resp.body["company"] is None
+    assert resp.body["offer_id"] == "off-app"  # fallback possible côté front
 
 
 def test_get_unknown_recommendation_returns_404(env):
@@ -114,6 +136,7 @@ def test_post_decision_approve_persists_and_historizes(env):
     assert resp.status == 200
     assert resp.body["status"] == "approved"
     assert resp.body["comment"] == "Bonne adéquation"
+    assert resp.body["title"] == "App"  # OPP-112 : enrichi aussi sur la réponse POST
     assert [ev["status"] for ev in resp.body["history"]] == ["pending", "approved"]
     # Persistance vérifiée via une relecture.
     again = env.dispatch("GET", f"/recommendations/{_RID}", None)
