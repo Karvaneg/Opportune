@@ -120,6 +120,8 @@ export interface Me {
   id: string | null;
   role: string | null;
   owned_count: number;
+  /** Candidats du périmètre du porteur — cible d'un lancement de run (OPP-143). */
+  owned_candidate_ids: string[];
 }
 
 /** Corps d'erreur uniforme de l'API : `{ "error": "..." }`. */

@@ -215,13 +215,19 @@ class HermesApi:
         mode ouvert (``user is None``, tests), il n'existe aucune identité applicative.
         """
         if user is None:
-            return Response(200, {"id": None, "role": None, "owned_count": 0})
+            return Response(
+                200, {"id": None, "role": None, "owned_count": 0, "owned_candidate_ids": []}
+            )
         return Response(
             200,
             {
                 "id": user.id,
                 "role": user.role,
                 "owned_count": len(user.owned_candidates),
+                # Les candidats du **propriétaire** (son propre périmètre) : permet au front
+                # de lancer un run sans deviner d'identifiant (OPP-143). Trié pour un rendu
+                # déterministe.
+                "owned_candidate_ids": sorted(user.owned_candidates),
             },
         )
 

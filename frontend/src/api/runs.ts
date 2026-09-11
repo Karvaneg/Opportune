@@ -1,9 +1,11 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
-import { apiFetch } from "./client";
+import { apiFetch, apiPost } from "./client";
+import { useApiMutation } from "./mutations";
 import type {
   AdvisoryStatus,
   DecisionStatus,
+  RecommendationItem,
   RunDetail,
   RunRecommendationsPage,
   RunsPage,
@@ -25,6 +27,31 @@ export const runKeys = {
   recommendations: (runId: string, page: number, advisory = "", decision = "") =>
     ["run", runId, "recommendations", page, advisory, decision] as const,
 };
+
+/** Réponse de `POST /candidates/{id}/recommendations` (lancement d'un run, non paginée). */
+export interface LaunchRunResult {
+  run_id: string;
+  items: RecommendationItem[];
+  total: number;
+  errors: string[];
+}
+
+/**
+ * Lance un run d'analyse pour un candidat : `POST /candidates/{id}/recommendations` (OPP-143).
+ * La variable de mutation est le `candidate_id`. Au succès, invalide la liste des runs →
+ * le nouveau run apparaît en tête sans rechargement. Erreurs remontées telles quelles.
+ */
+export function useLaunchRun() {
+  return useApiMutation<LaunchRunResult, string>({
+    mutationFn: (candidateId, token) =>
+      apiPost<LaunchRunResult>(
+        `/candidates/${encodeURIComponent(candidateId)}/recommendations`,
+        token,
+        {},
+      ),
+    invalidateKeys: () => [["runs"]],
+  });
+}
 
 /** Listing paginé des runs du périmètre : `GET /runs`. */
 export function useRuns(page: number) {

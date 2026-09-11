@@ -306,7 +306,13 @@ def test_me_returns_identity_for_valid_token(env):
     api, _ = env
     resp = api.dispatch("GET", "/me", None, _hdr("tok-rev"))
     assert resp.status == 200
-    assert resp.body == {"id": "rev", "role": REVIEWER, "owned_count": 1}
+    assert resp.body == {
+        "id": "rev",
+        "role": REVIEWER,
+        "owned_count": 1,
+        # OPP-143 : les candidats du propriétaire, pour lancer un run depuis le front.
+        "owned_candidate_ids": ["cand-1"],
+    }
 
 
 def test_me_reflects_role_and_scope(env):
@@ -314,6 +320,10 @@ def test_me_reflects_role_and_scope(env):
     # tok-view : rôle non-reviewer, périmètre cand-1 ; tok-str : reviewer, périmètre cand-2.
     assert api.dispatch("GET", "/me", None, _hdr("tok-view")).body["role"] == "viewer"
     assert api.dispatch("GET", "/me", None, _hdr("tok-str")).body["id"] == "str"
+    # Le périmètre exposé suit la propriété : str ne « voit » que son propre cand-2.
+    assert api.dispatch("GET", "/me", None, _hdr("tok-str")).body["owned_candidate_ids"] == [
+        "cand-2"
+    ]
 
 
 def test_me_requires_authentication(env):
@@ -339,5 +349,5 @@ def test_me_open_mode_has_no_identity():
     )
     resp = HermesApi(orchestrator).dispatch("GET", "/me", None, None)
     assert resp.status == 200
-    assert resp.body == {"id": None, "role": None, "owned_count": 0}
+    assert resp.body == {"id": None, "role": None, "owned_count": 0, "owned_candidate_ids": []}
     conn.close()
