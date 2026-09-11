@@ -46,16 +46,30 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Protocol
 from urllib.parse import parse_qs, unquote
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.auth import AuthProvider, User
 from app.decision import VALIDATION_STATUSES, Decision, decision_id
 from app.decision_service import PRE_EVALUATION_STATUSES, UnknownDecisionError
+from app.llm_client import LLMError
+from app.offer import Offer
+from app.offer_analysis import OfferAnalysisError
 from app.offer_normalization import normalize_contract, normalize_skills
 from app.recommendation_service import UnknownCandidateError
 from hermes.models import HermesRun, HermesRunSummary, OfferEvaluation
 from hermes.orchestrator import HermesOrchestrator
+
+
+class OfferIntake(Protocol):
+    """Analyse + persiste une offre brute, et retourne l'``Offer`` créée (OPP-145).
+
+    Encapsule ``intake_offer`` lié à un ``LLMClient`` et un dépôt d'offres : l'API reste
+    transport-only et testable (on injecte un faux intake, sans réseau ni Ollama).
+    """
+
+    def __call__(self, raw_text: str, *, source: str, url: str = "") -> Offer: ...
 
 
 @dataclass(frozen=True)
@@ -85,6 +99,7 @@ _RECOMMENDATION_DECISION = re.compile(r"^/recommendations/(?P<rid>[^/]+)/decisio
 _RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
 _APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
+_OFFERS = re.compile(r"^/offers$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -105,12 +120,16 @@ class HermesApi:
         orchestrator: HermesOrchestrator,
         actions: ActionService | None = None,
         auth: AuthProvider | None = None,
+        offer_intake: OfferIntake | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
         # routes /applications|/messages ne sont pas montées (404), l'API reste utilisable
         # pour la recommandation et les décisions.
         self.actions = actions
+        # Intake d'offre collée (OPP-145). Optionnel : si absent (pas de LLM câblé), la route
+        # POST /offers n'est pas montée (404). Injecté en prod, faux en test.
+        self.offer_intake = offer_intake
         # Fournisseur d'authentification. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune vérification. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur
         # ``None`` en production. Avec un fournisseur, toute route métier exige un jeton
@@ -189,6 +208,11 @@ class HermesApi:
         if match:
             self._require(method, "GET", path)
             return self._get_recommendation(unquote(match["rid"]), user)
+
+        # Intake d'offre collée : monté uniquement si un LLM est câblé (sinon 404).
+        if self.offer_intake is not None and _OFFERS.match(path):
+            self._require(method, "POST", path)
+            return self._post_offers(body, user)
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
@@ -378,6 +402,52 @@ class HermesApi:
         # Propriété résolue depuis le run persisté (jamais depuis un id du corps).
         self._guard_owner(user, run.candidate_id)
         return Response(200, self._serialize_run(run))
+
+    def _post_offers(self, body: dict, user: User | None) -> Response:
+        """Ajoute une offre en collant son texte (OPP-145) : analyse LLM → persistance.
+
+        Curation du **pool partagé** d'offres : réservée au rôle ``reviewer`` (pas de
+        propriétaire à résoudre — l'offre n'est pas liée à un candidat). ``text`` obligatoire
+        (400 si vide) ; ``source`` (défaut « collée ») et ``url`` optionnels. Les erreurs
+        d'analyse LLM (réponse non exploitable, service indisponible) remontent en 502 pour
+        les distinguer d'une faute de saisie (400). L'id de l'offre dérive du texte (OPP-134)
+        → re-coller le même texte met à jour l'offre au lieu de la dupliquer.
+        """
+        self._guard_reviewer(user)
+        text = body.get("text")
+        if not isinstance(text, str) or text.strip() == "":
+            raise ApiError(400, "text est requis (le texte de l'offre)")
+        source = body.get("source")
+        source = source.strip() if isinstance(source, str) and source.strip() else "collée"
+        url = body.get("url", "")
+        if not isinstance(url, str):
+            raise ApiError(400, "url doit être une chaîne")
+
+        try:
+            offer = self.offer_intake(text, source=source, url=url)
+        except ValueError as exc:
+            raise ApiError(400, str(exc))
+        except OfferAnalysisError as exc:
+            raise ApiError(502, f"analyse de l'offre non exploitable : {exc}")
+        except LLMError as exc:
+            raise ApiError(502, f"service d'analyse indisponible : {exc}")
+        return Response(201, self._serialize_offer(offer))
+
+    @staticmethod
+    def _serialize_offer(offer: Offer) -> dict:
+        """Représentation JSON d'une offre persistée (champs exploités par le front)."""
+        return {
+            "id": offer.id,
+            "title": offer.title,
+            "company": offer.company,
+            "location": offer.location,
+            "skills": list(offer.skills),
+            "seniority": offer.seniority,
+            "contract_type": offer.contract_type,
+            "summary": offer.summary,
+            "source": offer.source,
+            "url": offer.url,
+        }
 
     def _delete_run(self, run_id: str, user: User | None) -> Response:
         """Supprime un run (OPP-144) : existence → propriété → rôle reviewer, puis suppression.

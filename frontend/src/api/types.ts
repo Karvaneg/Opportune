@@ -115,6 +115,20 @@ export interface ActionConfirmation {
   already_confirmed: boolean;
 }
 
+/** Offre persistée renvoyée par `POST /offers` (intake d'offre collée, OPP-145). */
+export interface OfferSummary {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  skills: string[];
+  seniority: string;
+  contract_type: string;
+  summary: string;
+  source: string;
+  url: string;
+}
+
 /** Identité du porteur du jeton (`GET /me`) — sonde d'authentification. */
 export interface Me {
   id: string | null;

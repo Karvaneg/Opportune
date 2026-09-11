@@ -50,6 +50,11 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802 - nom imposé par http.server
             self._dispatch("POST")
 
+        def do_DELETE(self) -> None:  # noqa: N802 - nom imposé par http.server
+            # Sans ce point d'entrée, http.server répond 501 avant même le dispatcher
+            # (qui, lui, gère DELETE /runs/{id} — cf. OPP-144).
+            self._dispatch("DELETE")
+
         def _write(self, status: int, body: dict) -> None:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -89,6 +94,9 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
     from app.decision_service import DecisionService
     from app.decision_store import DecisionStore
+    from app.llm_client import OllamaLLMClient
+    from app.offer import Offer
+    from app.offer_intake_service import intake_offer
     from app.offer_store import OfferStore
     from app.profile_store import ProfileStore
     from app.recommendation_service import RecommendationService
@@ -98,16 +106,27 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     if auth is None:
         raise ValueError("assemble_api exige un AuthProvider (pas de mode ouvert en prod)")
 
+    # Un seul dépôt d'offres partagé entre le scoring (RecommendationService) et l'intake
+    # collé (POST /offers) : une offre fraîchement ajoutée est immédiatement évaluable.
+    offers = OfferStore(conn)
     decisions = DecisionService(DecisionStore(conn))
     orchestrator = HermesOrchestrator(
-        RecommendationService(ProfileStore(conn), OfferStore(conn)),
+        RecommendationService(ProfileStore(conn), offers),
         decisions,
         runs=RunStore(conn),
     )
     actions = ActionService(
         decisions, ApplicationActionStore(conn), OutboundMessageActionStore(conn)
     )
-    return HermesApi(orchestrator, actions, auth)
+
+    # Intake d'offre collée (OPP-145) : le LLM local analyse le texte avant persistance.
+    # POST /offers exige donc Ollama joignable (cf. mémoire ollama-wsl2).
+    llm_client = OllamaLLMClient()
+
+    def offer_intake(raw_text: str, *, source: str, url: str = "") -> Offer:
+        return intake_offer(raw_text, source=source, client=llm_client, store=offers, url=url)
+
+    return HermesApi(orchestrator, actions, auth, offer_intake=offer_intake)
 
 
 def _utcnow() -> datetime:
