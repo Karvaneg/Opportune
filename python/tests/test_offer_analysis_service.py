@@ -44,6 +44,14 @@ def test_prompt_requires_atomic_skills():
     assert "Back-end (PostgreSQL, Express)" in prompt  # contre-exemple explicite
 
 
+def test_prompt_excludes_non_skills():
+    # OPP-142 : la consigne cadre skills = technos concrètes et exclut explicitement
+    # normes, organismes et tâches (contre-exemple de tâche présent, style OPP-135).
+    prompt = build_analysis_prompt("Offre XYZ")
+    assert "CONCRÈTES" in prompt
+    assert "Optimisation de calculs" in prompt  # contre-exemple de tâche
+
+
 def test_prompt_trims_and_rejects_empty():
     assert build_analysis_prompt("  Offre  ").endswith("Offre")
     with pytest.raises(ValueError):

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from app.offer_analysis import OfferAnalysis
 from app.offer_normalization import (
+    drop_non_skills,
     normalize_contract,
     normalize_location,
     normalize_skills,
@@ -84,7 +85,7 @@ class Offer:
             title=analysis.title,
             company=analysis.company,
             location=normalize_location(analysis.location),
-            skills=normalize_skills(analysis.skills),
+            skills=drop_non_skills(normalize_skills(analysis.skills)),
             seniority=analysis.seniority,
             contract_type=normalize_contract(analysis.contract_type),
             summary=analysis.summary,
