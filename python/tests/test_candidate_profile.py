@@ -130,3 +130,42 @@ def test_update_profile_revalidates_changes():
         update_profile(profile, skills=[])
     with pytest.raises(ProfileValidationError):
         update_profile(profile, target_salary=-1)
+
+
+# --- locked_fields (OPP-138) -------------------------------------------------
+
+
+def test_locked_fields_default_empty_and_roundtrip():
+    profile = create_profile(
+        id="p-1", name="A", skills=["X"], contract_type="CDI",
+        locked_fields=["total_experience_years"],
+    )
+    assert profile.locked_fields == ["total_experience_years"]
+    # Défaut : aucun verrou.
+    assert create_profile(id="p-2", name="A", skills=["X"], contract_type="CDI").locked_fields == []
+
+
+def test_locked_fields_rejects_non_lockable_field():
+    # Seuls les faits extraits sont verrouillables ; une préférence ne l'est pas.
+    with pytest.raises(ProfileValidationError):
+        create_profile(
+            id="p-1", name="A", skills=["X"], contract_type="CDI",
+            locked_fields=["contract_type"],
+        )
+
+
+def test_locked_fields_dedupes_preserving_order():
+    profile = create_profile(
+        id="p-1", name="A", skills=["X"], contract_type="CDI",
+        locked_fields=["location", "skills", "location"],
+    )
+    assert profile.locked_fields == ["location", "skills"]
+
+
+def test_update_profile_preserves_locked_fields():
+    profile = create_profile(
+        id="p-1", name="A", skills=["X"], contract_type="CDI",
+        locked_fields=["location"],
+    )
+    updated = update_profile(profile, name="B")
+    assert updated.locked_fields == ["location"]  # round-trip via asdict
