@@ -89,6 +89,21 @@ def test_get_unknown_run_returns_404(env):
     assert "run inconnu" in resp.body["error"]
 
 
+def test_delete_run_removes_it(env):
+    # OPP-144 : supprimer un run le retire (GET 200 → DELETE 200 → GET 404).
+    assert env.dispatch("GET", "/runs/run-1", None).status == 200
+    resp = env.dispatch("DELETE", "/runs/run-1", None)
+    assert resp.status == 200
+    assert resp.body == {"deleted": "run-1"}
+    assert env.dispatch("GET", "/runs/run-1", None).status == 404
+
+
+def test_delete_run_is_idempotent(env):
+    # Re-supprimer un run déjà retiré → 404 neutre (rien à retirer).
+    assert env.dispatch("DELETE", "/runs/run-1", None).status == 200
+    assert env.dispatch("DELETE", "/runs/run-1", None).status == 404
+
+
 def test_get_recommendation_returns_decision(env):
     resp = env.dispatch("GET", f"/recommendations/{_RID}", None)
     assert resp.status == 200

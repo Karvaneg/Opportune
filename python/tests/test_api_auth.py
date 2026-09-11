@@ -121,6 +121,20 @@ def test_owner_can_read_run(env):
     assert resp.status == 200
 
 
+def test_delete_run_guards_existence_then_owner_then_reviewer(env):
+    # OPP-144 : ordre des gardes identique aux actions sensibles.
+    api, _ = env
+    # str est reviewer mais ne possède pas cand-1 → 404 neutre (propriété avant rôle).
+    assert api.dispatch("DELETE", "/runs/run-1", None, _hdr("tok-str")).status == 404
+    # view possède cand-1 mais n'est pas reviewer → 403.
+    assert api.dispatch("DELETE", "/runs/run-1", None, _hdr("tok-view")).status == 403
+    # rev possède cand-1 et est reviewer → suppression effective.
+    ok = api.dispatch("DELETE", "/runs/run-1", None, _hdr("tok-rev"))
+    assert ok.status == 200 and ok.body == {"deleted": "run-1"}
+    # Puis le run a disparu pour tous.
+    assert api.dispatch("GET", "/runs/run-1", None, _hdr("tok-rev")).status == 404
+
+
 @pytest.mark.parametrize("path", [
     "/runs/run-1",
     "/runs/run-1/recommendations",

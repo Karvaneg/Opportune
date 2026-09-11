@@ -80,3 +80,19 @@ export async function apiPost<T>(path: string, token: string, body: unknown): Pr
 
   return parseOrThrow<T>(response);
 }
+
+/**
+ * Suppression authentifiée (DELETE). Même contrat d'erreur qu'`apiFetch` (`ApiHttpError`
+ * porteur du `status`) — l'appelant distingue 403/404 et `QueryCache.onError` purge le 401.
+ */
+export async function apiDelete<T>(path: string, token: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+  });
+
+  return parseOrThrow<T>(response);
+}

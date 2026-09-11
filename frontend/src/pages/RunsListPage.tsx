@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useLaunchRun, useRuns } from "../api/runs";
+import { useDeleteRun, useLaunchRun, useRuns } from "../api/runs";
 import { useAuth } from "../auth/AuthContext";
+import { useIsReviewer } from "../auth/roles";
 import type { RunSummary } from "../api/types";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
@@ -52,27 +53,84 @@ export function RunsListPage() {
 
 function RunRow({ run }: { run: RunSummary }) {
   return (
-    <li>
-      <Link
-        to={`/runs/${encodeURIComponent(run.run_id)}`}
-        className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400"
-      >
-        <div>
-          <p className="font-mono text-sm text-slate-900">{run.run_id}</p>
-          <p className="text-sm text-slate-500">
-            {run.candidate_id} · {formatDate(run.executed_at)}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-3 text-sm text-slate-600">
-          <span>{run.evaluation_count} offre(s)</span>
-          {run.error_count > 0 && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-              {run.error_count} erreur(s)
-            </span>
-          )}
-        </div>
+    <li className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400">
+      <Link to={`/runs/${encodeURIComponent(run.run_id)}`} className="min-w-0 flex-1">
+        <p className="font-mono text-sm text-slate-900">{run.run_id}</p>
+        <p className="text-sm text-slate-500">
+          {run.candidate_id} · {formatDate(run.executed_at)}
+        </p>
       </Link>
+      <div className="flex shrink-0 items-center gap-3 text-sm text-slate-600">
+        <span>{run.evaluation_count} offre(s)</span>
+        {run.error_count > 0 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+            {run.error_count} erreur(s)
+          </span>
+        )}
+        <DeleteRunButton runId={run.run_id} />
+      </div>
     </li>
+  );
+}
+
+/**
+ * Suppression d'un run (OPP-144) — reviewer uniquement (garde OPP-106 ; le back conserve
+ * le 403). Confirmation explicite en deux temps (Supprimer → Confirmer / Annuler) plutôt
+ * qu'une suppression au premier clic.
+ */
+function DeleteRunButton({ runId }: { runId: string }) {
+  const isReviewer = useIsReviewer();
+  const [confirming, setConfirming] = useState(false);
+  const del = useDeleteRun();
+
+  if (!isReviewer) return null;
+
+  return (
+    <span className="flex items-center gap-2">
+      {del.isError && (
+        // Message déjà neutralisé par `apiDelete` (403/404, cf. `messageFor`). Compact et
+        // inline plutôt que le bloc `ErrorNotice` : la suppression échoue dans une ligne, pas
+        // dans un panneau. Sans ça, un échec repassait à « Supprimer » sans aucun retour.
+        <span role="alert" className="text-xs text-red-700">
+          {del.error.message}
+        </span>
+      )}
+      {confirming ? (
+        <>
+          <button
+            type="button"
+            // `isSuccess` autant que `isPending` : au succès la ligne n'est démontée qu'après
+            // le refetch d'invalidation → sans ça, un 2ᵉ clic dans cette fenêtre relancerait
+            // un DELETE (404 neutre, mais inutile).
+            onClick={() => del.mutate(runId, { onError: () => setConfirming(false) })}
+            disabled={del.isPending || del.isSuccess}
+            className="font-medium text-red-700 hover:underline disabled:opacity-50"
+          >
+            Confirmer
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="text-slate-500 hover:underline"
+          >
+            Annuler
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          // Purge une erreur précédente avant de rouvrir la confirmation (pas d'erreur périmée).
+          onClick={() => {
+            del.reset();
+            setConfirming(true);
+          }}
+          aria-label={`Supprimer le run ${runId}`}
+          className="text-slate-400 hover:text-red-700"
+        >
+          Supprimer
+        </button>
+      )}
+    </span>
   );
 }
 

@@ -173,8 +173,12 @@ class HermesApi:
 
         match = _RUN.match(path)
         if match:
-            self._require(method, "GET", path)
-            return self._get_run(unquote(match["run_id"]), user)
+            run_id = unquote(match["run_id"])
+            if method == "GET":
+                return self._get_run(run_id, user)
+            if method == "DELETE":
+                return self._delete_run(run_id, user)
+            raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
         match = _RECOMMENDATION_DECISION.match(path)
         if match:
@@ -374,6 +378,20 @@ class HermesApi:
         # Propriété résolue depuis le run persisté (jamais depuis un id du corps).
         self._guard_owner(user, run.candidate_id)
         return Response(200, self._serialize_run(run))
+
+    def _delete_run(self, run_id: str, user: User | None) -> Response:
+        """Supprime un run (OPP-144) : existence → propriété → rôle reviewer, puis suppression.
+
+        Ordre des gardes identique aux actions sensibles (on ne révèle rien à un appelant non
+        autorisé). Idempotent : re-supprimer un run déjà retiré renvoie 404 neutre.
+        """
+        run = self.orchestrator.get_run(run_id)
+        if run is None:
+            raise self._not_found(user, f"run inconnu : {run_id}")
+        self._guard_owner(user, run.candidate_id)
+        self._guard_reviewer(user)
+        self.orchestrator.delete_run(run_id)
+        return Response(200, {"deleted": run_id})
 
     def _get_run_recommendations(
         self, run_id: str, query: dict, user: User | None
