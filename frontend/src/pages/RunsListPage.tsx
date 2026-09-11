@@ -168,7 +168,7 @@ function AddOffer() {
           disabled={add.isPending || text.trim() === ""}
           className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
         >
-          {add.isPending ? "Analyse en cours…" : "Ajouter l'offre"}
+          {add.isPending ? "Ajout en cours…" : "Ajouter l'offre"}
         </button>
         {add.data && (
           <span className="text-sm text-emerald-700">

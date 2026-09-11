@@ -1,11 +1,18 @@
 import { Link, useParams } from "react-router-dom";
 import { useRunDetail } from "../api/runs";
-import type { RunEvaluation } from "../api/types";
 import { RunRecommendations } from "../components/RunRecommendations";
 import { ErrorNotice, Loading } from "../components/States";
-import { StatusBadge } from "../components/StatusBadge";
 
-/** Page /runs/:runId — métadonnées, évaluations, erreurs, puis reco paginées. */
+/**
+ * Page /runs/:runId — métadonnées du run + **une seule** liste d'offres (OPP-149).
+ *
+ * On n'affiche plus la section « Évaluations » (instantané figé de `GET /runs/{id}`) en
+ * parallèle des recommandations paginées : les deux se recouvraient et pouvaient se
+ * contredire (le decision_status figé au run-time vs le courant). `RunRecommendations`
+ * porte l'unique liste, avec un decision_status **résolu au courant** et des offres
+ * cliquables. Le détail de `GET /runs/{id}` sert ici uniquement l'en-tête (candidat, date,
+ * volumétrie, erreurs).
+ */
 export function RunDetailPage() {
   const { runId = "" } = useParams();
   const { data, isPending, isError, error } = useRunDetail(runId);
@@ -45,51 +52,15 @@ export function RunDetailPage() {
 
           <div>
             <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Évaluations
-            </h3>
-            {data.evaluations.length === 0 ? (
-              <EmptyState label="Aucune offre évaluée dans ce run." />
-            ) : (
-              <ul className="space-y-2">
-                {data.evaluations.map((evaluation) => (
-                  <EvaluationRow key={evaluation.offer_id} evaluation={evaluation} />
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Recommandations (paginées)
+              Recommandations
             </h3>
             <RunRecommendations key={runId} runId={runId} />
             {/* key={runId} : remonte le composant à chaque changement de run → l'état de
-                pagination repart à 1 et aucune reco d'un run précédent ne persiste. */}
+                pagination/filtres repart à zéro, aucune reco d'un run précédent ne persiste. */}
           </div>
         </>
       )}
     </section>
-  );
-}
-
-function EvaluationRow({ evaluation }: { evaluation: RunEvaluation }) {
-  return (
-    <li className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="font-medium text-slate-900">{evaluation.title || evaluation.offer_id}</p>
-          <p className="text-sm text-slate-500">{evaluation.company || "—"}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700">{evaluation.score}</span>
-          <StatusBadge kind="advisory" value={evaluation.advisory_status} />
-          <StatusBadge kind="decision" value={evaluation.decision_status} />
-        </div>
-      </div>
-      {evaluation.justification && (
-        <p className="mt-2 text-sm text-slate-600">{evaluation.justification}</p>
-      )}
-    </li>
   );
 }
 
@@ -99,14 +70,6 @@ function Meta({ label, value, mono }: { label: string; value: string; mono?: boo
       <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
       <dd className={`mt-0.5 text-slate-900 ${mono ? "font-mono text-xs" : ""}`}>{value}</dd>
     </div>
-  );
-}
-
-function EmptyState({ label }: { label: string }) {
-  return (
-    <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-      {label}
-    </p>
   );
 }
 

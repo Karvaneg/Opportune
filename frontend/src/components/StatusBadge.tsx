@@ -21,6 +21,13 @@ const TONE: Record<string, string> = {
   deferred: "bg-amber-100 text-amber-800",
 };
 
+// Ce que chaque badge REPRÉSENTE (OPP-149) : deux registres distincts, rappelés au survol
+// et par la légende de la liste, pour lever la confusion « pré-évaluation vs décision ».
+const KIND_TITLES: Record<"advisory" | "decision", string> = {
+  advisory: "Pré-évaluation automatique",
+  decision: "Décision humaine",
+};
+
 type Props =
   | { kind: "advisory"; value: AdvisoryStatus }
   | { kind: "decision"; value: DecisionStatus };
@@ -30,6 +37,7 @@ export function StatusBadge(props: Props) {
     props.kind === "advisory" ? ADVISORY_LABELS[props.value] : DECISION_LABELS[props.value];
   return (
     <span
+      title={KIND_TITLES[props.kind]}
       className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE[props.value] ?? "bg-slate-100 text-slate-700"}`}
     >
       {label}
