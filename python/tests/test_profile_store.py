@@ -63,3 +63,38 @@ def test_save_is_an_upsert_not_a_duplicate(store):
     store.save(_profile(name="v2"))  # même id
     assert store.count() == 1
     assert store.get("p-1").name == "v2"
+
+
+def test_locked_fields_roundtrip(store):
+    profile = _profile(locked_fields=["total_experience_years", "location"])
+    store.save(profile)
+    assert store.get("p-1").locked_fields == ["total_experience_years", "location"]
+
+
+def test_migrates_legacy_table_without_locked_fields():
+    # Une base antérieure à OPP-138 : table profiles sans la colonne locked_fields.
+    conn = connect(":memory:")
+    conn.execute(
+        """
+        CREATE TABLE profiles (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, skills TEXT NOT NULL,
+            contract_type TEXT NOT NULL, structured_skills TEXT NOT NULL,
+            experiences TEXT NOT NULL, total_experience_years REAL, location TEXT,
+            mobility TEXT, remote TEXT, target_salary REAL, target_daily_rate REAL,
+            languages TEXT NOT NULL, availability TEXT, constraints TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO profiles (id, name, skills, contract_type, structured_skills, "
+        "experiences, languages, constraints) VALUES "
+        "('old', 'Ancien', '[\"Python\"]', 'CDI', '[]', '[]', '[]', '[]')"
+    )
+    conn.commit()
+
+    # L'ouverture via ProfileStore ajoute la colonne et lit le profil legacy sans verrou.
+    store = ProfileStore(conn)
+    migrated = store.get("old")
+    assert migrated is not None
+    assert migrated.locked_fields == []
+    conn.close()

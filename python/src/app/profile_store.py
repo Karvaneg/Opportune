@@ -17,7 +17,14 @@ from typing import Protocol, runtime_checkable
 from app.candidate_profile import CandidateProfile
 
 # Colonnes stockées en JSON (listes / structures).
-_JSON_COLUMNS = ("skills", "structured_skills", "experiences", "languages", "constraints")
+_JSON_COLUMNS = (
+    "skills",
+    "structured_skills",
+    "experiences",
+    "languages",
+    "constraints",
+    "locked_fields",
+)
 
 # Ordre des colonnes de la table (= attributs de CandidateProfile).
 _COLUMNS = (
@@ -36,6 +43,7 @@ _COLUMNS = (
     "languages",
     "availability",
     "constraints",
+    "locked_fields",
 )
 
 _CREATE_TABLE = """
@@ -54,7 +62,8 @@ CREATE TABLE IF NOT EXISTS profiles (
     target_daily_rate REAL,
     languages TEXT NOT NULL,
     availability TEXT,
-    constraints TEXT NOT NULL
+    constraints TEXT NOT NULL,
+    locked_fields TEXT NOT NULL DEFAULT '[]'
 )
 """
 
@@ -76,7 +85,21 @@ class ProfileStore:
         # ``get`` accède aux colonnes par nom : on garantit le factory ici.
         self.conn.row_factory = sqlite3.Row
         self.conn.execute(_CREATE_TABLE)
+        self._migrate_locked_fields()
         self.conn.commit()
+
+    def _migrate_locked_fields(self) -> None:
+        """Ajoute la colonne ``locked_fields`` (OPP-138) aux bases créées avant elle.
+
+        Idempotent : ``CREATE TABLE IF NOT EXISTS`` ne modifie pas une table existante,
+        donc une base antérieure n'aurait pas la colonne. On l'ajoute avec un défaut
+        ``'[]'`` (aucun verrou) pour les profils déjà persistés.
+        """
+        existing = {row["name"] for row in self.conn.execute("PRAGMA table_info(profiles)")}
+        if "locked_fields" not in existing:
+            self.conn.execute(
+                "ALTER TABLE profiles ADD COLUMN locked_fields TEXT NOT NULL DEFAULT '[]'"
+            )
 
     def save(self, profile: CandidateProfile) -> None:
         """Insère le profil ou met à jour la ligne existante (upsert sur ``id``)."""

@@ -79,6 +79,48 @@ def test_intake_upserts_on_explicit_id():
     assert len(store.profiles) == 1  # remplace le profil, pas de doublon
 
 
+def test_reintake_preserves_locked_fields():
+    # OPP-138 : un fait corrigé à la main (verrouillé) survit à une ré-extraction du CV.
+    store = FakeProfileStore()
+    client = MockLLMClient([VALID_RESPONSE, VALID_RESPONSE])
+    intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-marie")
+
+    # Correction humaine : l'expérience réelle est 2 ans, pas les 6 extraits.
+    from app.profile_correction_service import correct_profile
+
+    correct_profile("cand-marie", store=store, total_experience_years=2)
+
+    # Ré-intake du même CV : le LLM re-dit 6, mais le verrou préserve 2.
+    reintaken = intake_profile(
+        "CV", contract_type="CDI", client=client, store=store, id="cand-marie"
+    )
+    assert reintaken.total_experience_years == 2.0  # fait verrouillé préservé
+    assert reintaken.locked_fields == ["total_experience_years"]  # verrou conservé
+    # Les champs non verrouillés sont bien ré-extraits du CV.
+    assert reintaken.skills == ["Back-end", "Python", "SQL", "React"]
+
+
+def test_reintake_locked_fact_survives_degraded_extraction():
+    # OPP-138 (revue, point 3) : skills verrouillé, mais la ré-extraction ne remonte plus
+    # aucune compétence → la valeur humaine fait autorité, l'intake n'échoue pas.
+    store = FakeProfileStore()
+    empty = json.dumps(
+        {"name": "Marie", "location": "Paris", "skills": [],
+         "languages": ["Français"], "total_experience_years": 6}
+    )
+    client = MockLLMClient([VALID_RESPONSE, empty])
+    from app.profile_correction_service import correct_profile
+
+    intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-marie")
+    correct_profile("cand-marie", store=store, skills=["Rust", "Go"])  # verrouille skills
+
+    reintaken = intake_profile(
+        "CV", contract_type="CDI", client=client, store=store, id="cand-marie"
+    )
+    assert reintaken.skills == ["Rust", "Go"]  # fait verrouillé préservé malgré extraction vide
+    assert reintaken.locked_fields == ["skills"]
+
+
 def test_intake_requires_valid_contract_type():
     store = FakeProfileStore()
     with pytest.raises(ProfileValidationError):

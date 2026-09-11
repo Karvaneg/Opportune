@@ -37,6 +37,12 @@ _ANALYSIS_FACT_KEYS = frozenset(
     {"name", "skills", "location", "languages", "total_experience_years"}
 )
 
+# Champs verrouillables par une correction humaine (OPP-138) : exactement les faits
+# ré-extraits du CV à chaque intake. Verrouiller un fait corrigé empêche un ré-intake
+# de l'écraser (même principe que la validation humaine préservée sur les décisions,
+# OPP-131). Les préférences ne sont jamais ré-extraites : inutile de les verrouiller.
+LOCKABLE_FIELDS = _ANALYSIS_FACT_KEYS
+
 
 class ProfileValidationError(Exception):
     """Les données fournies ne forment pas un profil candidat valide."""
@@ -61,6 +67,8 @@ class CandidateProfile:
     languages: list[str] = field(default_factory=list)
     availability: str | None = None
     constraints: list[str] = field(default_factory=list)
+    # Faits corrigés à la main, préservés d'un ré-intake (OPP-138). Cf. LOCKABLE_FIELDS.
+    locked_fields: list[str] = field(default_factory=list)
 
     @classmethod
     def from_analysis(
@@ -210,7 +218,27 @@ def create_profile(**data: object) -> CandidateProfile:
         languages=_clean_str_list(data.get("languages", []), "languages"),
         availability=_validate_availability(data.get("availability")),
         constraints=_clean_str_list(data.get("constraints", []), "constraints"),
+        locked_fields=_validate_locked_fields(data.get("locked_fields", [])),
     )
+
+
+def _validate_locked_fields(value: object) -> list[str]:
+    """Valide les verrous : liste de faits verrouillables, dédoublonnée (ordre conservé)."""
+    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+        raise ProfileValidationError("locked_fields doit être une liste de chaînes")
+    unknown = {x for x in value} - LOCKABLE_FIELDS
+    if unknown:
+        raise ProfileValidationError(
+            "locked_fields ne peut verrouiller que des faits extraits du CV : "
+            + ", ".join(sorted(unknown))
+        )
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in value:
+        if name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
 
 
 def _optional_str(value: object) -> str | None:
