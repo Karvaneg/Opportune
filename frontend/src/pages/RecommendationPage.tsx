@@ -1,6 +1,12 @@
+import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiHttpError } from "../api/client";
-import { useRecommendation } from "../api/recommendations";
+import {
+  useRecommendation,
+  useValidateRecommendation,
+  type DecisionVerb,
+} from "../api/recommendations";
+import { useAuth } from "../auth/AuthContext";
 import type { OfferAction, RecommendationDetail } from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
 import { StatusBadge } from "../components/StatusBadge";
@@ -12,6 +18,13 @@ const ACTION_LABELS: Record<OfferAction, string> = {
   ignorer: "Ignorer",
   "": "—",
 };
+
+// Boutons de validation humaine (OPP-108) : verbe du contrat back + libellé + ton.
+const VERB_BUTTONS: { verb: DecisionVerb; label: string; tone: string }[] = [
+  { verb: "approve", label: "Approuver", tone: "bg-emerald-600 hover:bg-emerald-700" },
+  { verb: "reject", label: "Rejeter", tone: "bg-red-600 hover:bg-red-700" },
+  { verb: "defer", label: "Reporter", tone: "bg-amber-600 hover:bg-amber-700" },
+];
 
 /**
  * Page /recommendations/:id — détail en lecture seule d'une recommandation (OPP-107).
@@ -84,6 +97,8 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         )}
       </div>
 
+      <RecommendationActions recommendationId={reco.recommendation_id} />
+
       <div>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Historique de décision
@@ -112,6 +127,61 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Panneau de validation humaine (OPP-108) — visible pour les reviewers uniquement.
+ * Les verbes mappent le contrat back ; le succès invalide le détail (via le hook) donc
+ * `status` et historique se rafraîchissent en direct. Le back reste l'autorité finale
+ * (403 en dernier recours) si la garde UI est contournée.
+ */
+function RecommendationActions({ recommendationId }: { recommendationId: string }) {
+  const { identity } = useAuth();
+  const [comment, setComment] = useState("");
+  const validate = useValidateRecommendation(recommendationId);
+
+  // Garde reviewer côté UI (cf. OPP-106) : contrôles masqués pour les autres rôles.
+  if (identity?.role !== "reviewer") return null;
+
+  const submit = (decision: DecisionVerb) =>
+    validate.mutate(
+      { decision, comment: comment.trim() || undefined },
+      { onSuccess: () => setComment("") },
+    );
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Validation
+      </h3>
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Commentaire (optionnel)"
+        rows={2}
+        aria-label="Commentaire"
+        className="w-full rounded-md border border-slate-300 p-2 text-sm"
+      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        {VERB_BUTTONS.map(({ verb, label, tone }) => (
+          <button
+            key={verb}
+            type="button"
+            onClick={() => submit(verb)}
+            disabled={validate.isPending}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 ${tone}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {validate.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={validate.error} />
+        </div>
+      )}
+    </div>
   );
 }
 

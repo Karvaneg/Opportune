@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -96,5 +97,67 @@ describe("RecommendationPage", () => {
 
     // offer_id sert de repli : présent en titre ET dans le méta « Offre » (2 occurrences).
     expect((await screen.findAllByText("off-app")).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/** fetch factice à état : /me (rôle paramétrable), GET détail, POST /decision → approved. */
+function stubDecisionFlow(role = "reviewer") {
+  let current = {
+    ...DETAIL,
+    status: "pending",
+    comment: null as string | null,
+    history: [
+      { status: "pending", at: "2026-09-04T10:00:00+00:00", comment: null as string | null },
+    ],
+  };
+  const ok = (body: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      const s = String(url);
+      if (s.includes("/me")) return ok({ id: "u", role, owned_count: 1 });
+      if (s.includes("/decision")) {
+        current = {
+          ...current,
+          status: "approved",
+          comment: "ok",
+          history: [
+            ...current.history,
+            { status: "approved", at: "2026-09-04T11:00:00+00:00", comment: "ok" },
+          ],
+        };
+        return ok(current);
+      }
+      return ok(current); // GET /recommendations/{id}
+    }),
+  );
+}
+
+describe("RecommendationPage — validation humaine (OPP-108)", () => {
+  it("un reviewer valide (approve) → statut à jour sans rechargement", async () => {
+    stubDecisionFlow("reviewer");
+    renderPage();
+
+    // Au départ : décision en attente (badge principal + historique), aucun « Approuvé ».
+    expect((await screen.findAllByText("À décider")).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("Approuvé")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Approuver" }));
+
+    // Après succès, l'invalidation refetche le détail → statut/historique passent à approved.
+    await waitFor(() =>
+      expect(screen.getAllByText("Approuvé").length).toBeGreaterThanOrEqual(1),
+    );
+  });
+
+  it("un non-reviewer ne voit pas les boutons de validation (garde UI)", async () => {
+    stubDecisionFlow("candidate");
+    renderPage();
+
+    await screen.findByText("Développeur Full-Stack"); // détail chargé
+    expect(screen.queryByRole("button", { name: "Approuver" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rejeter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reporter" })).toBeNull();
   });
 });
