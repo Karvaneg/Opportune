@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -94,6 +94,33 @@ describe("RunsListPage", () => {
     renderList();
 
     expect(await screen.findByText(/Aucun run dans votre périmètre/)).toBeInTheDocument();
+  });
+
+  it("lance un run pour le candidat du périmètre (POST /candidates/{id}/recommendations)", async () => {
+    const calls: string[] = [];
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/candidates/") && init?.method === "POST") {
+          calls.push(s);
+          return okJson({ run_id: "run-new", items: [], total: 0, errors: [] });
+        }
+        return okJson(PAGE); // GET /runs
+      }),
+    );
+    renderList();
+
+    await screen.findByText("r-a2"); // liste chargée
+    await userEvent.click(screen.getByRole("button", { name: "Lancer une analyse" }));
+
+    await waitFor(() =>
+      expect(calls.some((u) => u.includes("/candidates/cand-1/recommendations"))).toBe(true),
+    );
   });
 
   it("navigue vers la page suivante au clic sur « Suivant »", async () => {
