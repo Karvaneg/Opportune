@@ -6,7 +6,7 @@ import {
   useValidateRecommendation,
   type DecisionVerb,
 } from "../api/recommendations";
-import { useAuth } from "../auth/AuthContext";
+import { useIsReviewer } from "../auth/roles";
 import type { OfferAction, RecommendationDetail } from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
 import { StatusBadge } from "../components/StatusBadge";
@@ -137,12 +137,13 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
  * (403 en dernier recours) si la garde UI est contournée.
  */
 function RecommendationActions({ recommendationId }: { recommendationId: string }) {
-  const { identity } = useAuth();
+  const isReviewer = useIsReviewer();
   const [comment, setComment] = useState("");
   const validate = useValidateRecommendation(recommendationId);
 
-  // Garde reviewer côté UI (cf. OPP-106) : contrôles masqués pour les autres rôles.
-  if (identity?.role !== "reviewer") return null;
+  // Garde reviewer côté UI (OPP-106) : contrôles masqués pour les autres rôles. Défense en
+  // profondeur — le back conserve le 403 si la garde est contournée.
+  if (!isReviewer) return null;
 
   const submit = (decision: DecisionVerb) =>
     validate.mutate(
