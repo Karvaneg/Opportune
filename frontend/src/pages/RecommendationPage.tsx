@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiHttpError } from "../api/client";
 import {
+  useConfirmApplication,
   useRecommendation,
   useValidateRecommendation,
   type DecisionVerb,
@@ -98,6 +99,7 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
       </div>
 
       <RecommendationActions recommendationId={reco.recommendation_id} />
+      <ApplicationConfirm recommendationId={reco.recommendation_id} />
 
       <div>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -180,6 +182,84 @@ function RecommendationActions({ recommendationId }: { recommendationId: string 
       {validate.isError && (
         <div className="mt-3">
           <ErrorNotice error={validate.error} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Confirmation explicite d'une candidature (OPP-110) — reviewers uniquement. Double
+ * consentement via modale : ouvrir ne déclenche rien ; seule la confirmation POST l'action.
+ * Le 409 (« décision approuvée requise ») et l'idempotence (`already_confirmed`) sont
+ * rendus lisibles. Exécution simulée à ce stade.
+ */
+function ApplicationConfirm({ recommendationId }: { recommendationId: string }) {
+  const isReviewer = useIsReviewer();
+  const [open, setOpen] = useState(false);
+  const confirm = useConfirmApplication(recommendationId);
+
+  if (!isReviewer) return null;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Candidature
+      </h3>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={confirm.isPending}
+        className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+      >
+        Candidater…
+      </button>
+
+      {confirm.data && (
+        <p className="mt-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+          {confirm.data.already_confirmed
+            ? "Candidature déjà confirmée"
+            : "Candidature confirmée"}{" "}
+          — statut : {confirm.data.status}.
+        </p>
+      )}
+      {confirm.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={confirm.error} />
+        </div>
+      )}
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Confirmer la candidature"
+          className="fixed inset-0 z-10 flex items-center justify-center bg-slate-900/30 p-4"
+        >
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
+            <p className="text-sm text-slate-700">
+              Confirmer l'intention de candidater à cette offre ? L'action est explicite et
+              requiert une décision préalablement approuvée.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={confirm.isPending}
+                // onSettled : on referme dans tous les cas ; le résultat (succès ou 409)
+                // s'affiche dans le panneau, jamais masqué derrière la modale.
+                onClick={() => confirm.mutate(undefined, { onSettled: () => setOpen(false) })}
+                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                Confirmer la candidature
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

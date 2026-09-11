@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
-import type { RecommendationDetail } from "./types";
+import type { ActionConfirmation, RecommendationDetail } from "./types";
 
 // Clé de cache du détail d'une recommandation. Distincte des `runKeys` : une reco se
 // consulte par son id stable (cf. decision_id), indépendamment du run qui l'a produite.
@@ -47,5 +47,22 @@ export function useValidateRecommendation(recommendationId: string) {
         variables,
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
+  });
+}
+
+/**
+ * Confirmation explicite d'une candidature : `POST /applications/{id}/confirm` (OPP-110).
+ * Double consentement côté UI ; le body est `{confirm: true}` (booléen strict exigé par le
+ * back). Idempotent (`already_confirmed`). Exige une décision humaine `approved` côté back,
+ * sinon 409 — remonté tel quel (`ApiHttpError`) pour être expliqué à l'utilisateur.
+ */
+export function useConfirmApplication(recommendationId: string) {
+  return useApiMutation<ActionConfirmation, void>({
+    mutationFn: (_variables, token) =>
+      apiPost<ActionConfirmation>(
+        `/applications/${encodeURIComponent(recommendationId)}/confirm`,
+        token,
+        { confirm: true },
+      ),
   });
 }
