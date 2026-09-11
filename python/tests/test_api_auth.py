@@ -314,6 +314,31 @@ def test_server_rejects_unauthenticated_request_over_http():
     conn.close()
 
 
+def test_server_supports_delete_method_over_http():
+    """Régression OPP-144 : ``http.server`` doit exposer ``do_DELETE`` (sinon 501 *avant* le
+    dispatcher). On teste par le chemin 401 (auth avant tout accès base, sûr cross-thread) :
+    un DELETE **câblé** répond 401 — un 501 trahirait une méthode non montée côté transport.
+    """
+    conn = connect(":memory:")
+    _profile(conn)
+    OfferStore(conn).save(_offer())
+    auth = AuthProvider({"tok": User("u", REVIEWER, frozenset({"cand-1"}))})
+    server = create_server(assemble_api(conn, auth), port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        client = http.client.HTTPConnection(host, port, timeout=5)
+        client.request("DELETE", "/runs/run-x")  # sans jeton
+        assert client.getresponse().status == 401  # câblé (≠ 501 « méthode non supportée »)
+        client.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    conn.close()
+
+
 # --- GET /me : sonde d'authentification + identité (OPP-103) ------------------
 
 def test_me_returns_identity_for_valid_token(env):
