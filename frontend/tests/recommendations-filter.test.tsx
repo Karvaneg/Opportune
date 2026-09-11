@@ -100,6 +100,23 @@ describe("RunRecommendations — filtres de statut (OPP-109)", () => {
     expect(calls.some((u) => u.includes("decision_status=approved"))).toBe(true);
   });
 
+  it("combine advisory_status et decision_status dans la même requête", async () => {
+    const calls = stubFilterableFetch();
+    renderRecommendations();
+    await screen.findByText("off-1");
+
+    await userEvent.selectOptions(screen.getByLabelText("Filtre pré-évaluation"), "approved");
+    await userEvent.selectOptions(screen.getByLabelText("Filtre décision"), "approved");
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (u) => u.includes("advisory_status=approved") && u.includes("decision_status=approved"),
+        ),
+      ).toBe(true),
+    );
+  });
+
   it("les filtres n'exposent que des valeurs valides du contrat", async () => {
     stubFilterableFetch();
     renderRecommendations();
