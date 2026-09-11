@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useRunRecommendations } from "../api/runs";
 import { Pager } from "./Pager";
 import { ErrorNotice, Loading } from "./States";
@@ -29,7 +30,13 @@ export function RunRecommendations({ runId }: { runId: string }) {
             className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4"
           >
             <div>
-              <p className="font-medium text-slate-900">{item.title || item.offer_id}</p>
+              <Link
+                to={`/recommendations/${encodeURIComponent(item.recommendation_id)}`}
+                state={{ from: `/runs/${runId}` }}
+                className="font-medium text-slate-900 hover:underline"
+              >
+                {item.title || item.offer_id}
+              </Link>
               <p className="text-sm text-slate-500">{item.company || "—"}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">

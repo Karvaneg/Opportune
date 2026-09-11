@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
 import { ApiHttpError } from "./api/client";
 import { useAuth } from "./auth/AuthContext";
 import { LoginGate } from "./pages/LoginGate";
+import { RecommendationPage } from "./pages/RecommendationPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsListPage } from "./pages/RunsListPage";
 
@@ -65,6 +66,7 @@ export function App() {
             <Routes>
               <Route path="/" element={<RunsListPage />} />
               <Route path="/runs/:runId" element={<RunDetailPage />} />
+              <Route path="/recommendations/:id" element={<RecommendationPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
