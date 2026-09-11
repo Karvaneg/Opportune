@@ -161,3 +161,80 @@ describe("RecommendationPage — validation humaine (OPP-108)", () => {
     expect(screen.queryByRole("button", { name: "Reporter" })).toBeNull();
   });
 });
+
+/** fetch factice : /me (rôle), GET détail, POST /applications/{id}/confirm paramétrable. */
+function stubApplication(opts: { role?: string; http?: number; body?: unknown } = {}) {
+  const { role = "reviewer", http = 200, body } = opts;
+  const calls: string[] = [];
+  const ok = (b: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      const s = String(url);
+      if (s.includes("/me")) return ok({ id: "u", role, owned_count: 1 });
+      if (s.includes("/applications/")) {
+        calls.push(s);
+        const success = body ?? { action_id: "a1", status: "simulated", already_confirmed: false };
+        return Promise.resolve({
+          ok: http >= 200 && http < 300,
+          status: http,
+          json: () =>
+            Promise.resolve(
+              http >= 400
+                ? { error: "une candidature exige une décision humaine 'approved'" }
+                : success,
+            ),
+        } as Response);
+      }
+      return ok(DETAIL); // GET /recommendations/{id}
+    }),
+  );
+  return calls;
+}
+
+describe("RecommendationPage — confirmation de candidature (OPP-110)", () => {
+  it("aucune candidature sans confirmation explicite, puis statut affiché", async () => {
+    const calls = stubApplication();
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    // Ouvrir la modale ne déclenche AUCUN appel.
+    await userEvent.click(screen.getByRole("button", { name: /Candidater/ }));
+    expect(calls.length).toBe(0);
+
+    // Seule la confirmation explicite POST l'action.
+    await userEvent.click(screen.getByRole("button", { name: "Confirmer la candidature" }));
+    expect(await screen.findByText(/Candidature confirmée/)).toBeInTheDocument();
+    expect(calls.length).toBe(1);
+  });
+
+  it("409 (décision non approuvée) est expliqué à l'utilisateur", async () => {
+    stubApplication({ http: 409 });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    await userEvent.click(screen.getByRole("button", { name: /Candidater/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirmer la candidature" }));
+
+    expect(await screen.findByText(/décision humaine 'approved'/)).toBeInTheDocument();
+  });
+
+  it("re-confirmer ne duplique pas l'action (already_confirmed)", async () => {
+    stubApplication({ body: { action_id: "a1", status: "simulated", already_confirmed: true } });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    await userEvent.click(screen.getByRole("button", { name: /Candidater/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirmer la candidature" }));
+
+    expect(await screen.findByText(/déjà confirmée/)).toBeInTheDocument();
+  });
+
+  it("un non-reviewer ne voit pas le bouton Candidater", async () => {
+    stubApplication({ role: "candidate" });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+    expect(screen.queryByRole("button", { name: /Candidater/ })).toBeNull();
+  });
+});

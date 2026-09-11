@@ -104,6 +104,17 @@ export interface RunsPage {
   total_pages: number;
 }
 
+/**
+ * Réponse d'une confirmation d'action sortante (`POST /applications/{id}/confirm`, OPP-110).
+ * Exécution **simulée** à ce stade (`status`). `already_confirmed` porte l'idempotence :
+ * re-confirmer la même cible renvoie l'action existante sans la dupliquer.
+ */
+export interface ActionConfirmation {
+  action_id: string;
+  status: string;
+  already_confirmed: boolean;
+}
+
 /** Identité du porteur du jeton (`GET /me`) — sonde d'authentification. */
 export interface Me {
   id: string | null;
