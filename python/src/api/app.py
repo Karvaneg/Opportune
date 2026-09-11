@@ -597,15 +597,22 @@ class HermesApi:
             "errors": list(run.errors),
         }
 
-    @staticmethod
-    def _serialize_decision(decision: Decision) -> dict:
-        """Représentation JSON d'une décision, historique inclus (recommandation d'origine préservée)."""
+    def _serialize_decision(self, decision: Decision) -> dict:
+        """Représentation JSON d'une décision, historique inclus (recommandation d'origine préservée).
+
+        ``title``/``company`` sont résolus depuis l'offre d'origine (``offer_id``) pour que la
+        page reco dédiée soit lisible (OPP-112) ; ``None`` si l'offre a disparu — le front
+        retombe alors sur l'``offer_id``.
+        """
+        offer = self.orchestrator.get_offer(decision.offer_id)
         return {
             "recommendation_id": decision.id,
             "candidate_id": decision.candidate_id,
             "offer_id": decision.offer_id,
             "action": decision.action,
             "score": decision.score,
+            "title": offer.title if offer is not None else None,
+            "company": offer.company if offer is not None else None,
             "justification": decision.justification,
             "status": decision.status,
             "comment": decision.comment,
