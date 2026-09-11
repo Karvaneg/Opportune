@@ -160,6 +160,32 @@ describe("RecommendationPage — validation humaine (OPP-108)", () => {
     expect(screen.queryByRole("button", { name: "Rejeter" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Reporter" })).toBeNull();
   });
+
+  it("les boutons Rejeter / Reporter envoient le verbe du contrat (reject / defer)", async () => {
+    const bodies: { decision?: string }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        const ok = (b: unknown) =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/decision")) {
+          bodies.push(JSON.parse(String(init?.body ?? "{}")));
+          return ok(DETAIL);
+        }
+        return ok(DETAIL);
+      }),
+    );
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    await userEvent.click(screen.getByRole("button", { name: "Rejeter" }));
+    await waitFor(() => expect(bodies.at(-1)?.decision).toBe("reject"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Reporter" }));
+    await waitFor(() => expect(bodies.at(-1)?.decision).toBe("defer"));
+  });
 });
 
 /** fetch factice : /me (rôle), GET détail, POST /applications/{id}/confirm paramétrable. */
