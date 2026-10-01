@@ -147,3 +147,22 @@ def test_score_and_explain_offer_to_profile_end_to_end():
     explanation = explain_offer_to_profile(offer, profile)
     assert explanation.score == 100
     assert explanation.positives  # au moins une raison positive
+
+
+def test_sparse_offer_fully_covered_scores_high():
+    # OPP-151 (symptôme) : offre peu détaillée (contrat/séniorité/lieu « Non précisé »,
+    # défaut LLM) dont tout ce qu'elle exige est couvert par un CV plus riche. Ces
+    # dimensions non renseignées doivent être neutralisées (non évaluées), pas comptées
+    # comme des 0 : le score reflète alors la seule dimension mesurable (skills) → 100.
+    offer = _offer(
+        skills=["Python"], contract_type="Non précisé",
+        seniority="Non précisé", location="Non précisé",
+    )
+    profile = create_profile(name="Marie", skills=["Python", "React", "Docker"],
+                             contract_type="CDI", location="Lyon", total_experience_years=6)
+    result = score_offer_to_profile(offer, profile)
+    assert result.score == 100
+    assert result.breakdown["skills"].evaluated is True
+    assert result.breakdown["contract_type"].evaluated is False
+    assert result.breakdown["seniority"].evaluated is False
+    assert result.breakdown["location"].evaluated is False
