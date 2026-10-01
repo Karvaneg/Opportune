@@ -61,6 +61,16 @@ def test_skills_matched_via_alias_and_family():
     assert result.missing == ["Rust"]  # réellement absent → toujours manquant
 
 
+def test_skills_unspecified_sentinel_is_ignored():
+    # OPP-151 : « Non précisé » glissé dans la liste de compétences = absence, pas une
+    # compétence exigée → ni matched ni missing (ne pénalise pas une offre éparse).
+    offer = _offer(skills=["Python", "Non précisé"])
+    profile = _profile(skills=["Python"])
+    result = compare_skills(offer, profile)
+    assert result.matched == ["Python"]
+    assert result.missing == []
+
+
 # --- Type de contrat ---------------------------------------------------------
 
 
@@ -86,6 +96,12 @@ def test_contract_les_deux_rejects_cdd():
 
 def test_contract_none_when_offer_side_absent():
     result = compare_contract_type(_offer(contract_type=""), _profile(contract_type="CDI"))
+    assert result.compatible is None
+
+
+def test_contract_unspecified_sentinel_is_not_a_mismatch():
+    # OPP-151 : « Non précisé » (défaut LLM) = absence, pas un contrat incompatible.
+    result = compare_contract_type(_offer(contract_type="Non précisé"), _profile(contract_type="CDI"))
     assert result.compatible is None
 
 
@@ -120,6 +136,12 @@ def test_location_negated_mobility_does_not_rescue_mismatch():
 
 def test_location_unknown_when_profile_missing():
     result = compare_location(_offer(location="Lyon"), _profile())  # profil sans location
+    assert result.status == "unknown"
+
+
+def test_location_unspecified_sentinel_is_unknown_not_mismatch():
+    # OPP-151 : offre « Non précisé » en lieu = absence → non évaluable, pas un écart.
+    result = compare_location(_offer(location="Non précisé"), _profile(location="Paris"))
     assert result.status == "unknown"
 
 

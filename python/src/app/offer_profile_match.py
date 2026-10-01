@@ -20,6 +20,19 @@ from app.candidate_profile import CandidateProfile
 from app.offer import Offer
 from app.skill_matching import canonicalize, expand_skills
 
+# Valeurs sentinelles émises par le LLM pour un champ **absent de l'offre** : le prompt
+# impose « Non précisé » à défaut (cf. ``offer_analysis_service``). Les traiter comme une
+# vraie valeur fausse le matching — une dimension « Non précisé » n'est pas un écart, elle
+# est **non évaluable** : elle doit être exclue du score (renvoyée à ``None``/« unknown »),
+# pas comptée comme un 0 pénalisant. Comparaison casse et espaces ignorés (OPP-151).
+_UNSPECIFIED = frozenset({"", "non précisé", "non precise", "n/a", "aucune"})
+
+
+def _is_specified(value: str | None) -> bool:
+    """Vrai si ``value`` porte une information exploitable (ni vide ni sentinelle « Non précisé »)."""
+    return isinstance(value, str) and value.strip().lower() not in _UNSPECIFIED
+
+
 # --- Compétences -------------------------------------------------------------
 
 
@@ -40,7 +53,12 @@ def compare_skills(offer: Offer, profile: CandidateProfile) -> SkillMatch:
     owned = expand_skills(profile.skills)
     matched: list[str] = []
     missing: list[str] = []
+    # On ignore les sentinelles « Non précisé » (le LLM peut en glisser une dans la liste
+    # plutôt que de la laisser vide) : une telle entrée n'est pas une compétence exigée, la
+    # compter en ``missing`` pénaliserait à tort une offre éparse (OPP-151).
     for skill in offer.skills:
+        if not _is_specified(skill):
+            continue
         (matched if canonicalize(skill) in owned else missing).append(skill)
     return SkillMatch(matched=matched, missing=missing)
 
@@ -65,10 +83,11 @@ class ContractMatch:
 def compare_contract_type(offer: Offer, profile: CandidateProfile) -> ContractMatch:
     """Compatibilité entre la préférence de contrat du profil et le contrat de l'offre.
 
-    ``compatible`` vaut ``None`` si l'un des deux côtés est absent/inconnu.
+    ``compatible`` vaut ``None`` si l'un des deux côtés est absent/inconnu — y compris
+    la sentinelle « Non précisé » du LLM, traitée comme une absence et non comme un écart.
     """
-    offer_type = offer.contract_type or None
-    profile_type = profile.contract_type or None
+    offer_type = offer.contract_type if _is_specified(offer.contract_type) else None
+    profile_type = profile.contract_type if _is_specified(profile.contract_type) else None
     if offer_type is None or profile_type is None:
         return ContractMatch(offer=offer_type, profile=profile_type, compatible=None)
     accepted = _PROFILE_CONTRACT_TO_OFFER.get(profile_type.lower(), set())
@@ -133,8 +152,8 @@ def _offer_allows_remote(offer: Offer) -> bool:
 
 def compare_location(offer: Offer, profile: CandidateProfile) -> LocationMatch:
     """Compare les lieux ; un profil mobile **ou une offre en télétravail** rend l'écart non bloquant."""
-    base_offer = offer.location or None
-    base_profile = profile.location or None
+    base_offer = offer.location if _is_specified(offer.location) else None
+    base_profile = profile.location if _is_specified(profile.location) else None
 
     offer_loc = base_offer.lower() if base_offer else None
     prof_loc = base_profile.lower() if base_profile else None
@@ -179,8 +198,9 @@ _SENIORITY_YEARS = {
     "expert": 8,
 }
 
-# Valeurs de séniorité équivalant à « aucune exigence ».
-_SENIORITY_NONE = {"", "non précisé", "non precise", "n/a", "aucune"}
+# Valeurs de séniorité équivalant à « aucune exigence » : mêmes sentinelles d'absence que
+# partout ailleurs (le LLM émet « Non précisé » à défaut).
+_SENIORITY_NONE = _UNSPECIFIED
 
 # Marqueurs d'**exclusion** de niveau (« pas de junior », « débutants s'abstenir/exclus ») :
 # leur présence rend la plage ambiguë (quel niveau est exclu ?) → non évaluable plutôt que
