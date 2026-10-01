@@ -189,6 +189,25 @@ def test_post_recommendations_owner_without_reviewer_ok(env):
     assert resp.status == 200
 
 
+def test_rescore_foreign_candidate_is_404(env):
+    # OPP-150 : re-score hors périmètre → 404 neutre (propriété avant tout).
+    api, _ = env
+    resp = api.dispatch(
+        "POST", "/candidates/cand-1/offers/off-app/rescore", {}, _hdr("tok-str")
+    )
+    assert resp.status == 404
+
+
+def test_rescore_owner_without_reviewer_ok(env):
+    # view possède cand-1 sans le rôle reviewer : re-scorer une offre ne l'exige pas.
+    api, _ = env
+    resp = api.dispatch(
+        "POST", "/candidates/cand-1/offers/off-app/rescore", {}, _hdr("tok-view")
+    )
+    assert resp.status == 200
+    assert resp.body["offer_id"] == "off-app"
+
+
 # --- Rôle reviewer (403) : validation humaine et actions sensibles -----------
 
 def test_decision_requires_reviewer_role(env):

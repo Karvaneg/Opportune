@@ -83,6 +83,30 @@ def _justify(offer: Offer, score: int, action_label: str, matched: list[Reason],
     return " ".join(parts)
 
 
+def _evaluate_offer(
+    offer: Offer, profile: CandidateProfile, *, high: int, medium: int
+) -> OfferRecommendation | None:
+    """Score **une** offre pour un profil → ``OfferRecommendation``, ou ``None`` si non évaluable.
+
+    Source unique du scoring + construction de la recommandation, partagée par la reco de
+    masse (``recommend``) et la reco ciblée (``recommend_one``). ``None`` quand le score est
+    ``None`` (aucune dimension mesurable) : l'offre n'est alors pas classable.
+    """
+    explanation = explain_score(match_offer_to_profile(offer, profile))
+    score = explanation.score
+    if score is None:
+        return None
+    action = recommend_action(score, high=high, medium=medium)
+    return OfferRecommendation(
+        offer=offer,
+        score=score,
+        action=action.action,
+        matched=explanation.positives,
+        gaps=explanation.negatives,
+        justification=_justify(offer, score, action.label, explanation.positives, explanation.negatives),
+    )
+
+
 class RecommendationService:
     """Recommande les meilleures offres du stock pour un candidat donné."""
 
@@ -99,6 +123,7 @@ class RecommendationService:
         high: int = DEFAULT_HIGH,
         medium: int = DEFAULT_MEDIUM,
         filters: dict | None = None,
+        exclude_offer_ids: set[str] | None = None,
     ) -> list[OfferRecommendation]:
         """Retourne les offres recommandées au candidat, classées par score décroissant.
 
@@ -107,6 +132,9 @@ class RecommendationService:
           via ``contract_type`` (correspondance exacte) et ``skills`` (sémantique ALL). La
           normalisation/validation des valeurs incombe à l'appelant ; ici on applique un
           dict déjà propre ``{"contract_type": str | None, "skills": list[str]}``.
+        - ``exclude_offer_ids`` (optionnel) : ids d'offres à **ignorer** avant tout scoring —
+          sert à ne (re)traiter que les offres « nouvelles » (cf. OPP-150 : un run n'évalue
+          que celles sans décision déjà posée pour le candidat).
         - Les offres **non évaluables** (score ``None``, aucune dimension mesurable)
           sont exclues du classement.
         - ``limit`` : nombre maximal de recommandations retournées.
@@ -127,26 +155,40 @@ class RecommendationService:
 
         recommendations: list[OfferRecommendation] = []
         for offer in self.offers.list_all():
+            if exclude_offer_ids and offer.id in exclude_offer_ids:
+                continue
             if not _matches_filters(offer, contract_type, skills):
                 continue
-            explanation = explain_score(match_offer_to_profile(offer, profile))
-            score = explanation.score
-            if score is None:  # non évaluable → non classable
+            recommendation = _evaluate_offer(offer, profile, high=high, medium=medium)
+            if recommendation is None:  # non évaluable → non classable
                 continue
-            if min_score is not None and score < min_score:
+            if min_score is not None and recommendation.score < min_score:
                 continue
-            action = recommend_action(score, high=high, medium=medium)
-            recommendations.append(
-                OfferRecommendation(
-                    offer=offer,
-                    score=score,
-                    action=action.action,
-                    matched=explanation.positives,
-                    gaps=explanation.negatives,
-                    justification=_justify(offer, score, action.label, explanation.positives, explanation.negatives),
-                )
-            )
+            recommendations.append(recommendation)
 
         # Tri par score décroissant ; tie-break déterministe par titre puis id.
         recommendations.sort(key=lambda r: (-r.score, r.offer.title, r.offer.id))
         return recommendations[:limit]
+
+    def recommend_one(
+        self,
+        candidate_id: str,
+        offer_id: str,
+        *,
+        high: int = DEFAULT_HIGH,
+        medium: int = DEFAULT_MEDIUM,
+    ) -> OfferRecommendation | None:
+        """Recommande **une** offre précise pour un candidat (re-score ciblé, OPP-150).
+
+        Retourne ``None`` si l'offre est introuvable **ou** non évaluable (score ``None``).
+        Lève ``UnknownCandidateError`` si le candidat est introuvable et ``ValueError`` si
+        les seuils sont incohérents — même contrat que ``recommend``.
+        """
+        validate_thresholds(high, medium)
+        profile = self.profiles.get(candidate_id)
+        if profile is None:
+            raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
+        offer = self.offers.get(offer_id)
+        if offer is None:
+            return None
+        return _evaluate_offer(offer, profile, high=high, medium=medium)

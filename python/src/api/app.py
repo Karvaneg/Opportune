@@ -93,6 +93,9 @@ class ApiError(Exception):
 _ME = re.compile(r"^/me$")
 _RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
+_RESCORE = re.compile(
+    r"^/candidates/(?P<candidate_id>[^/]+)/offers/(?P<offer_id>[^/]+)/rescore$"
+)
 _RUN_RECOMMENDATIONS = re.compile(r"^/runs/(?P<run_id>[^/]+)/recommendations$")
 _RUN = re.compile(r"^/runs/(?P<run_id>[^/]+)$")
 _RECOMMENDATION_DECISION = re.compile(r"^/recommendations/(?P<rid>[^/]+)/decision$")
@@ -184,6 +187,13 @@ class HermesApi:
         if match:
             self._require(method, "POST", path)
             return self._post_recommendations(unquote(match["candidate_id"]), body, user)
+
+        match = _RESCORE.match(path)
+        if match:
+            self._require(method, "POST", path)
+            return self._post_rescore(
+                unquote(match["candidate_id"]), unquote(match["offer_id"]), user
+            )
 
         match = _RUN_RECOMMENDATIONS.match(path)
         if match:
@@ -305,7 +315,7 @@ class HermesApi:
         # directe (pas de re-calcul), consultables ensuite paginés via GET.
         try:
             run = self.orchestrator.run_and_evaluate_for_candidate(
-                candidate_id, limit=limit, filters=filters
+                candidate_id, limit=limit, filters=filters, only_new=True
             )
         except UnknownCandidateError:
             raise ApiError(404, f"candidat inconnu : {candidate_id}")
@@ -326,6 +336,26 @@ class HermesApi:
                 "errors": list(run.errors),
             },
         )
+
+    def _post_rescore(
+        self, candidate_id: str, offer_id: str, user: User | None
+    ) -> Response:
+        """Re-score ciblé d'une offre (OPP-150) : met à jour sa décision, renvoie l'état live.
+
+        Propriété vérifiée sur le ``candidate_id`` du path (comme lancer un run) ; pas de
+        rôle reviewer requis. 404 si le candidat est hors périmètre/inconnu **ou** si l'offre
+        est introuvable/non évaluable (même message générique, anti-énumération). Une décision
+        déjà arbitrée par un humain est préservée par l'orchestrateur (le front ne propose le
+        bouton que sur une offre ``pending``).
+        """
+        self._guard_owner(user, candidate_id)
+        try:
+            decision = self.orchestrator.rescore_offer(candidate_id, offer_id)
+        except UnknownCandidateError:
+            raise self._not_found(user, f"candidat inconnu : {candidate_id}")
+        if decision is None:
+            raise self._not_found(user, f"offre inconnue ou non évaluable : {offer_id}")
+        return Response(200, self._serialize_decision(decision))
 
     @staticmethod
     def _parse_filters(raw: object) -> dict | None:

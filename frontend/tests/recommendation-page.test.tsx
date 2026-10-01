@@ -264,3 +264,48 @@ describe("RecommendationPage — confirmation de candidature (OPP-110)", () => {
     expect(screen.queryByRole("button", { name: /Candidater/ })).toBeNull();
   });
 });
+
+/** fetch factice à état : /me, GET détail (status/score paramétrables), POST /rescore → 90. */
+function stubRescoreFlow(status = "pending") {
+  let current = { ...DETAIL, status, score: 50, comment: null as string | null };
+  const calls: string[] = [];
+  const ok = (body: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      const s = String(url);
+      if (s.includes("/me")) return ok({ id: "u", role: "candidate", owned_count: 1 });
+      if (s.includes("/rescore")) {
+        calls.push(s);
+        current = { ...current, score: 90 };
+        return ok(current);
+      }
+      return ok(current); // GET /recommendations/{id}
+    }),
+  );
+  return calls;
+}
+
+describe("RecommendationPage — re-score ciblé (OPP-150)", () => {
+  it("offre non arbitrée (pending) : re-scorer met à jour le score sans rechargement", async () => {
+    const calls = stubRescoreFlow("pending");
+    renderPage();
+
+    expect(await screen.findByText("50")).toBeInTheDocument(); // score initial
+    await userEvent.click(screen.getByRole("button", { name: /Re-scorer l'offre/ }));
+
+    // L'appel cible bien la route de re-score du couple candidat/offre…
+    await waitFor(() => expect(calls.length).toBe(1));
+    expect(calls[0]).toContain("/candidates/cand-1/offers/off-app/rescore");
+    // …et l'invalidation refetche le détail → nouveau score affiché.
+    await waitFor(() => expect(screen.getByText("90")).toBeInTheDocument());
+  });
+
+  it("offre déjà arbitrée (approved) : pas de bouton de re-score", async () => {
+    stubRescoreFlow("approved");
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+    expect(screen.queryByRole("button", { name: /Re-scorer/ })).toBeNull();
+  });
+});

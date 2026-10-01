@@ -123,6 +123,54 @@ describe("RunsListPage", () => {
     );
   });
 
+  it("run sans nouvelle offre (total 0) : message dédié au lieu d'un run vide (OPP-150)", async () => {
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/candidates/") && init?.method === "POST")
+          return okJson({ run_id: "run-empty", items: [], total: 0, errors: [] });
+        return okJson(PAGE); // GET /runs
+      }),
+    );
+    renderList();
+
+    await screen.findByText("r-a2");
+    await userEvent.click(screen.getByRole("button", { name: "Lancer une analyse" }));
+
+    expect(await screen.findByText("Aucune nouvelle offre à évaluer.")).toBeInTheDocument();
+  });
+
+  it("run avec erreurs par offre (total 0 mais errors) : pas le message « aucune offre » (OPP-150)", async () => {
+    // total 0 n'implique pas « rien à faire » : des offres ont échoué. Le run est bien
+    // persisté côté back → on n'affiche pas le message trompeur (et le front y navigue).
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/candidates/") && init?.method === "POST")
+          return okJson({ run_id: "run-ko", items: [], total: 0, errors: ["off-x: boom"] });
+        return okJson(PAGE); // GET /runs
+      }),
+    );
+    renderList();
+
+    await screen.findByText("r-a2");
+    await userEvent.click(screen.getByRole("button", { name: "Lancer une analyse" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Aucune nouvelle offre à évaluer.")).toBeNull(),
+    );
+  });
+
   it("supprime un run après confirmation explicite (reviewer)", async () => {
     let deleted = false;
     const okJson = (b: unknown) =>

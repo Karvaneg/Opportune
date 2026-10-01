@@ -113,3 +113,42 @@ def test_negative_limit_rejected(env):
 def test_empty_stock_returns_empty(env):
     service, _ = env
     assert service.recommend("cand-1") == []
+
+
+def test_recommend_excludes_given_offer_ids(env):
+    # OPP-150 : les offres déjà traitées (ids exclus) sont ignorées avant tout scoring.
+    service, offers = env
+    _seed_three(offers)
+    recos = service.recommend("cand-1", exclude_offer_ids={"a", "b"})
+    assert [r.offer.id for r in recos] == ["c"]
+
+
+def test_recommend_one_returns_single_recommendation(env):
+    service, offers = env
+    _seed_three(offers)
+    reco = service.recommend_one("cand-1", "b")
+    assert isinstance(reco, OfferRecommendation)
+    assert reco.offer.id == "b"
+    assert reco.score == 78
+
+
+def test_recommend_one_none_when_offer_absent(env):
+    service, offers = env
+    _seed_three(offers)
+    assert service.recommend_one("cand-1", "does-not-exist") is None
+
+
+def test_recommend_one_none_when_offer_not_evaluable(env):
+    service, offers = env
+    offers.save(_offer(  # rien d'évaluable → score None
+        id="d", title="D", url="http://d", skills=[], contract_type="",
+        location="", seniority="Non précisé",
+    ))
+    assert service.recommend_one("cand-1", "d") is None
+
+
+def test_recommend_one_unknown_candidate_raises(env):
+    service, offers = env
+    _seed_three(offers)
+    with pytest.raises(UnknownCandidateError):
+        service.recommend_one("nope", "a")
