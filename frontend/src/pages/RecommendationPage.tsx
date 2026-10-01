@@ -4,6 +4,7 @@ import { ApiHttpError } from "../api/client";
 import {
   useConfirmApplication,
   useRecommendation,
+  useRescoreOffer,
   useValidateRecommendation,
   type DecisionVerb,
 } from "../api/recommendations";
@@ -98,6 +99,7 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         )}
       </div>
 
+      <RescoreOffer reco={reco} />
       <RecommendationActions recommendationId={reco.recommendation_id} />
       <ApplicationConfirm recommendationId={reco.recommendation_id} />
 
@@ -129,6 +131,44 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Re-score ciblé d'une offre (OPP-150) — proposé **uniquement tant que l'offre n'est pas
+ * arbitrée** (`status === "pending"`). Un run n'évalue plus que les offres nouvelles ; ce
+ * bouton permet de recalculer à la demande le score d'une offre ancienne (p. ex. après mise
+ * à jour du profil). Une offre déjà tranchée est figée → bouton absent (le back préserve de
+ * toute façon la décision humaine). Au succès, le score affiché se rafraîchit (invalidation
+ * du détail). Action de propriétaire (pas réservée aux reviewers), comme lancer un run.
+ */
+function RescoreOffer({ reco }: { reco: RecommendationDetail }) {
+  const rescore = useRescoreOffer(reco.recommendation_id, reco.candidate_id, reco.offer_id);
+
+  if (reco.status !== "pending") return null;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Re-score
+      </h3>
+      <p className="mb-3 text-sm text-slate-600">
+        Recalculer le score de cette offre (p. ex. après mise à jour du profil).
+      </p>
+      <button
+        type="button"
+        onClick={() => rescore.mutate()}
+        disabled={rescore.isPending}
+        className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+      >
+        {rescore.isPending ? "Re-score en cours…" : "Re-scorer l'offre"}
+      </button>
+      {rescore.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={rescore.error} />
+        </div>
+      )}
+    </div>
   );
 }
 

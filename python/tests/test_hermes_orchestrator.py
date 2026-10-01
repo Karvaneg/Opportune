@@ -238,3 +238,71 @@ def test_evaluate_for_candidate_unknown_candidate_raises(env):
     orchestrator, _, _ = env
     with pytest.raises(UnknownCandidateError):
         orchestrator.evaluate_for_candidate("nope")
+
+
+# --- OPP-150 : un run n'évalue que les offres nouvelles + re-score ciblé --------
+
+
+def test_run_excludes_already_decided_offers(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    # 1er run : toutes les offres sont nouvelles → évaluées (décisions pending créées).
+    first = orchestrator.run_and_evaluate_for_candidate("cand-1", only_new=True)
+    assert {e.offer_id for e in first.evaluations} == {"a", "b", "c"}
+    # Une nouvelle offre arrive ; le 2e run n'évalue qu'elle (les 3 autres sont « anciennes »).
+    offers.save(_offer(id="d", title="D", url="http://d"))
+    second = orchestrator.run_and_evaluate_for_candidate("cand-1", only_new=True)
+    assert [e.offer_id for e in second.evaluations] == ["d"]
+
+
+def test_run_without_new_offers_is_empty(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.run_and_evaluate_for_candidate("cand-1", only_new=True)  # consomme tout
+    again = orchestrator.run_and_evaluate_for_candidate("cand-1", only_new=True)
+    assert again.evaluations == ()
+
+
+def test_run_without_only_new_reevaluates_whole_pool(env):
+    # Régression : sans only_new (ex. push Discord), le run re-déroule tout le pool.
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.run_and_evaluate_for_candidate("cand-1")
+    again = orchestrator.run_and_evaluate_for_candidate("cand-1")
+    assert {e.offer_id for e in again.evaluations} == {"a", "b", "c"}
+
+
+def test_rescore_offer_creates_pending_decision(env):
+    orchestrator, offers, decisions = env
+    _seed_three(offers)
+    decision = orchestrator.rescore_offer("cand-1", "b")
+    assert decision is not None
+    assert decision.offer_id == "b"
+    assert decision.score == 78
+    assert decision.status == PENDING
+    assert decisions.get(decision_id("cand-1", "b")).score == 78
+
+
+def test_rescore_offer_preserves_human_decision(env):
+    orchestrator, offers, decisions = env
+    _seed_three(offers)
+    orchestrator.rescore_offer("cand-1", "a")  # crée la décision pending
+    orchestrator.validate_decision("cand-1", "a", "approved", comment="go")
+    # Re-scorer une offre déjà arbitrée ne doit jamais écraser la décision humaine.
+    result = orchestrator.rescore_offer("cand-1", "a")
+    assert result.status == "approved"
+    assert result.comment == "go"
+    assert decisions.get(decision_id("cand-1", "a")).status == "approved"
+
+
+def test_rescore_offer_none_when_offer_absent(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    assert orchestrator.rescore_offer("cand-1", "nope") is None
+
+
+def test_rescore_offer_unknown_candidate_raises(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    with pytest.raises(UnknownCandidateError):
+        orchestrator.rescore_offer("nope", "a")

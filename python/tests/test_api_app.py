@@ -162,6 +162,40 @@ def test_query_string_is_ignored(env):
     assert resp.status == 200
 
 
+# --- OPP-150 : re-score ciblé d'une offre --------------------------------------
+
+
+def test_rescore_offer_returns_live_decision(env):
+    api, offers, decisions, _ = env
+    offers.save(_offer(id="off-app", title="App", company="Acme", url="http://app"))
+    resp = api.dispatch("POST", "/candidates/cand-1/offers/off-app/rescore", {})
+    assert resp.status == 200
+    assert resp.body["offer_id"] == "off-app"
+    assert resp.body["score"] == 100
+    assert resp.body["status"] == "pending"
+    assert resp.body["title"] == "App"  # titre résolu depuis l'offre (sérialisation décision)
+    assert decisions.get(decision_id("cand-1", "off-app")) is not None  # persistée
+
+
+def test_rescore_unknown_offer_returns_404(env):
+    api, _, _, _ = env
+    resp = api.dispatch("POST", "/candidates/cand-1/offers/nope/rescore", {})
+    assert resp.status == 404
+
+
+def test_rescore_unknown_candidate_returns_404(env):
+    api, offers, _, _ = env
+    offers.save(_offer(id="off-app", url="http://app"))
+    resp = api.dispatch("POST", "/candidates/nope/offers/off-app/rescore", {})
+    assert resp.status == 404
+
+
+def test_rescore_wrong_method_returns_405(env):
+    api, _, _, _ = env
+    resp = api.dispatch("GET", "/candidates/cand-1/offers/off-app/rescore", {})
+    assert resp.status == 405
+
+
 class _FailingDecide:
     """Décore un DecisionService : ``decide`` échoue pour certaines offres, ``evaluate`` reste réel."""
 
@@ -176,6 +210,9 @@ class _FailingDecide:
 
     def evaluate(self, recommendation):
         return self._real.evaluate(recommendation)
+
+    def list_for_candidate(self, candidate_id):
+        return self._real.list_for_candidate(candidate_id)
 
 
 def test_offer_error_is_reported_and_excluded_from_items(env):
@@ -207,14 +244,31 @@ def test_errors_field_present_and_json_serializable(env):
     assert json.loads(json.dumps(ok.body))["errors"] == []
 
     # Run avec une offre en échec : ``errors`` est une liste de chaînes, fidèlement
-    # sérialisée (round-trip JSON identique).
-    api.orchestrator.decisions = _FailingDecide(api.orchestrator.decisions, {"off-app"})
+    # sérialisée (round-trip JSON identique). Le run ne traitant que les offres **nouvelles**
+    # (only_new, OPP-150), on introduit une offre fraîche dont le ``decide`` échoue — les
+    # offres du premier run sont déjà décidées, donc exclues.
+    offers.save(_offer(id="off-new", title="New", url="http://new"))
+    api.orchestrator.decisions = _FailingDecide(api.orchestrator.decisions, {"off-new"})
     ko = api.dispatch("POST", "/candidates/cand-1/recommendations", {"limit": 20})
     assert isinstance(ko.body["errors"], list)
     assert all(isinstance(e, str) for e in ko.body["errors"])
     round_tripped = json.loads(json.dumps(ko.body))
     assert round_tripped["errors"] == ko.body["errors"]
-    assert round_tripped["errors"][0].startswith("off-app: ")
+    assert round_tripped["errors"][0].startswith("off-new: ")
+
+
+def test_empty_run_is_not_persisted(env):
+    # OPP-150 : relancer une analyse sans nouvelle offre (ni erreur) ne doit pas créer un
+    # run vide dans la liste. Le 1er run consomme tout ; le 2e est vide → non persisté.
+    api, offers, _, runs = env
+    _seed_one_per_bucket(offers)
+    first = api.dispatch("POST", "/candidates/cand-1/recommendations", {"limit": 20})
+    assert runs.get(first.body["run_id"]) is not None
+
+    empty = api.dispatch("POST", "/candidates/cand-1/recommendations", {"limit": 20})
+    assert empty.body["total"] == 0
+    assert empty.body["errors"] == []
+    assert runs.get(empty.body["run_id"]) is None  # run vide non tracé
 
 
 @pytest.fixture

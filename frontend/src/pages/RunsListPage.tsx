@@ -222,7 +222,14 @@ function LaunchRun() {
           type="button"
           onClick={() =>
             launch.mutate(target, {
-              onSuccess: (data) => navigate(`/runs/${encodeURIComponent(data.run_id)}`),
+              // Un run n'évalue que les offres nouvelles (OPP-150). Vraiment vide (aucune
+              // évaluation ET aucune erreur) → run non persisté côté back, inutile d'y
+              // naviguer : on affiche le message ci-dessous. Mais des erreurs par offre
+              // vivent dans un run bien persisté → on y navigue pour les montrer.
+              onSuccess: (data) => {
+                if (data.total > 0 || data.errors.length > 0)
+                  navigate(`/runs/${encodeURIComponent(data.run_id)}`);
+              },
             })
           }
           disabled={launch.isPending}
@@ -231,6 +238,9 @@ function LaunchRun() {
           {launch.isPending ? "Analyse en cours…" : "Lancer une analyse"}
         </button>
       </div>
+      {launch.data?.total === 0 && launch.data.errors.length === 0 && (
+        <p className="text-sm text-slate-500">Aucune nouvelle offre à évaluer.</p>
+      )}
       {launch.isError && <ErrorNotice error={launch.error} />}
     </div>
   );

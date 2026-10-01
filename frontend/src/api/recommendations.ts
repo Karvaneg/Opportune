@@ -51,6 +51,29 @@ export function useValidateRecommendation(recommendationId: string) {
 }
 
 /**
+ * Re-score ciblé d'une offre : `POST /candidates/{cid}/offers/{oid}/rescore` (OPP-150).
+ * Recalcule le score de l'offre et rafraîchit sa décision. Réservé aux offres **non encore
+ * arbitrées** (le back préserve de toute façon une décision humaine). Au succès, invalide le
+ * détail de la reco (score à jour, affiché ici) et les listes de runs (où le `decision_status`
+ * live est relu). Erreurs (404 si offre inconnue/non évaluable) remontées telles quelles.
+ */
+export function useRescoreOffer(
+  recommendationId: string,
+  candidateId: string,
+  offerId: string,
+) {
+  return useApiMutation<RecommendationDetail, void>({
+    mutationFn: (_variables, token) =>
+      apiPost<RecommendationDetail>(
+        `/candidates/${encodeURIComponent(candidateId)}/offers/${encodeURIComponent(offerId)}/rescore`,
+        token,
+        {},
+      ),
+    invalidateKeys: () => [recommendationKeys.detail(recommendationId), ["runs"], ["run"]],
+  });
+}
+
+/**
  * Confirmation explicite d'une candidature : `POST /applications/{id}/confirm` (OPP-110).
  * Double consentement côté UI ; le body est `{confirm: true}` (booléen strict exigé par le
  * back). Idempotent (`already_confirmed`). Exige une décision humaine `approved` côté back,

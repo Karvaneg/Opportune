@@ -177,6 +177,7 @@ class HermesOrchestrator:
         limit: int = 10,
         *,
         filters: dict | None = None,
+        only_new: bool = False,
     ) -> HermesRun:
         """Recommande **une seule fois**, journalise l'exécution *et* pré-évalue, d'un bloc.
 
@@ -190,15 +191,44 @@ class HermesOrchestrator:
         (cf. ``RecommendationService.recommend``) : seules les offres retenues sont donc
         évaluées, persistées et tracées dans le run.
 
+        ``only_new`` (OPP-150) : si vrai, le run n'évalue que les offres **nouvelles** —
+        celles sans décision déjà posée pour le candidat sont exclues en amont. Évite de
+        re-lister à chaque run les offres déjà traitées (symptôme OPP-150) ; une offre
+        ancienne se repasse à la main (re-score ciblé, cf. ``rescore_offer``). Un run sans
+        nouveauté est alors légitimement vide — et, s'il n'a produit *aucune* erreur, n'est
+        **pas persisté** (cf. ``_execute``) pour ne pas polluer la liste des runs. **Réservé
+        au run piloté depuis le front** :
+        le push Discord garde ``only_new=False`` (il dédoublonne via ses propres soumissions,
+        et doit pouvoir re-pousser une offre après un ``forget``).
+
         Retourne le ``run`` : chaque ``OfferEvaluation`` y fige déjà son ``advisory_status``
         (pré-éval automatique), rendant un tri en buckets superflu ici. Propage
         ``UnknownCandidateError`` et ``ValueError`` avant toute écriture.
         """
+        exclude = (
+            {d.offer_id for d in self.decisions.list_for_candidate(candidate_id)}
+            if only_new
+            else None
+        )
         recommendations = self.recommendations.recommend(
-            candidate_id, limit=limit, filters=filters
+            candidate_id, limit=limit, filters=filters, exclude_offer_ids=exclude
         )
         run, _ = self._execute(candidate_id, recommendations)
         return run
+
+    def rescore_offer(self, candidate_id: str, offer_id: str) -> Decision | None:
+        """Re-score **une** offre à la demande et met à jour sa décision (OPP-150).
+
+        Sert à repasser une offre « ancienne » (déjà traitée par un run passé, donc jamais
+        ré-évaluée automatiquement). Retourne ``None`` si l'offre est introuvable ou non
+        évaluable. Une décision **déjà validée** par un humain est préservée telle quelle
+        (``DecisionService.decide`` ne réécrit qu'une décision ``pending``) : le re-score
+        ne peut jamais écraser un arbitrage. Propage ``UnknownCandidateError``.
+        """
+        recommendation = self.recommendations.recommend_one(candidate_id, offer_id)
+        if recommendation is None:
+            return None
+        return self.decisions.decide(recommendation, candidate_id)
 
     def _execute(
         self,
@@ -254,7 +284,12 @@ class HermesOrchestrator:
             evaluations=tuple(evaluations),
             errors=tuple(errors),
         )
-        if self.runs is not None:
+        # Un run **vraiment vide** (aucune évaluation *et* aucune erreur) ne porte aucune
+        # information : avec ``only_new`` (OPP-150), relancer une analyse sans nouvelle offre
+        # en produirait un à chaque clic, polluant la liste des runs. On ne le persiste donc
+        # pas — l'appelant reçoit tout de même l'objet (``run_id`` sans ressource côté dépôt,
+        # cf. le front qui n'y navigue pas). Un run avec des erreurs par offre reste persisté.
+        if self.runs is not None and (evaluations or errors):
             self.runs.save(run)
         return run, persisted
 
