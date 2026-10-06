@@ -11,6 +11,7 @@ from app.offer import Offer
 from app.offer_store import OfferStore
 from app.profile_store import ProfileStore
 from app.recommendation_service import (
+    OfferCatalogEntry,
     OfferRecommendation,
     RecommendationService,
     UnknownCandidateError,
@@ -159,3 +160,54 @@ def test_recommend_one_unknown_candidate_raises(env):
     _seed_three(offers)
     with pytest.raises(UnknownCandidateError):
         service.recommend_one("nope", "a")
+
+
+# --- Catalogue paginé + score de match (OPP-146) ------------------------------
+
+
+def test_list_catalog_annotates_scores_in_date_order(env):
+    service, offers = env
+    _seed_three(offers)  # a=100, b=78, c=0 ; dates a<b<c → ordre c, b, a
+    entries, total = service.list_catalog(candidate_id="cand-1")
+    assert total == 3
+    assert [(e.offer.id, e.score) for e in entries] == [("c", 0), ("b", 78), ("a", 100)]
+    assert all(isinstance(e, OfferCatalogEntry) for e in entries)
+    # La bande de reco accompagne le score (source unique des seuils, OPP-146).
+    assert [e.action for e in entries] == ["ignorer", "a_etudier", "postuler"]
+
+
+def test_list_catalog_without_candidate_has_no_scores(env):
+    service, offers = env
+    _seed_three(offers)
+    entries, total = service.list_catalog()  # pas de candidat → catalogue brut
+    assert total == 3
+    assert [e.offer.id for e in entries] == ["c", "b", "a"]  # toujours trié par date
+    assert all(e.score is None and e.action is None for e in entries)
+
+
+def test_list_catalog_non_evaluable_offer_scored_none(env):
+    service, offers = env
+    offers.save(_offer(  # aucune dimension mesurable → score None (mais listée)
+        id="d", title="D", url="http://d", skills=[], contract_type="",
+        location="", seniority="Non précisé", created_at="2026-01-01T00:00:00+00:00",
+    ))
+    entries, total = service.list_catalog(candidate_id="cand-1")
+    assert total == 1
+    assert entries[0].offer.id == "d" and entries[0].score is None and entries[0].action is None
+
+
+def test_list_catalog_paginates(env):
+    service, offers = env
+    _seed_three(offers)  # ordre date desc : c, b, a
+    page1, total = service.list_catalog(candidate_id="cand-1", limit=2, offset=0)
+    page2, _ = service.list_catalog(candidate_id="cand-1", limit=2, offset=2)
+    assert total == 3
+    assert [e.offer.id for e in page1] == ["c", "b"]
+    assert [e.offer.id for e in page2] == ["a"]
+
+
+def test_list_catalog_unknown_candidate_raises(env):
+    service, offers = env
+    _seed_three(offers)
+    with pytest.raises(UnknownCandidateError):
+        service.list_catalog(candidate_id="nope")

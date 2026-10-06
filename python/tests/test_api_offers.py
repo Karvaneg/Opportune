@@ -114,8 +114,9 @@ def test_offers_route_absent_without_intake():
     assert api.dispatch("POST", "/offers", {"text": "x"}, None).status == 404
 
 
-def test_post_offers_wrong_method_405():
-    assert _api(lambda *a, **k: _offer()).dispatch("GET", "/offers", None, None).status == 405
+def test_offers_unsupported_method_405():
+    # GET (catalogue) et POST (intake) sont montés ; toute autre méthode → 405.
+    assert _api(lambda *a, **k: _offer()).dispatch("PUT", "/offers", None, None).status == 405
 
 
 def test_post_offers_requires_reviewer_role():

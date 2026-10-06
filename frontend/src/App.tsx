@@ -1,12 +1,20 @@
 import { useMemo } from "react";
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { ApiHttpError } from "./api/client";
 import { useAuth } from "./auth/AuthContext";
 import { LoginGate } from "./pages/LoginGate";
+import { OffersPage } from "./pages/OffersPage";
 import { RecommendationPage } from "./pages/RecommendationPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsListPage } from "./pages/RunsListPage";
+
+/** Style d'un lien de nav : souligné + sombre quand actif, gris sinon. */
+function navClass({ isActive }: { isActive: boolean }): string {
+  return isActive
+    ? "font-medium text-slate-900 underline underline-offset-4"
+    : "text-slate-500 hover:text-slate-900";
+}
 
 export function App() {
   const { status, token, identity, logout } = useAuth();
@@ -46,9 +54,19 @@ export function App() {
         <div className="min-h-screen bg-slate-50 text-slate-900">
           <header className="border-b border-slate-200 bg-white">
             <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
-              <Link to="/" className="font-semibold">
-                Opportune — Hermes
-              </Link>
+              <div className="flex items-center gap-6">
+                <Link to="/" className="font-semibold">
+                  Opportune — Hermes
+                </Link>
+                <nav className="flex items-center gap-4 text-sm">
+                  <NavLink to="/" end className={navClass}>
+                    Runs
+                  </NavLink>
+                  <NavLink to="/offres" className={navClass}>
+                    Offres
+                  </NavLink>
+                </nav>
+              </div>
               <div className="flex items-center gap-3 text-sm text-slate-500">
                 {identity?.id && (
                   <span>
@@ -65,6 +83,7 @@ export function App() {
           <main className="mx-auto max-w-4xl px-4 py-6">
             <Routes>
               <Route path="/" element={<RunsListPage />} />
+              <Route path="/offres" element={<OffersPage />} />
               <Route path="/runs/:runId" element={<RunDetailPage />} />
               <Route path="/recommendations/:id" element={<RecommendationPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

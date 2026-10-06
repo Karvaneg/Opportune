@@ -35,6 +35,10 @@ class ProfileSource(Protocol):
 class OfferSource(Protocol):
     def list_all(self) -> list[Offer]: ...
 
+    def list(self, *, limit: int, offset: int = 0) -> list[Offer]: ...
+
+    def count(self) -> int: ...
+
     def get(self, offer_id: str) -> Offer | None: ...
 
 
@@ -59,6 +63,22 @@ def _matches_filters(
         if not all(s.lower() in owned for s in skills):
             return False
     return True
+
+
+@dataclass(frozen=True)
+class OfferCatalogEntry:
+    """Une offre du catalogue, avec son score de match pour un candidat (OPP-146).
+
+    ``score`` est ``None`` quand aucun candidat n'est demandé (catalogue brut) **ou** quand
+    l'offre n'est pas évaluable pour ce candidat (aucune dimension mesurable). ``action`` est
+    la bande recommandée pour ce score (``postuler``/``a_etudier``/``ignorer``), ``None`` dans
+    les mêmes cas que ``score`` — c'est elle (et non un seuil recalculé côté client) qui dicte
+    l'affichage, pour que front et back partagent une **unique** source de vérité des seuils.
+    """
+
+    offer: Offer
+    score: int | None
+    action: str | None
 
 
 @dataclass(frozen=True)
@@ -197,3 +217,44 @@ class RecommendationService:
         if offer is None:
             return None
         return _evaluate_offer(offer, profile, high=high, medium=medium)
+
+    def list_catalog(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        candidate_id: str | None = None,
+        high: int = DEFAULT_HIGH,
+        medium: int = DEFAULT_MEDIUM,
+    ) -> tuple[list[OfferCatalogEntry], int]:
+        """Catalogue paginé des offres (plus récentes d'abord) + leur score de match (OPP-146).
+
+        Distinct de ``recommend`` : ici on liste **toutes** les offres de la page sans
+        filtrage ni reclassement par score, et on **annote** chacune de son score pour
+        ``candidate_id`` (ou ``None`` si non évaluable, ou si aucun candidat n'est demandé).
+        Retourne ``(entrées, total)`` — ``total`` est le cardinal **avant** découpe en page.
+
+        Lève ``ValueError`` si ``limit``/``offset`` sont négatifs ou les seuils incohérents, et
+        ``UnknownCandidateError`` si un ``candidate_id`` est fourni mais introuvable.
+        """
+        if limit < 0 or offset < 0:
+            raise ValueError("limit et offset doivent être ≥ 0")
+        validate_thresholds(high, medium)
+
+        profile = None
+        if candidate_id is not None:
+            profile = self.profiles.get(candidate_id)
+            if profile is None:
+                raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
+
+        entries: list[OfferCatalogEntry] = []
+        for offer in self.offers.list(limit=limit, offset=offset):
+            score: int | None = None
+            action: str | None = None
+            if profile is not None:
+                recommendation = _evaluate_offer(offer, profile, high=high, medium=medium)
+                if recommendation is not None:
+                    score = recommendation.score
+                    action = recommendation.action
+            entries.append(OfferCatalogEntry(offer=offer, score=score, action=action))
+        return entries, self.offers.count()

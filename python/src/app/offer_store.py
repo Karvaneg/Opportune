@@ -162,6 +162,18 @@ class OfferStore:
         ).fetchall()
         return [self._row_to_offer(row) for row in rows]
 
+    def list(self, *, limit: int, offset: int = 0) -> list[Offer]:
+        """Page d'offres, **plus récentes d'abord** (catalogue paginé, OPP-146).
+
+        Même ordre que ``list_all`` (``created_at DESC, id``) ; ``limit``/``offset``
+        découpent la page. ``count`` donne le cardinal total pour la pagination.
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM offers ORDER BY created_at DESC, id LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [self._row_to_offer(row) for row in rows]
+
     def count(self) -> int:
         """Nombre d'offres stockées (utile aux vérifications d'upsert)."""
         return self.conn.execute("SELECT COUNT(*) FROM offers").fetchone()[0]
