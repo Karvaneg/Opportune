@@ -477,6 +477,7 @@ class HermesApi:
             "summary": offer.summary,
             "source": offer.source,
             "url": offer.url,
+            "created_at": offer.created_at,
         }
 
     def _delete_run(self, run_id: str, user: User | None) -> Response:

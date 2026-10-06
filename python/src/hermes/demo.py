@@ -25,25 +25,29 @@ from hermes.orchestrator import HermesOrchestrator
 
 CANDIDATE_ID = "cand-marie"
 
-# Offres de démonstration : de la plus adaptée au profil à la moins adaptée.
+# Offres de démonstration, de la plus récente à la plus ancienne (``created_at`` décroissant) :
+# l'affichage trie par date (OPP-152), et ici la plus récente est aussi la mieux notée.
 _OFFERS = (
     Offer(
         id="offer-devpy", title="Développeuse Python", company="Acme",
         location="Paris", skills=["Python", "SQL"], seniority="Senior",
         contract_type="CDI", summary="Back-end data", attention_points=[],
         source="indeed", url="https://acme.example/devpy", raw_text="",
+        created_at="2026-03-01T00:00:00+00:00",
     ),
     Offer(
         id="offer-fullstack", title="Ingénieure full-stack", company="Globex",
         location="Paris", skills=["Python", "React"], seniority="Senior",
         contract_type="CDI", summary="Produit web", attention_points=[],
         source="indeed", url="https://globex.example/fullstack", raw_text="",
+        created_at="2026-02-01T00:00:00+00:00",
     ),
     Offer(
         id="offer-javalead", title="Lead Java", company="Initech",
         location="Lyon", skills=["Java"], seniority="Lead",
         contract_type="Freelance", summary="Équipe paiements", attention_points=[],
         source="indeed", url="https://initech.example/javalead", raw_text="",
+        created_at="2026-01-01T00:00:00+00:00",
     ),
 )
 

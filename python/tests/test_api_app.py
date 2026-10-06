@@ -61,12 +61,16 @@ def env():
 
 
 def _seed_one_per_bucket(offers):
-    offers.save(_offer(id="off-app", title="App", url="http://app"))  # 100 → approved
+    # Dates décroissantes app > pend > rej → ordre d'affichage par date (OPP-152) = app, pend, rej.
+    offers.save(_offer(id="off-app", title="App", url="http://app",
+                       created_at="2026-03-01T00:00:00+00:00"))  # 100 → approved
     offers.save(_offer(id="off-pend", title="Pend", url="http://pend",
-                       skills=["Python", "Java"], location="Lyon"))  # 68 → pending
+                       skills=["Python", "Java"], location="Lyon",
+                       created_at="2026-02-01T00:00:00+00:00"))  # 68 → pending
     offers.save(_offer(id="off-rej", title="Rej", url="http://rej",
                        skills=["Cobol"], contract_type="Freelance",
-                       location="Lyon", seniority="Lead"))  # 0 → rejected
+                       location="Lyon", seniority="Lead",
+                       created_at="2026-01-01T00:00:00+00:00"))  # 0 → rejected
 
 
 def test_post_recommendations_returns_items_and_run_id(env):
@@ -78,7 +82,7 @@ def test_post_recommendations_returns_items_and_run_id(env):
     assert resp.status == 200
     assert resp.body["run_id"] == "run-1"
     assert resp.body["total"] == 3
-    # Items à plat, classés par score décroissant (plus de buckets dans la réponse POST).
+    # Items à plat, classés par date décroissante (OPP-152 ; plus de buckets dans la réponse POST).
     assert [r["offer_id"] for r in resp.body["items"]] == ["off-app", "off-pend", "off-rej"]
     assert [r["advisory_status"] for r in resp.body["items"]] == [
         "approved", "pending", "rejected"

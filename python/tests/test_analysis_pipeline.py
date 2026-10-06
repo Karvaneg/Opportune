@@ -4,6 +4,7 @@ Faux LLM (`MockLLMClient`) + persistance SQLite en mémoire : aucun réseau.
 """
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -59,8 +60,11 @@ def test_pipeline_produces_full_dossier_and_persists(store):
     assert dossier.offer.title == "Développeur Python Senior"
     assert dossier.explanation.score == 100
     assert dossier.recommendation.action == "postuler"
-    # l'offre a bien été persistée
-    assert store.get(dossier.offer.id) == dossier.offer
+    # l'offre a bien été persistée (le store attribue la date d'ingestion, OPP-152 ;
+    # le reste est identique au dossier).
+    stored = store.get(dossier.offer.id)
+    assert replace(stored, created_at="") == dossier.offer
+    assert stored.created_at != ""
 
 
 def test_pipeline_weak_match_recommends_ignorer(store):

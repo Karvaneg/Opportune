@@ -48,22 +48,27 @@ def env():
     conn.close()
 
 
+# Dates croissantes a < b < c → ordre par date décroissante c, b, a (inverse du score).
 def _seed_three(offers):
-    offers.save(_offer(id="a", title="A", url="http://a"))  # parfaite → 100
-    offers.save(_offer(id="b", title="B", url="http://b", skills=["Python", "Go"]))  # → 78
-    offers.save(_offer(  # faible → 0
+    offers.save(_offer(id="a", title="A", url="http://a",
+                       created_at="2026-01-01T00:00:00+00:00"))  # parfaite → 100, plus ancienne
+    offers.save(_offer(id="b", title="B", url="http://b", skills=["Python", "Go"],
+                       created_at="2026-01-02T00:00:00+00:00"))  # → 78
+    offers.save(_offer(  # faible → 0, plus récente
         id="c", title="C", url="http://c", skills=["Java"],
         contract_type="Freelance", location="Lyon", seniority="Lead",
+        created_at="2026-01-03T00:00:00+00:00",
     ))
 
 
-def test_returns_recommendations_ordered_by_score(env):
+def test_returns_recommendations_ordered_by_date(env):
+    # OPP-152 : plus récentes d'abord (c, b, a), score toujours attaché.
     orchestrator, offers, _ = env
     _seed_three(offers)
     results = orchestrator.recommend_for_candidate("cand-1")
     assert all(isinstance(r, HermesRecommendation) for r in results)
     assert [(r.recommendation.offer.id, r.recommendation.score) for r in results] == [
-        ("a", 100), ("b", 78), ("c", 0),
+        ("c", 0), ("b", 78), ("a", 100),
     ]
 
 
@@ -87,7 +92,7 @@ def test_respects_limit(env):
     orchestrator, offers, decisions = env
     _seed_three(offers)
     results = orchestrator.recommend_for_candidate("cand-1", limit=1)
-    assert [r.recommendation.offer.id for r in results] == ["a"]
+    assert [r.recommendation.offer.id for r in results] == ["c"]  # la plus récente
     assert decisions.count() == 1  # seules les décisions retenues sont persistées
 
 
@@ -137,28 +142,30 @@ def test_empty_stock_returns_empty(env):
 
 
 def test_integration_two_offers_sort_and_limit(env):
-    """Intégration bout-en-bout : 1 candidat, 2 offres, l'une meilleure que l'autre.
+    """Intégration bout-en-bout : 1 candidat, 2 offres, l'une meilleure mais plus ancienne.
 
-    Couvre en un seul scénario le tri (meilleure en tête) et la limite ``limit``.
+    Couvre en un scénario le tri **par date** (plus récente en tête, OPP-152) et ``limit`` —
+    en prouvant que l'ordre ne suit PAS le score (la faible, plus récente, passe devant).
     """
     orchestrator, offers, _ = env
-    # Offre forte : profil parfait (Python+SQL, CDI, Paris, Senior) → score élevé.
-    offers.save(_offer(id="offer-forte", title="Forte", url="http://forte"))
-    # Offre faible : une seule compétence en commun → score strictement inférieur.
+    # Offre forte : profil parfait → score élevé, mais ingérée en premier (plus ancienne).
+    offers.save(_offer(id="offer-forte", title="Forte", url="http://forte",
+                       created_at="2026-01-01T00:00:00+00:00"))
+    # Offre faible : une seule compétence en commun → score inférieur, mais plus récente.
     offers.save(_offer(id="offer-faible", title="Faible", url="http://faible",
-                       skills=["Python", "Go"]))
+                       skills=["Python", "Go"], created_at="2026-02-01T00:00:00+00:00"))
 
     results = orchestrator.recommend_for_candidate("cand-1")
 
     # Résultat uniforme.
     assert all(isinstance(r, HermesRecommendation) for r in results)
-    # Tri : la meilleure offre est en tête, scores strictement décroissants.
-    assert [r.recommendation.offer.id for r in results] == ["offer-forte", "offer-faible"]
-    assert results[0].recommendation.score > results[1].recommendation.score
+    # Tri par date : la plus récente (faible) est en tête, malgré un score plus bas.
+    assert [r.recommendation.offer.id for r in results] == ["offer-faible", "offer-forte"]
+    assert results[0].recommendation.score < results[1].recommendation.score
 
-    # Limite : ne retourne que la meilleure.
+    # Limite : ne retourne que la plus récente.
     top = orchestrator.recommend_for_candidate("cand-1", limit=1)
-    assert [r.recommendation.offer.id for r in top] == ["offer-forte"]
+    assert [r.recommendation.offer.id for r in top] == ["offer-faible"]
 
 
 def test_rerun_upserts_decisions_without_duplicating(env):
@@ -198,16 +205,20 @@ def _seed_one_per_bucket(offers):
     Profil : Python+SQL, CDI, Paris, 6 ans. Seuils 80 / 60. Poids skills .45 /
     contrat .30 / séniorité .15 / lieu .10.
     """
+    # Dates décroissantes app > pend > rej : la plus récente (off-app) est en tête de liste.
     # Parfaite → 100 → postuler → approved.
-    offers.save(_offer(id="off-app", title="App", url="http://app"))
+    offers.save(_offer(id="off-app", title="App", url="http://app",
+                       created_at="2026-03-01T00:00:00+00:00"))
     # 1/2 compétence + lieu différent → 68 → a_etudier → pending.
     #   skills .5*.45=.225 + contrat 1*.30 + séniorité 1*.15 + lieu 0*.10 = .675 → 68.
     offers.save(_offer(id="off-pend", title="Pend", url="http://pend",
-                       skills=["Python", "Java"], location="Lyon"))
+                       skills=["Python", "Java"], location="Lyon",
+                       created_at="2026-02-01T00:00:00+00:00"))
     # Tout discordant → 0 → ignorer → rejected.
     offers.save(_offer(id="off-rej", title="Rej", url="http://rej",
                        skills=["Cobol"], contract_type="Freelance",
-                       location="Lyon", seniority="Lead"))
+                       location="Lyon", seniority="Lead",
+                       created_at="2026-01-01T00:00:00+00:00"))
 
 
 def test_evaluate_for_candidate_buckets_approved_pending_rejected(env):
@@ -227,7 +238,7 @@ def test_evaluate_for_candidate_buckets_approved_pending_rejected(env):
 def test_evaluate_for_candidate_respects_limit(env):
     orchestrator, offers, _ = env
     _seed_one_per_bucket(offers)
-    # limit=1 ne garde que la meilleure (approved) ; les autres buckets sont vides.
+    # limit=1 ne garde que la plus récente (off-app, ici aussi la meilleure) ; autres buckets vides.
     result = orchestrator.evaluate_for_candidate("cand-1", limit=1)
     assert [r.offer.id for r in result["recommendations"]] == ["off-app"]
     assert result["pending_review"] == []

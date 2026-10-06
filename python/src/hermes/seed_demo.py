@@ -71,9 +71,12 @@ def seed_demo(
         )
         profiles.save(profile)
 
-    offer = _demo_offer()
-    offers.save(offer)
-    return profile, offer
+    offers.save(_demo_offer())
+    # On retourne l'offre **telle qu'en base** (date d'ingestion attribuée par le store, OPP-152),
+    # conformément au contrat de la fonction, et non l'instance construite en mémoire.
+    stored = offers.get(DEMO_OFFER_ID)
+    assert stored is not None  # vient d'être enregistrée : relecture garantie (satisfait le typage)
+    return profile, stored
 
 
 def main() -> None:  # pragma: no cover - utilitaire CLI (touche la base sur disque)

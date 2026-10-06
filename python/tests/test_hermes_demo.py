@@ -13,7 +13,8 @@ from hermes.demo import (
 )
 
 
-def test_run_deroule_la_boucle_et_classe_par_score():
+def test_run_deroule_la_boucle_et_classe_par_date():
+    # OPP-152 : ordre par date décroissante (dans la démo, la plus récente est aussi la mieux notée).
     results = run()
     ordered = [(r.recommendation.offer.id, r.decision.score) for r in results]
     assert ordered == [
