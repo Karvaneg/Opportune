@@ -44,33 +44,40 @@ def env():
     oconn.close()
 
 
+# Dates d'ingestion explicites et croissantes a < b < c : l'ordre par **date décroissante**
+# (OPP-152) est ainsi c, b, a — l'inverse du score (a=100, b=78, c=0) — ce qui prouve que
+# l'ordre suit la date et non le score.
 def _seed_three(offers):
-    offers.save(_offer(id="a", title="A", url="http://a"))  # parfaite → 100
-    offers.save(_offer(id="b", title="B", url="http://b", skills=["Python", "Go"]))  # 1/2 → 78
-    offers.save(_offer(  # faible → 0
+    offers.save(_offer(id="a", title="A", url="http://a",
+                       created_at="2026-01-01T00:00:00+00:00"))  # parfaite → 100, plus ancienne
+    offers.save(_offer(id="b", title="B", url="http://b", skills=["Python", "Go"],
+                       created_at="2026-01-02T00:00:00+00:00"))  # 1/2 → 78
+    offers.save(_offer(  # faible → 0, plus récente
         id="c", title="C", url="http://c", skills=["Java"],
         contract_type="Freelance", location="Lyon", seniority="Lead",
+        created_at="2026-01-03T00:00:00+00:00",
     ))
 
 
-def test_recommend_ranks_by_score_desc(env):
+def test_recommend_ranks_by_date_desc(env):
+    # OPP-152 : plus récentes d'abord (c, b, a), pas par score — mais le score reste attaché.
     service, offers = env
     _seed_three(offers)
     recos = service.recommend("cand-1")
-    assert [(r.offer.id, r.score) for r in recos] == [("a", 100), ("b", 78), ("c", 0)]
+    assert [(r.offer.id, r.score) for r in recos] == [("c", 0), ("b", 78), ("a", 100)]
 
 
 def test_recommend_filters_by_min_score(env):
     service, offers = env
     _seed_three(offers)
     recos = service.recommend("cand-1", min_score=50)
-    assert [r.offer.id for r in recos] == ["a", "b"]  # c (0) écartée
+    assert [r.offer.id for r in recos] == ["b", "a"]  # c (0) écartée ; ordre par date desc
 
 
 def test_recommend_respects_limit(env):
     service, offers = env
     _seed_three(offers)
-    assert [r.offer.id for r in service.recommend("cand-1", limit=1)] == ["a"]
+    assert [r.offer.id for r in service.recommend("cand-1", limit=1)] == ["c"]  # la plus récente
 
 
 def test_recommend_excludes_non_evaluable_offers(env):

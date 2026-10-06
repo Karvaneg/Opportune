@@ -4,7 +4,7 @@ Orchestre les briques d'analyse V2 pour, d'un **candidat**, produire les **meill
 offres** du stock, classées et justifiées :
 
     profil (ProfileStore) → offres (OfferStore) → matching → scoring
-        → filtrage (min_score) → tri (score décroissant) → top N
+        → filtrage (min_score) → tri (date décroissante, OPP-152) → top N
 
 Distinct du pipeline d'ingestion (OPP-0392) : celui-ci n'analyse rien, il exploite les
 offres déjà stockées. Le score est **relatif au candidat**, donc recalculé à chaque
@@ -125,7 +125,7 @@ class RecommendationService:
         filters: dict | None = None,
         exclude_offer_ids: set[str] | None = None,
     ) -> list[OfferRecommendation]:
-        """Retourne les offres recommandées au candidat, classées par score décroissant.
+        """Retourne les offres recommandées au candidat, classées **par date décroissante**.
 
         - ``min_score`` : seuil d'inclusion ; les offres en dessous sont écartées.
         - ``filters`` (optionnel) : restreint le stock **avant** scoring et coupe ``limit``,
@@ -166,8 +166,13 @@ class RecommendationService:
                 continue
             recommendations.append(recommendation)
 
-        # Tri par score décroissant ; tie-break déterministe par titre puis id.
-        recommendations.sort(key=lambda r: (-r.score, r.offer.title, r.offer.id))
+        # Tri par date d'ingestion décroissante (plus récentes d'abord, OPP-152) — et non
+        # par score : le score reste calculé et affiché, mais ne gouverne plus l'ordre.
+        # Tri explicite ici (et non délégué à ``list_all``) : le protocole ``OfferSource`` ne
+        # garantit aucun ordre. Deux passes stables : titre/id ascendants (tie-break), puis
+        # date descendante (``reverse=True`` préserve la stabilité des ex æquo).
+        recommendations.sort(key=lambda r: (r.offer.title, r.offer.id))
+        recommendations.sort(key=lambda r: r.offer.created_at, reverse=True)
         return recommendations[:limit]
 
     def recommend_one(

@@ -60,6 +60,10 @@ class Offer:
     source: str
     url: str
     raw_text: str
+    # Date d'ingestion (ISO 8601 UTC), renseignée par la **persistance** au premier
+    # enregistrement (OPP-152) — pas une donnée métier dérivée du LLM, donc défaut vide
+    # ici et absente de ``from_analysis`` : c'est ``OfferStore`` qui l'attribue et la relit.
+    created_at: str = ""
 
     @classmethod
     def from_analysis(

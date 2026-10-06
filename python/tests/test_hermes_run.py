@@ -77,8 +77,11 @@ def env():
 
 
 def _seed_two(offers):
-    offers.save(_offer(id="a", title="A", url="http://a"))  # → 100
-    offers.save(_offer(id="b", title="B", url="http://b", skills=["Python", "Go"]))  # → 78
+    # a plus récente que b → ordre par date décroissante (OPP-152) = [a, b].
+    offers.save(_offer(id="a", title="A", url="http://a",
+                       created_at="2026-02-01T00:00:00+00:00"))  # → 100
+    offers.save(_offer(id="b", title="B", url="http://b", skills=["Python", "Go"],
+                       created_at="2026-01-01T00:00:00+00:00"))  # → 78
 
 
 def test_run_records_execution(env):

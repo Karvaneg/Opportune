@@ -58,7 +58,7 @@ def test_post_offers_creates_and_serializes():
     assert resp.body["id"] == "o-1"
     assert set(resp.body) == {
         "id", "title", "company", "location", "skills",
-        "seniority", "contract_type", "summary", "source", "url",
+        "seniority", "contract_type", "summary", "source", "url", "created_at",
     }
     # Le texte est transmis tel quel ; source par défaut « collée ».
     assert captured["raw_text"].startswith("Nous recrutons")
