@@ -85,18 +85,27 @@ class OllamaLLMClient:
         model: str | None = None,
         host: str | None = None,
         transport: llm.Transport | None = None,
-        timeout: int = llm.DEFAULT_TIMEOUT,
+        timeout: int | None = None,
+        num_predict: int | None = None,
     ) -> None:
+        # ``timeout``/``num_predict`` à ``None`` → on lit les défauts de ``app.llm`` **à
+        # l'instanciation** (donc la valeur issue de l'env, OPP-154), pas à la définition
+        # de classe : un ``OllamaLLMClient()`` nu reste ainsi correctement câblé.
         self.model = model
         self.host = host
-        self.timeout = timeout
-        self._transport = transport or llm.default_transport(timeout=timeout)
+        self.timeout = llm.DEFAULT_TIMEOUT if timeout is None else timeout
+        self.num_predict = llm.DEFAULT_NUM_PREDICT if num_predict is None else num_predict
+        self._transport = transport or llm.default_transport(timeout=self.timeout)
 
     def generate(
         self, prompt: str, *, model: str | None = None, fmt: object | None = None
     ) -> LLMResponse:
         url, payload = llm.build_generate_request(
-            prompt, model=model or self.model, host=self.host, fmt=fmt
+            prompt,
+            model=model or self.model,
+            host=self.host,
+            fmt=fmt,
+            num_predict=self.num_predict,
         )
         logger.debug("Génération LLM (modèle=%s, url=%s)", payload["model"], url)
         try:

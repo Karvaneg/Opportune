@@ -141,6 +141,12 @@ n'ont besoin d'aucun serveur Ollama.
 
 - `OLLAMA_HOST` (défaut `http://localhost:11434`) et `OLLAMA_MODEL` (défaut
   `ministral-3:3b`) sont surchargeables par variables d'environnement.
+- `OPPORTUNE_LLM_TIMEOUT` (défaut `300` s) borne tout appel LLM — runner push, intake de
+  profil **et** intake d'offre collée (`POST /offers`). Le défaut brut de 60 s ne suffit
+  pas : un intake réaliste en sortie structurée prend ~85 s avec `ministral-3:3b`.
+  `OLLAMA_NUM_PREDICT` (défaut `2048`) plafonne les tokens générés par appel : un plafond
+  anti-emballement dimensionné sur la sortie la plus longue (la lettre), pas sur l'intake —
+  sinon une lettre légitime serait tronquée.
 - Sous Docker Compose, l'app s'appuie sur l'Ollama **natif de l'hôte** (pas de conteneur
   Ollama) : elle le joint via `host.docker.internal:11434` (`extra_hosts` :
   `host-gateway`), avec le modèle `ministral-3:3b`. Le design conteneurisé (service

@@ -5,7 +5,13 @@ Aucun appel réseau : le transport est injecté (transport factice).
 
 import pytest
 
-from app.llm import DEFAULT_MODEL, DEFAULT_OLLAMA_HOST, build_generate_request, generate
+from app.llm import (
+    DEFAULT_MODEL,
+    DEFAULT_OLLAMA_HOST,
+    _env_int,
+    build_generate_request,
+    generate,
+)
 
 
 def test_build_request_defaults():
@@ -38,9 +44,40 @@ def test_build_request_accepts_json_string_format():
     assert payload["format"] == "json"
 
 
+def test_build_request_omits_num_predict_by_default():
+    _, payload = build_generate_request("Bonjour")
+    assert "options" not in payload  # non-régression : aucune borne par défaut
+
+
+def test_build_request_threads_num_predict():
+    _, payload = build_generate_request("Bonjour", num_predict=256)
+    assert payload["options"] == {"num_predict": 256}
+
+
 def test_build_request_empty_prompt_raises():
     with pytest.raises(ValueError):
         build_generate_request("   ")
+
+
+# --- _env_int : lecture tolérante d'un entier positif depuis l'env (OPP-154) ------
+# Sert à DEFAULT_NUM_PREDICT (OLLAMA_NUM_PREDICT) ; tolérant par choix (jamais de raise).
+
+
+def test_env_int_absent_uses_default(monkeypatch):
+    monkeypatch.delenv("OLLAMA_NUM_PREDICT", raising=False)
+    assert _env_int("OLLAMA_NUM_PREDICT", 2048) == 2048
+
+
+def test_env_int_valid_value(monkeypatch):
+    monkeypatch.setenv("OLLAMA_NUM_PREDICT", "512")
+    assert _env_int("OLLAMA_NUM_PREDICT", 2048) == 512
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "abc", "0", "-5", "12.5"])
+def test_env_int_invalid_or_non_positive_falls_back(monkeypatch, bad):
+    # Vide, non entier, nul ou négatif → défaut (le paramètre de perf ne bloque pas le démarrage).
+    monkeypatch.setenv("OLLAMA_NUM_PREDICT", bad)
+    assert _env_int("OLLAMA_NUM_PREDICT", 2048) == 2048
 
 
 def test_generate_uses_injected_transport():

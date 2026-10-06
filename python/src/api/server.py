@@ -92,8 +92,11 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
+    import os
+
     from app.decision_service import DecisionService
     from app.decision_store import DecisionStore
+    from app.llm import resolve_llm_timeout
     from app.llm_client import OllamaLLMClient
     from app.offer import Offer
     from app.offer_intake_service import intake_offer
@@ -121,7 +124,10 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
 
     # Intake d'offre collée (OPP-145) : le LLM local analyse le texte avant persistance.
     # POST /offers exige donc Ollama joignable (cf. mémoire ollama-wsl2).
-    llm_client = OllamaLLMClient()
+    # Timeout LLM généreux via OPPORTUNE_LLM_TIMEOUT (défaut 300s, convention partagée avec le
+    # runner push) et plafond de tokens via OLLAMA_NUM_PREDICT (OPP-154) : un intake réaliste
+    # (~85s) tient dans le défaut, sans l'ancien override codé en dur.
+    llm_client = OllamaLLMClient(timeout=resolve_llm_timeout(os.environ))
 
     def offer_intake(raw_text: str, *, source: str, url: str = "") -> Offer:
         return intake_offer(raw_text, source=source, client=llm_client, store=offers, url=url)

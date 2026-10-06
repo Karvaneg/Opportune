@@ -85,6 +85,30 @@ def test_ollama_without_format_omits_it():
     assert "format" not in seen["payload"]  # non-régression : texte libre
 
 
+def test_ollama_threads_num_predict_into_payload():
+    seen = {}
+
+    def fake_transport(url, payload):
+        seen["payload"] = payload
+        return {"response": "ok"}
+
+    OllamaLLMClient(num_predict=256, transport=fake_transport).generate("prompt")
+    assert seen["payload"]["options"] == {"num_predict": 256}
+
+
+def test_ollama_defaults_timeout_and_num_predict_from_llm_module():
+    # None → défauts d'app.llm (donc la valeur env, OPP-154), lus à l'instanciation.
+    client = OllamaLLMClient()
+    assert client.timeout == llm.DEFAULT_TIMEOUT
+    assert client.num_predict == llm.DEFAULT_NUM_PREDICT
+
+
+def test_ollama_explicit_timeout_and_num_predict_override_defaults():
+    client = OllamaLLMClient(timeout=42, num_predict=99)
+    assert client.timeout == 42
+    assert client.num_predict == 99
+
+
 def test_ollama_per_call_model_overrides_default():
     seen = {}
 
