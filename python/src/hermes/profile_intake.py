@@ -82,8 +82,9 @@ def main() -> None:  # pragma: no cover - point d'entrée IO (PDF + Ollama + SQL
     from app.profile_intake_service import intake_profile
     from app.profile_store import ProfileStore
 
+    from app.llm import resolve_llm_timeout
+
     from hermes.pdf_extract import PdfExtractionError, extract_text_from_pdf
-    from hermes.push_runner import resolve_llm_timeout
 
     path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("OPPORTUNE_CV_PATH")
     if not path:

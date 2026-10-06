@@ -24,13 +24,13 @@ from app.redacteur import LLMRedacteur
 from app.review_pipeline import BatchReviewError
 from app.submission_store import SubmissionStore
 
+from app.llm import DEFAULT_LLM_TIMEOUT, resolve_llm_timeout
+
 from hermes.orchestrator import HermesOrchestrator
 from hermes.push_runner import (
-    DEFAULT_LLM_TIMEOUT,
     PushOutcome,
     PushRunner,
     build_push_runner,
-    resolve_llm_timeout,
 )
 from hermes.run_store import RunStore
 

@@ -29,6 +29,7 @@ from app.decision_service import DecisionService
 from app.decision_store import DecisionRepository, DecisionStore
 from app.discord_review import DiscordReviewer
 from app.discord_transport import HttpDiscordTransport
+from app.llm import resolve_llm_timeout
 from app.llm_client import LLMClient, OllamaLLMClient
 from app.offer import Offer
 from app.offer_intake_service import intake_offer
@@ -48,33 +49,8 @@ from hermes.orchestrator import HermesOrchestrator
 from hermes.review_resolution import resolve_run_review_items
 from hermes.run_store import RunStore
 
-# Timeout LLM par défaut du runner (secondes) : nettement plus large que le défaut 60 s de
-# ``app.llm`` — une lettre de motivation est bien plus longue qu'une analyse d'offre et
-# dépasse 60 s à froid sur une machine modeste (cf. [[ollama-wsl2-acces]]).
-DEFAULT_LLM_TIMEOUT = 300
-
-
-def resolve_llm_timeout(env: Mapping[str, str]) -> int:
-    """Lit ``OPPORTUNE_LLM_TIMEOUT`` (secondes) ; ``DEFAULT_LLM_TIMEOUT`` si absent.
-
-    Absent/vide → défaut généreux. Toute valeur non entière ou non strictement positive →
-    ``ValueError`` explicite : on refuse de démarrer sur un timeout ambigu plutôt que de
-    recâbler silencieusement le défaut 60 s trop court d'``app.llm``.
-    """
-    raw = env.get("OPPORTUNE_LLM_TIMEOUT")
-    if raw is None or raw == "":
-        return DEFAULT_LLM_TIMEOUT
-    try:
-        timeout = int(raw)
-    except ValueError:
-        raise ValueError(
-            f"OPPORTUNE_LLM_TIMEOUT invalide ({raw!r}) : entier positif de secondes attendu."
-        ) from None
-    if timeout <= 0:
-        raise ValueError(
-            f"OPPORTUNE_LLM_TIMEOUT invalide ({timeout}) : doit être strictement positif."
-        )
-    return timeout
+# ``resolve_llm_timeout`` / ``DEFAULT_LLM_TIMEOUT`` vivent désormais dans ``app.llm`` (home
+# partagé par tous les appels LLM : runner push, intake profil, intake offre — OPP-154).
 
 
 @dataclass(frozen=True)
