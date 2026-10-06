@@ -127,6 +127,40 @@ export interface OfferSummary {
   summary: string;
   source: string;
   url: string;
+  created_at: string; // ISO 8601, date d'ingestion (OPP-152)
+}
+
+/** Bande de recommandation dérivée du score (seuils côté serveur) — `null` si non noté. */
+export type RecommendationAction = "postuler" | "a_etudier" | "ignorer";
+
+/**
+ * Ligne du catalogue d'offres (`GET /offers`, OPP-146). `score` est le match pour le
+ * `candidate_id` demandé — `null` si aucun candidat n'est ciblé ou si l'offre n'est pas
+ * évaluable. `action` est la bande (`postuler`/`a_etudier`/`ignorer`) calculée par le
+ * serveur depuis ce score : c'est elle qui pilote l'affichage, pour ne pas dupliquer les
+ * seuils côté client. Plus léger que `OfferSummary` : pas de `skills`/`summary` (vue liste).
+ */
+export interface CatalogOffer {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  contract_type: string;
+  seniority: string;
+  source: string;
+  url: string;
+  created_at: string; // ISO 8601
+  score: number | null;
+  action: RecommendationAction | null;
+}
+
+/** Réponse paginée de `GET /offers`. */
+export interface OffersCatalogPage {
+  items: CatalogOffer[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 }
 
 /** Identité du porteur du jeton (`GET /me`) — sonde d'authentification. */

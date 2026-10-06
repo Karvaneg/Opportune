@@ -102,6 +102,16 @@ def test_list_all_empty(store):
     assert store.list_all() == []
 
 
+def test_list_paginates_in_date_order(store):
+    # OPP-146 : page d'offres, plus récentes d'abord, découpée par limit/offset.
+    store.save(_offer(id="a", created_at="2026-01-01T00:00:00+00:00"))
+    store.save(_offer(id="b", created_at="2026-02-01T00:00:00+00:00"))
+    store.save(_offer(id="c", created_at="2026-03-01T00:00:00+00:00"))
+    assert [o.id for o in store.list(limit=2, offset=0)] == ["c", "b"]  # 1re page
+    assert [o.id for o in store.list(limit=2, offset=2)] == ["a"]        # 2e page
+    assert store.count() == 3
+
+
 def test_migrates_legacy_table_without_created_at():
     # Base antérieure à OPP-152 : table offers sans created_at + une ligne. L'ouverture par
     # OfferStore doit ajouter la colonne et dater la ligne existante (backfill), sans planter.

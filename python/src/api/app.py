@@ -219,10 +219,16 @@ class HermesApi:
             self._require(method, "GET", path)
             return self._get_recommendation(unquote(match["rid"]), user)
 
-        # Intake d'offre collée : monté uniquement si un LLM est câblé (sinon 404).
-        if self.offer_intake is not None and _OFFERS.match(path):
-            self._require(method, "POST", path)
-            return self._post_offers(body, user)
+        if _OFFERS.match(path):
+            # GET : catalogue des offres (toujours disponible, lecture du pool partagé).
+            if method == "GET":
+                return self._get_offers(query, user)
+            # POST : intake d'offre collée, monté uniquement si un LLM est câblé (sinon 404).
+            if method == "POST":
+                if self.offer_intake is None:
+                    raise self._not_found(user, "intake d'offre non disponible")
+                return self._post_offers(body, user)
+            raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
@@ -402,12 +408,7 @@ class HermesApi:
         pagination identiques à ``GET /runs/{run_id}/recommendations`` ; ``total`` est le
         cardinal **avant** découpe en page.
         """
-        page = self._query_int(query, "page", 1)
-        if page < 1:
-            raise ApiError(400, "page doit être un entier ≥ 1")
-        page_size = self._query_int(query, "page_size", 20)
-        if not 1 <= page_size <= 100:
-            raise ApiError(400, "page_size doit être un entier entre 1 et 100")
+        page, page_size = self._paginate(query)
 
         scope = None if user is None else user.owned_candidates
         summaries, total = self.orchestrator.list_run_summaries(
@@ -424,6 +425,60 @@ class HermesApi:
                 "total_pages": total_pages,
             },
         )
+
+    def _get_offers(self, query: dict, user: User | None) -> Response:
+        """Catalogue **paginé** des offres (plus récentes d'abord, OPP-146).
+
+        Le pool d'offres est **partagé** (aucun propriétaire) : lire le catalogue n'exige
+        qu'un jeton valide (401 géré en amont), pas de rôle reviewer — lequel n'est requis que
+        pour *curer* le pool (POST /offers). ``?candidate_id`` (optionnel) annote chaque offre
+        de son **score de match** pour ce candidat ; il est alors **owner-gated** (404 neutre
+        si hors périmètre, comme ailleurs), de sorte qu'on ne note jamais pour un candidat
+        d'autrui. Conventions de pagination identiques à ``GET /runs``.
+        """
+        page, page_size = self._paginate(query)
+
+        candidate_id = self._query_one(query, "candidate_id")
+        if candidate_id is not None:
+            self._guard_owner(user, candidate_id)
+
+        try:
+            entries, total = self.orchestrator.list_offer_catalog(
+                limit=page_size, offset=(page - 1) * page_size, candidate_id=candidate_id
+            )
+        except UnknownCandidateError:
+            # candidat possédé mais sans profil → même 404 neutre que « hors périmètre ».
+            raise self._not_found(user, f"candidat inconnu : {candidate_id}")
+
+        total_pages = (total + page_size - 1) // page_size
+        return Response(
+            200,
+            {
+                "items": [self._serialize_catalog_entry(e) for e in entries],
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": total_pages,
+            },
+        )
+
+    @staticmethod
+    def _serialize_catalog_entry(entry) -> dict:
+        """Ligne de catalogue : résumé de l'offre + son score et sa bande de reco (``None`` si non noté)."""
+        offer = entry.offer
+        return {
+            "id": offer.id,
+            "title": offer.title,
+            "company": offer.company,
+            "location": offer.location,
+            "contract_type": offer.contract_type,
+            "seniority": offer.seniority,
+            "source": offer.source,
+            "url": offer.url,
+            "created_at": offer.created_at,
+            "score": entry.score,
+            "action": entry.action,
+        }
 
     def _get_run(self, run_id: str, user: User | None) -> Response:
         run = self.orchestrator.get_run(run_id)
@@ -504,12 +559,7 @@ class HermesApi:
         deux registres distincts, filtrables indépendamment. ``total`` reflète le nombre
         d'items **après filtres, avant pagination**.
         """
-        page = self._query_int(query, "page", 1)
-        if page < 1:
-            raise ApiError(400, "page doit être un entier ≥ 1")
-        page_size = self._query_int(query, "page_size", 20)
-        if not 1 <= page_size <= 100:
-            raise ApiError(400, "page_size doit être un entier entre 1 et 100")
+        page, page_size = self._paginate(query)
 
         advisory_status = self._query_one(query, "advisory_status")
         if advisory_status is not None and advisory_status not in PRE_EVALUATION_STATUSES:
@@ -559,6 +609,22 @@ class HermesApi:
             return int(raw)
         except ValueError:
             raise ApiError(400, f"{key} doit être un entier")
+
+    @staticmethod
+    def _paginate(query: dict) -> tuple[int, int]:
+        """Lit et valide les paramètres de pagination communs à tous les listings.
+
+        ``page`` (≥ 1, défaut 1) et ``page_size`` (1–100, défaut 20) ; 400 si hors bornes.
+        Source unique de la convention (``GET /runs``, ``/offers``, recommandations d'un run)
+        pour ne pas dupliquer bornes et messages. Retourne ``(page, page_size)``.
+        """
+        page = HermesApi._query_int(query, "page", 1)
+        if page < 1:
+            raise ApiError(400, "page doit être un entier ≥ 1")
+        page_size = HermesApi._query_int(query, "page_size", 20)
+        if not 1 <= page_size <= 100:
+            raise ApiError(400, "page_size doit être un entier entre 1 et 100")
+        return page, page_size
 
     def _get_recommendation(self, recommendation_id: str, user: User | None) -> Response:
         decision = self.orchestrator.get_recommendation(recommendation_id)

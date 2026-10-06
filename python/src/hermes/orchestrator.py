@@ -34,7 +34,11 @@ from typing import Callable
 from app.decision import Decision
 from app.decision_service import DecisionService
 from app.offer import Offer
-from app.recommendation_service import OfferRecommendation, RecommendationService
+from app.recommendation_service import (
+    OfferCatalogEntry,
+    OfferRecommendation,
+    RecommendationService,
+)
 
 from hermes.models import (
     HermesRecommendation,
@@ -400,6 +404,23 @@ class HermesOrchestrator:
         l'appelant retombe alors sur l'``offer_id`` (cf. OPP-112).
         """
         return self.recommendations.offers.get(offer_id)
+
+    def list_offer_catalog(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        candidate_id: str | None = None,
+    ) -> tuple[list[OfferCatalogEntry], int]:
+        """Catalogue paginé des offres + score de match pour ``candidate_id`` (OPP-146).
+
+        Délègue à ``RecommendationService.list_catalog`` (aucune logique neuve ici) : offres
+        plus récentes d'abord, chacune annotée de son score pour le candidat demandé.
+        Propage ``UnknownCandidateError`` (candidat fourni introuvable) et ``ValueError``.
+        """
+        return self.recommendations.list_catalog(
+            limit=limit, offset=offset, candidate_id=candidate_id
+        )
 
     def record_human_decision(
         self, recommendation_id: str, status: str, *, comment: str | None = None
