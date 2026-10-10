@@ -142,6 +142,13 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     def offer_intake(raw_text: str, *, source: str, url: str = "") -> Offer:
         return intake_offer(raw_text, source=source, client=llm_client, store=offers, url=url)
 
+    # Intake d'offre par URL (OPP-148) : fetch + extraction (BeautifulSoup, extra « scrape »)
+    # puis la même chaîne d'intake que le texte collé — même client LLM, même dépôt d'offres.
+    from app.offer_url_intake import intake_offer_from_url
+
+    def offer_url_intake(url: str, *, source: str) -> Offer:
+        return intake_offer_from_url(url, source=source, client=llm_client, store=offers)
+
     # Lettre de motivation (OPP-147) : le MÊME client LLM sert l'analyse d'offre et la
     # rédaction (comme le runner push), et les dépôts décisions/profils/offres sont partagés
     # avec l'orchestrateur — une lettre se génère pour une reco déjà persistée.
@@ -154,7 +161,12 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     )
 
     return HermesApi(
-        orchestrator, actions, auth, offer_intake=offer_intake, letters=letters
+        orchestrator,
+        actions,
+        auth,
+        offer_intake=offer_intake,
+        letters=letters,
+        offer_url_intake=offer_url_intake,
     )
 
 

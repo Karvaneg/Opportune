@@ -109,6 +109,24 @@ python -m api.server                           # écoute sur http://127.0.0.1:80
 Le frontend React (`../frontend`) consomme cette API via un proxy `/api` (cf.
 `frontend/README.md`). Recette de bout en bout : `bash ../scripts/recette-e9.sh`.
 
+### Ajouter une offre (texte collé ou URL)
+
+`POST /offers` accepte **soit** `text` (le texte de l'offre, OPP-145), **soit** `url` (le
+back récupère la page et en extrait le texte, OPP-148 — le texte prime si les deux sont
+fournis). La collecte par URL extrait le texte via **BeautifulSoup**, confiné dans l'extra
+`scrape` (le cœur reste sans dépendance) :
+
+```bash
+pip install -e ".[scrape]"     # beautifulsoup4, requis pour l'intake par URL
+```
+
+Garde-fous : seules les URL **http(s)** sont acceptées, et toute cible interne
+(localhost, IP privées/boucle locale/lien-local) est refusée (protection SSRF — le back
+émet une requête sortante vers une URL fournie par l'utilisateur). Les échecs sont
+distincts : URL refusée/schéma invalide → 400 ; page injoignable, bloquée (403/429) ou
+vide → 502. Le JS côté client et les anti-bots sérieux ne sont pas contournés (fetch HTTP
+simple) : certains sites échoueront, c'est attendu.
+
 ## Environnement Docker / WSL
 
 Conteneur reproductible (OPP-071). Le code (`src/`, `tests/`) est monté en volume : les

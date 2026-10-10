@@ -263,6 +263,40 @@ describe("RunsListPage", () => {
     expect((calls[0].body as { text: string }).text).toContain("Data Engineer");
   });
 
+  it("ajoute une offre par URL (POST /offers avec url) quand le texte est vide", async () => {
+    const calls: { body: { text?: string; url?: string } }[] = [];
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/offers") && init?.method === "POST") {
+          calls.push({ body: JSON.parse(String(init?.body ?? "{}")) });
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: () => Promise.resolve({ id: "o1", title: "Data Engineer", company: "Holis" }),
+          } as Response);
+        }
+        return okJson(PAGE);
+      }),
+    );
+    renderList();
+    await screen.findByText("r-a2");
+
+    await userEvent.type(screen.getByLabelText("URL de l'offre"), "https://example.com/jobs/42");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter l'offre" }));
+
+    expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
+    expect(calls).toHaveLength(1);
+    // Voie URL : le corps porte `url` et PAS `text`.
+    expect(calls[0].body.url).toBe("https://example.com/jobs/42");
+    expect(calls[0].body.text).toBeUndefined();
+  });
+
   it("ne montre pas « Ajouter une offre » à un non-reviewer", async () => {
     vi.stubGlobal(
       "fetch",

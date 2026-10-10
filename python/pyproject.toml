@@ -22,6 +22,9 @@ discord = ["discord.py>=2.3"]
 # Extraction de texte d'un CV PDF (runner d'intake de profil, OPP-137). Confiné en extra :
 # le cœur métier reste sans dépendance. Installé via : pip install -e ".[pdf]".
 pdf = ["pypdf>=4.0"]
+# Collecte d'une offre par URL : extraction du texte HTML (OPP-148). Confiné en extra :
+# le cœur métier reste sans dépendance. Installé via : pip install -e ".[scrape]".
+scrape = ["beautifulsoup4>=4.12"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

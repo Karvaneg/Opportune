@@ -27,18 +27,19 @@ export function useOffers(page: number, candidateId: string) {
 }
 
 export interface AddOfferVariables {
-  /** Texte brut de l'offre (obligatoire côté back). */
-  text: string;
-  /** Provenance (défaut « collée » côté back). */
-  source?: string;
-  /** URL d'origine, purement informative à ce stade (le scraping est OPP-148). */
+  /** Texte brut de l'offre. Fournir `text` OU `url` (le texte prime si les deux sont là). */
+  text?: string;
+  /** URL de l'offre : le back récupère la page et en extrait le texte (OPP-148). */
   url?: string;
+  /** Provenance (défaut « collée » pour le texte, le domaine pour une URL). */
+  source?: string;
 }
 
 /**
- * Ajoute une offre en collant son texte : `POST /offers` (OPP-145). Le back l'analyse via
- * LLM puis la persiste (id dérivé du texte → pas de doublon). Latence LLM → l'appelant gère
- * l'état d'attente. Erreurs remontées telles quelles (400 saisie, 502 analyse/LLM).
+ * Ajoute une offre, par texte collé (OPP-145) ou par URL (OPP-148) : `POST /offers`. Le back
+ * analyse via LLM puis persiste (id dérivé du texte → pas de doublon). Latence LLM (+ fetch
+ * pour une URL) → l'appelant gère l'attente. Erreurs remontées telles quelles : 400 (saisie
+ * ou URL refusée/SSRF), 502 (analyse/LLM, ou récupération de l'URL impossible).
  */
 export function useAddOffer() {
   return useApiMutation<OfferSummary, AddOfferVariables>({
