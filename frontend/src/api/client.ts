@@ -82,6 +82,24 @@ export async function apiPost<T>(path: string, token: string, body: unknown): Pr
 }
 
 /**
+ * Mise à jour authentifiée (PUT + corps JSON). Même contrat d'erreur qu'`apiPost` : utilisé
+ * pour l'édition d'une lettre (`PUT /recommendations/{id}/letter`, OPP-147).
+ */
+export async function apiPut<T>(path: string, token: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+
+  return parseOrThrow<T>(response);
+}
+
+/**
  * Suppression authentifiée (DELETE). Même contrat d'erreur qu'`apiFetch` (`ApiHttpError`
  * porteur du `status`) — l'appelant distingue 403/404 et `QueryCache.onError` purge le 401.
  */

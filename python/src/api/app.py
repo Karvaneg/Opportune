@@ -51,8 +51,16 @@ from urllib.parse import parse_qs, unquote
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.auth import AuthProvider, User
+from app.cover_letter import CoverLetterError
 from app.decision import VALIDATION_STATUSES, Decision, decision_id
 from app.decision_service import PRE_EVALUATION_STATUSES, UnknownDecisionError
+from app.letter import LetterError
+from app.letter_service import (
+    LetterExistsError,
+    LetterService,
+    UnknownLetterError,
+    UnknownRecommendationError,
+)
 from app.llm_client import LLMError
 from app.offer import Offer
 from app.offer_analysis import OfferAnalysisError
@@ -99,6 +107,7 @@ _RESCORE = re.compile(
 _RUN_RECOMMENDATIONS = re.compile(r"^/runs/(?P<run_id>[^/]+)/recommendations$")
 _RUN = re.compile(r"^/runs/(?P<run_id>[^/]+)$")
 _RECOMMENDATION_DECISION = re.compile(r"^/recommendations/(?P<rid>[^/]+)/decision$")
+_RECOMMENDATION_LETTER = re.compile(r"^/recommendations/(?P<rid>[^/]+)/letter$")
 _RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
 _APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
@@ -124,6 +133,7 @@ class HermesApi:
         actions: ActionService | None = None,
         auth: AuthProvider | None = None,
         offer_intake: OfferIntake | None = None,
+        letters: LetterService | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -133,6 +143,9 @@ class HermesApi:
         # Intake d'offre collée (OPP-145). Optionnel : si absent (pas de LLM câblé), la route
         # POST /offers n'est pas montée (404). Injecté en prod, faux en test.
         self.offer_intake = offer_intake
+        # Lettre de motivation (OPP-147). Optionnel : si absent (pas de LLM câblé), les routes
+        # /recommendations/{id}/letter ne sont pas montées (404). Injecté en prod, faux en test.
+        self.letters = letters
         # Fournisseur d'authentification. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune vérification. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur
         # ``None`` en production. Avec un fournisseur, toute route métier exige un jeton
@@ -213,6 +226,22 @@ class HermesApi:
         if match:
             self._require(method, "POST", path)
             return self._post_decision(unquote(match["rid"]), body, user)
+
+        match = _RECOMMENDATION_LETTER.match(path)
+        if match:
+            # Montée uniquement si un service de lettre est câblé (sinon 404, comme /offers POST).
+            if self.letters is None:
+                raise self._not_found(user, "lettre non disponible")
+            rid = unquote(match["rid"])
+            if method == "GET":
+                return self._get_letter(rid, user)
+            if method == "POST":
+                return self._post_letter(rid, body, user)
+            if method == "PUT":
+                return self._put_letter(rid, body, user)
+            if method == "DELETE":
+                return self._delete_letter(rid, user)
+            raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
         match = _RECOMMENDATION.match(path)
         if match:
@@ -661,6 +690,99 @@ class HermesApi:
         except UnknownDecisionError:
             raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
         return Response(200, self._serialize_decision(decision))
+
+    # --- Lettre de motivation (OPP-147) : GET / POST / PUT / DELETE -----------------
+
+    def _guard_letter_target(self, user: User | None, recommendation_id: str) -> None:
+        """Gardes communes aux routes lettre : existence (reco) → propriété → rôle ``reviewer``.
+
+        La lettre est une ressource sensible rattachée à une recommandation persistée : on
+        résout son propriétaire depuis la décision (jamais depuis le corps), 404 neutre si la
+        reco est absente/hors périmètre (anti-énumération), 403 si le rôle manque. Toutes les
+        opérations lettre (y compris la lecture) exigent ``reviewer`` — c'est du contenu de
+        candidature, pas une donnée de catalogue partagée.
+        """
+        decision = self.orchestrator.get_recommendation(recommendation_id)
+        if decision is None:
+            raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
+        self._guard_owner(user, decision.candidate_id)
+        self._guard_reviewer(user)
+
+    def _get_letter(self, recommendation_id: str, user: User | None) -> Response:
+        """Renvoie la lettre de la reco, ou 404 neutre si aucune n'est encore générée."""
+        self._guard_letter_target(user, recommendation_id)
+        letter = self.letters.get(recommendation_id)
+        if letter is None:
+            raise self._not_found(user, "aucune lettre pour cette recommandation")
+        return Response(200, self._serialize_letter(letter))
+
+    def _post_letter(
+        self, recommendation_id: str, body: dict, user: User | None
+    ) -> Response:
+        """Génère (LLM) la lettre d'une reco ; ``source=ai``.
+
+        Idempotent côté humain : si une lettre existe déjà, renvoie **409** plutôt que
+        d'écraser en silence — le front présente alors le choix et renvoie
+        ``{"regenerate": true}`` pour un remplacement conscient (même d'une lettre éditée).
+        201 à la première création, 200 sur régénération. Les erreurs LLM / génération
+        inexploitable remontent en 502 (comme l'intake d'offre), distinctes d'une faute de
+        saisie (400) ou d'un conflit d'état (409).
+        """
+        self._guard_letter_target(user, recommendation_id)
+        regenerate = body.get("regenerate", False)
+        if not isinstance(regenerate, bool):
+            raise ApiError(400, "regenerate doit valoir true ou false (booléen)")
+        try:
+            letter, created = self.letters.generate(recommendation_id, overwrite=regenerate)
+        except LetterExistsError as exc:
+            raise ApiError(409, str(exc))
+        except UnknownRecommendationError:
+            # Reco résolue par la garde mais offre/profil disparu : 404 neutre.
+            raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
+        except CoverLetterError as exc:
+            raise ApiError(502, f"génération de lettre inexploitable : {exc}")
+        except LLMError as exc:
+            raise ApiError(502, f"service de génération indisponible : {exc}")
+        return Response(201 if created else 200, self._serialize_letter(letter))
+
+    def _put_letter(
+        self, recommendation_id: str, body: dict, user: User | None
+    ) -> Response:
+        """Édite (remplace) le corps de la lettre ; ``source=human``.
+
+        Édite une lettre **existante** (404 neutre sinon : la création passe par POST).
+        ``body`` requis et non vide (400 sinon).
+        """
+        self._guard_letter_target(user, recommendation_id)
+        new_body = body.get("body")
+        if not isinstance(new_body, str) or new_body.strip() == "":
+            raise ApiError(400, "body est requis (le corps de la lettre)")
+        try:
+            letter = self.letters.edit(recommendation_id, new_body)
+        except UnknownLetterError:
+            raise self._not_found(user, "aucune lettre à éditer pour cette recommandation")
+        except LetterError as exc:
+            raise ApiError(400, str(exc))
+        return Response(200, self._serialize_letter(letter))
+
+    def _delete_letter(self, recommendation_id: str, user: User | None) -> Response:
+        """Supprime la lettre de la reco ; 404 neutre si aucune n'existait (idempotence douce)."""
+        self._guard_letter_target(user, recommendation_id)
+        if not self.letters.delete(recommendation_id):
+            raise self._not_found(user, "aucune lettre à supprimer pour cette recommandation")
+        return Response(200, {"deleted": recommendation_id})
+
+    @staticmethod
+    def _serialize_letter(letter) -> dict:
+        """Représentation JSON d'une lettre persistée (champs exploités par le front)."""
+        return {
+            "recommendation_id": letter.recommendation_id,
+            "body": letter.body,
+            "source": letter.source,
+            "model": letter.model,
+            "created_at": letter.created_at,
+            "updated_at": letter.updated_at,
+        }
 
     def _post_application_confirm(
         self, recommendation_id: str, body: dict, user: User | None

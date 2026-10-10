@@ -55,6 +55,11 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
             # (qui, lui, gère DELETE /runs/{id} — cf. OPP-144).
             self._dispatch("DELETE")
 
+        def do_PUT(self) -> None:  # noqa: N802 - nom imposé par http.server
+            # Comme do_DELETE : sans ce point d'entrée, http.server répondrait 501 avant le
+            # dispatcher (qui gère PUT /recommendations/{id}/letter — cf. OPP-147).
+            self._dispatch("PUT")
+
         def _write(self, status: int, body: dict) -> None:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -96,6 +101,8 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
 
     from app.decision_service import DecisionService
     from app.decision_store import DecisionStore
+    from app.letter_service import LetterService
+    from app.letter_store import LetterStore
     from app.llm import resolve_llm_timeout
     from app.llm_client import OllamaLLMClient
     from app.offer import Offer
@@ -103,6 +110,7 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     from app.offer_store import OfferStore
     from app.profile_store import ProfileStore
     from app.recommendation_service import RecommendationService
+    from app.redacteur import LLMRedacteur
     from hermes.orchestrator import HermesOrchestrator
     from hermes.run_store import RunStore
 
@@ -112,9 +120,11 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     # Un seul dépôt d'offres partagé entre le scoring (RecommendationService) et l'intake
     # collé (POST /offers) : une offre fraîchement ajoutée est immédiatement évaluable.
     offers = OfferStore(conn)
-    decisions = DecisionService(DecisionStore(conn))
+    profiles = ProfileStore(conn)
+    decision_store = DecisionStore(conn)
+    decisions = DecisionService(decision_store)
     orchestrator = HermesOrchestrator(
-        RecommendationService(ProfileStore(conn), offers),
+        RecommendationService(profiles, offers),
         decisions,
         runs=RunStore(conn),
     )
@@ -132,7 +142,20 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     def offer_intake(raw_text: str, *, source: str, url: str = "") -> Offer:
         return intake_offer(raw_text, source=source, client=llm_client, store=offers, url=url)
 
-    return HermesApi(orchestrator, actions, auth, offer_intake=offer_intake)
+    # Lettre de motivation (OPP-147) : le MÊME client LLM sert l'analyse d'offre et la
+    # rédaction (comme le runner push), et les dépôts décisions/profils/offres sont partagés
+    # avec l'orchestrateur — une lettre se génère pour une reco déjà persistée.
+    letters = LetterService(
+        letters=LetterStore(conn),
+        decisions=decision_store,
+        profiles=profiles,
+        offers=offers,
+        redacteur=LLMRedacteur(llm_client),
+    )
+
+    return HermesApi(
+        orchestrator, actions, auth, offer_intake=offer_intake, letters=letters
+    )
 
 
 def _utcnow() -> datetime:

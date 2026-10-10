@@ -163,6 +163,23 @@ export interface OffersCatalogPage {
   total_pages: number;
 }
 
+/** Provenance d'une lettre : générée par le LLM (`ai`) ou éditée à la main (`human`). */
+export type LetterSource = "ai" | "human";
+
+/**
+ * Lettre de motivation persistée (`GET/POST/PUT /recommendations/{id}/letter`, OPP-147).
+ * `source` pilote l'affichage et l'avertissement de régénération : une lettre `human`
+ * ne doit pas être écrasée sans confirmation explicite (`model` vide pour une édition).
+ */
+export interface Letter {
+  recommendation_id: string;
+  body: string;
+  source: LetterSource;
+  model: string;
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601
+}
+
 /** Identité du porteur du jeton (`GET /me`) — sonde d'authentification. */
 export interface Me {
   id: string | null;
