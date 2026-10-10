@@ -81,6 +81,21 @@ filtres, auth, décisions, actions), sans réseau : LLM injecté et dépôts SQL
 Le serveur **refuse de démarrer sans jeton** (`OPPORTUNE_API_TOKEN`) : l'API n'est jamais
 exposée sans authentification.
 
+### Démarrage simplifié (recommandé, OPP-153)
+
+```bash
+bash scripts/serve-api.sh      # depuis la racine du dépôt
+```
+
+Le script lit toute la configuration depuis `python/.env` (**source unique** — plus de
+variables à retaper à chaque lancement), **auto-détecte `OLLAMA_HOST`** sous WSL (passerelle
+de l'adaptateur WSL, dont l'IP peut changer entre reboots) quand il n'est pas fixé, puis
+lance `python -m api.server` (venv s'il existe, sinon `python3`). Renseigner au minimum
+`OPPORTUNE_API_TOKEN` et `OPPORTUNE_API_CANDIDATES` dans `python/.env` (modèle sans secret :
+[`.env.example`](.env.example)).
+
+### Démarrage manuel (variables à l'ancienne)
+
 ```bash
 cd python
 export OPPORTUNE_API_TOKEN=mon-jeton          # requis
