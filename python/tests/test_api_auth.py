@@ -358,6 +358,34 @@ def test_server_supports_delete_method_over_http():
     conn.close()
 
 
+def test_server_supports_put_method_over_http():
+    """Régression OPP-147 : ``http.server`` doit exposer ``do_PUT`` (sinon 501 *avant* le
+    dispatcher, qui route PUT /recommendations/{id}/letter). Même chemin 401 que le DELETE :
+    un PUT **câblé** répond 401 sans jeton — un 501 trahirait une méthode non montée.
+    """
+    conn = connect(":memory:")
+    _profile(conn)
+    OfferStore(conn).save(_offer())
+    auth = AuthProvider({"tok": User("u", REVIEWER, frozenset({"cand-1"}))})
+    server = create_server(assemble_api(conn, auth), port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        client = http.client.HTTPConnection(host, port, timeout=5)
+        client.request(
+            "PUT", "/recommendations/cand-1:off-x/letter",
+            body="{}", headers={"Content-Type": "application/json"},
+        )
+        assert client.getresponse().status == 401  # câblé (≠ 501 « méthode non supportée »)
+        client.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    conn.close()
+
+
 # --- GET /me : sonde d'authentification + identité (OPP-103) ------------------
 
 def test_me_returns_identity_for_valid_token(env):

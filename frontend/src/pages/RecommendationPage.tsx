@@ -8,8 +8,14 @@ import {
   useValidateRecommendation,
   type DecisionVerb,
 } from "../api/recommendations";
+import {
+  useDeleteLetter,
+  useEditLetter,
+  useGenerateLetter,
+  useLetter,
+} from "../api/letters";
 import { useIsReviewer } from "../auth/roles";
-import type { OfferAction, RecommendationDetail } from "../api/types";
+import type { Letter, OfferAction, RecommendationDetail } from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
 import { StatusBadge } from "../components/StatusBadge";
 
@@ -100,6 +106,7 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
       </div>
 
       <RescoreOffer reco={reco} />
+      <LetterPanel recommendationId={reco.recommendation_id} />
       <RecommendationActions recommendationId={reco.recommendation_id} />
       <ApplicationConfirm recommendationId={reco.recommendation_id} />
 
@@ -302,6 +309,235 @@ function ApplicationConfirm({ recommendationId }: { recommendationId: string }) 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Libellé FR de la provenance d'une lettre (présentation seule).
+const LETTER_SOURCE_LABELS: Record<Letter["source"], string> = {
+  ai: "Générée par l'IA",
+  human: "Éditée à la main",
+};
+
+/**
+ * Panneau lettre de motivation (OPP-147) — reviewers uniquement (contenu de candidature).
+ * Trois états : aucune lettre (bouton Générer), lettre présente (corps + éditer / régénérer
+ * / supprimer), édition en cours (zone de texte → PUT). La régénération d'une lettre existante
+ * est un geste **explicite** : le back refuse (409) d'écraser en silence, donc l'UI demande
+ * confirmation avant d'envoyer `{ regenerate: true }` — protégeant notamment une édition humaine.
+ * Un 404 sur la lettre n'est pas une erreur : c'est l'état « pas encore générée ».
+ */
+function LetterPanel({ recommendationId }: { recommendationId: string }) {
+  const isReviewer = useIsReviewer();
+  const { data, isPending, isError, error } = useLetter(recommendationId);
+  const generate = useGenerateLetter(recommendationId);
+  const edit = useEditLetter(recommendationId);
+  const remove = useDeleteLetter(recommendationId);
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [confirmRegen, setConfirmRegen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Garde reviewer côté UI (défense en profondeur ; le back garde le 403/404).
+  if (!isReviewer) return null;
+
+  const is404 = isError && error instanceof ApiHttpError && error.status === 404;
+  // Une lettre n'est « présente » que si la dernière requête a réussi et porte un corps
+  // chaîne. `!isError` est crucial : React Query conserve `data` après un refetch en erreur
+  // (ex. 404 déclenché par la suppression), donc sans ce garde l'ancienne lettre resterait
+  // affichée — avec ses boutons actifs — à côté de l'état « aucune lettre ».
+  const letter = !isError && data && typeof data.body === "string" ? data : null;
+
+  const startEditing = () => {
+    setDraft(letter?.body ?? "");
+    setEditing(true);
+  };
+  const saveEdit = () =>
+    edit.mutate(draft, { onSuccess: () => setEditing(false) });
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Lettre de motivation
+      </h3>
+
+      {isPending && <Loading label="Chargement de la lettre…" />}
+      {isError && !is404 && <ErrorNotice error={error} />}
+
+      {/* Aucune lettre encore : proposer la génération. */}
+      {(is404 || (!isPending && !isError && !letter)) && (
+        <div>
+          <p className="mb-3 text-sm text-slate-600">
+            Aucune lettre pour cette recommandation. Générez-en une à partir de l'offre et du
+            profil.
+          </p>
+          <button
+            type="button"
+            onClick={() => generate.mutate({})}
+            disabled={generate.isPending}
+            className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+          >
+            {generate.isPending ? "Génération en cours…" : "Générer la lettre"}
+          </button>
+          {generate.isError && (
+            <div className="mt-3">
+              <ErrorNotice error={generate.error} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lettre présente : corps + provenance + actions. */}
+      {letter && !editing && (
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+              {LETTER_SOURCE_LABELS[letter.source]}
+            </span>
+          </div>
+          <p className="whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm text-slate-800">
+            {letter.body}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={startEditing}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Éditer
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmRegen(true)}
+              disabled={generate.isPending}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {generate.isPending ? "Régénération…" : "Régénérer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              disabled={remove.isPending}
+              className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Supprimer
+            </button>
+          </div>
+          {(generate.isError || remove.isError) && (
+            <div className="mt-3">
+              <ErrorNotice error={generate.error ?? remove.error} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Édition en cours : zone de texte → PUT. */}
+      {letter && editing && (
+        <div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={10}
+            aria-label="Corps de la lettre"
+            className="w-full rounded-md border border-slate-300 p-2 text-sm"
+          />
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={saveEdit}
+              disabled={edit.isPending || draft.trim() === ""}
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+            >
+              {edit.isPending ? "Enregistrement…" : "Enregistrer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            >
+              Annuler
+            </button>
+          </div>
+          {edit.isError && (
+            <div className="mt-3">
+              <ErrorNotice error={edit.error} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Confirmation de régénération : écrase la lettre actuelle (y compris une édition). */}
+      {confirmRegen && (
+        <ConfirmDialog
+          label="Confirmer la régénération"
+          message="Régénérer remplacera la lettre actuelle, y compris vos éventuelles modifications manuelles. Continuer ?"
+          confirmLabel="Régénérer"
+          onCancel={() => setConfirmRegen(false)}
+          onConfirm={() =>
+            generate.mutate(
+              { regenerate: true },
+              { onSettled: () => setConfirmRegen(false) },
+            )
+          }
+        />
+      )}
+
+      {/* Confirmation de suppression. */}
+      {confirmDelete && (
+        <ConfirmDialog
+          label="Confirmer la suppression"
+          message="Supprimer définitivement la lettre de cette recommandation ?"
+          confirmLabel="Supprimer"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() =>
+            remove.mutate(undefined, { onSettled: () => setConfirmDelete(false) })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/** Petite modale de confirmation réutilisable (double consentement, cf. ApplicationConfirm). */
+function ConfirmDialog({
+  label,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  label: string;
+  message: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-label={label}
+      className="fixed inset-0 z-10 flex items-center justify-center bg-slate-900/30 p-4"
+    >
+      <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
+        <p className="text-sm text-slate-700">{message}</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
