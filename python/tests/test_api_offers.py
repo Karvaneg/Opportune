@@ -17,6 +17,7 @@ from app.offer_analysis import OfferAnalysisError
 from app.offer_store import OfferStore
 from app.profile_store import ProfileStore
 from app.recommendation_service import RecommendationService
+from app.url_fetch import EmptyContentError, UnsupportedUrlError, UrlUnreachableError
 from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
@@ -39,6 +40,19 @@ def _api(offer_intake, *, auth=None) -> HermesApi:
         runs=RunStore(conn),
     )
     return HermesApi(orchestrator, auth=auth, offer_intake=offer_intake)
+
+
+def _api_url(offer_url_intake, *, offer_intake=None, auth=None) -> HermesApi:
+    """API montée avec l'intake par URL (OPP-148), et éventuellement l'intake texte."""
+    conn = connect(":memory:")
+    orchestrator = HermesOrchestrator(
+        RecommendationService(ProfileStore(conn), OfferStore(conn)),
+        DecisionService(DecisionStore(conn)),
+        runs=RunStore(conn),
+    )
+    return HermesApi(
+        orchestrator, auth=auth, offer_intake=offer_intake, offer_url_intake=offer_url_intake
+    )
 
 
 def _hdr(token: str) -> dict:
@@ -128,3 +142,79 @@ def test_post_offers_requires_reviewer_role():
     assert api.dispatch("POST", "/offers", {"text": "x"}, _hdr("tok-view")).status == 403
     assert api.dispatch("POST", "/offers", {"text": "x"}, _hdr("tok-rev")).status == 201
     assert api.dispatch("POST", "/offers", {"text": "x"}, None).status == 401
+
+
+# --- Voie URL (OPP-148) ------------------------------------------------------
+
+def test_post_offers_by_url_creates_and_serializes():
+    captured = {}
+
+    def url_intake(url, *, source):
+        captured.update(url=url, source=source)
+        return _offer(title="Data Engineer", url=url)
+
+    resp = _api_url(url_intake).dispatch(
+        "POST", "/offers", {"url": "https://example.com/jobs/42"}, None
+    )
+    assert resp.status == 201
+    assert resp.body["title"] == "Data Engineer"
+    # Source par défaut = domaine de l'URL (utile au catalogue).
+    assert captured["source"] == "example.com"
+    assert captured["url"] == "https://example.com/jobs/42"
+
+
+def test_post_offers_url_explicit_source_kept():
+    seen = {}
+
+    def url_intake(url, *, source):
+        seen.update(source=source)
+        return _offer()
+
+    _api_url(url_intake).dispatch(
+        "POST", "/offers", {"url": "https://x.io/o", "source": "welcometothejungle"}, None
+    )
+    assert seen["source"] == "welcometothejungle"
+
+
+def test_post_offers_text_takes_precedence_over_url():
+    calls = {"text": 0, "url": 0}
+
+    def text_intake(raw_text, *, source, url=""):
+        calls["text"] += 1
+        return _offer()
+
+    def url_intake(url, *, source):
+        calls["url"] += 1
+        return _offer()
+
+    _api_url(url_intake, offer_intake=text_intake).dispatch(
+        "POST", "/offers", {"text": "coller", "url": "https://x.io/o"}, None
+    )
+    assert calls == {"text": 1, "url": 0}
+
+
+def test_post_offers_neither_text_nor_url_400():
+    assert _api_url(lambda *a, **k: _offer()).dispatch("POST", "/offers", {}, None).status == 400
+
+
+def test_post_offers_url_unsupported_is_400():
+    def url_intake(url, *, source):
+        raise UnsupportedUrlError("cible interne refusée")
+
+    resp = _api_url(url_intake).dispatch("POST", "/offers", {"url": "http://127.0.0.1/x"}, None)
+    assert resp.status == 400
+
+
+@pytest.mark.parametrize("err", [UrlUnreachableError("404"), EmptyContentError("vide")])
+def test_post_offers_url_fetch_failure_is_502(err):
+    def url_intake(url, *, source):
+        raise err
+
+    resp = _api_url(url_intake).dispatch("POST", "/offers", {"url": "https://x.io/o"}, None)
+    assert resp.status == 502
+
+
+def test_post_offers_url_absent_without_url_intake_404():
+    # Intake texte câblé mais pas l'intake URL : une requête URL seule → 404 neutre.
+    api = _api(lambda raw_text, *, source, url="": _offer())  # offer_url_intake absent
+    assert api.dispatch("POST", "/offers", {"url": "https://x.io/o"}, None).status == 404

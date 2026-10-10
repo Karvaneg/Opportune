@@ -66,6 +66,7 @@ from app.offer import Offer
 from app.offer_analysis import OfferAnalysisError
 from app.offer_normalization import normalize_contract, normalize_skills
 from app.recommendation_service import UnknownCandidateError
+from app.url_fetch import UnsupportedUrlError, UrlFetchError
 from hermes.models import HermesRun, HermesRunSummary, OfferEvaluation
 from hermes.orchestrator import HermesOrchestrator
 
@@ -78,6 +79,16 @@ class OfferIntake(Protocol):
     """
 
     def __call__(self, raw_text: str, *, source: str, url: str = "") -> Offer: ...
+
+
+class OfferUrlIntake(Protocol):
+    """Récupère une offre depuis son URL (fetch + extraction + intake), et la retourne (OPP-148).
+
+    Encapsule ``intake_offer_from_url`` lié à un ``LLMClient`` et un dépôt : l'API reste
+    transport-only et testable (on injecte un faux intake par URL, sans réseau ni Ollama).
+    """
+
+    def __call__(self, url: str, *, source: str) -> Offer: ...
 
 
 @dataclass(frozen=True)
@@ -134,6 +145,7 @@ class HermesApi:
         auth: AuthProvider | None = None,
         offer_intake: OfferIntake | None = None,
         letters: LetterService | None = None,
+        offer_url_intake: OfferUrlIntake | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -143,6 +155,9 @@ class HermesApi:
         # Intake d'offre collée (OPP-145). Optionnel : si absent (pas de LLM câblé), la route
         # POST /offers n'est pas montée (404). Injecté en prod, faux en test.
         self.offer_intake = offer_intake
+        # Intake d'offre par URL (OPP-148) : fetch + extraction + intake. Optionnel ; si absent,
+        # POST /offers avec un champ ``url`` seul répond 501 (le collage de texte reste possible).
+        self.offer_url_intake = offer_url_intake
         # Lettre de motivation (OPP-147). Optionnel : si absent (pas de LLM câblé), les routes
         # /recommendations/{id}/letter ne sont pas montées (404). Injecté en prod, faux en test.
         self.letters = letters
@@ -252,10 +267,9 @@ class HermesApi:
             # GET : catalogue des offres (toujours disponible, lecture du pool partagé).
             if method == "GET":
                 return self._get_offers(query, user)
-            # POST : intake d'offre collée, monté uniquement si un LLM est câblé (sinon 404).
+            # POST : intake par texte collé (OPP-145) ou par URL (OPP-148) ; la disponibilité
+            # de chaque voie est vérifiée dans le handler selon le champ fourni.
             if method == "POST":
-                if self.offer_intake is None:
-                    raise self._not_found(user, "intake d'offre non disponible")
                 return self._post_offers(body, user)
             raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
@@ -518,27 +532,73 @@ class HermesApi:
         return Response(200, self._serialize_run(run))
 
     def _post_offers(self, body: dict, user: User | None) -> Response:
-        """Ajoute une offre en collant son texte (OPP-145) : analyse LLM → persistance.
+        """Ajoute une offre, par **texte collé** (OPP-145) ou par **URL** (OPP-148).
 
         Curation du **pool partagé** d'offres : réservée au rôle ``reviewer`` (pas de
-        propriétaire à résoudre — l'offre n'est pas liée à un candidat). ``text`` obligatoire
-        (400 si vide) ; ``source`` (défaut « collée ») et ``url`` optionnels. Les erreurs
-        d'analyse LLM (réponse non exploitable, service indisponible) remontent en 502 pour
-        les distinguer d'une faute de saisie (400). L'id de l'offre dérive du texte (OPP-134)
-        → re-coller le même texte met à jour l'offre au lieu de la dupliquer.
+        propriétaire à résoudre — l'offre n'est pas liée à un candidat). Fournir **soit**
+        ``text`` (le texte de l'offre), **soit** ``url`` (le back récupère la page et en
+        extrait le texte) — ``text`` prime si les deux sont fournis. ``source`` est optionnel
+        (défaut « collée » pour le texte, le domaine pour une URL). Les erreurs d'analyse LLM
+        remontent en 502 (distinctes d'une faute de saisie, 400) ; côté URL, une cible interne
+        ou un schéma invalide est un 400, un échec de récupération (injoignable, bloqué, vide)
+        un 502. L'id de l'offre dérive du texte (OPP-134) → ni recoller ni refetcher ne duplique.
         """
         self._guard_reviewer(user)
         text = body.get("text")
-        if not isinstance(text, str) or text.strip() == "":
-            raise ApiError(400, "text est requis (le texte de l'offre)")
+        if isinstance(text, str) and text.strip() != "":
+            return self._post_offer_text(body, text, user)
+
+        url = body.get("url")
+        if isinstance(url, str) and url.strip() != "":
+            return self._post_offer_url(body, url.strip(), user)
+
+        raise ApiError(400, "text ou url est requis (le texte de l'offre, ou son URL)")
+
+    def _post_offer_text(self, body: dict, text: str, user: User | None) -> Response:
+        """Voie texte collé (OPP-145). ``url`` facultatif, purement informatif ici."""
+        if self.offer_intake is None:
+            # Voie non câblée : 404 neutre (comme une route non montée), cohérent avec /letter.
+            raise self._not_found(user, "intake d'offre par texte non disponible")
         source = body.get("source")
         source = source.strip() if isinstance(source, str) and source.strip() else "collée"
         url = body.get("url", "")
         if not isinstance(url, str):
             raise ApiError(400, "url doit être une chaîne")
-
         try:
             offer = self.offer_intake(text, source=source, url=url)
+        except ValueError as exc:
+            raise ApiError(400, str(exc))
+        except OfferAnalysisError as exc:
+            raise ApiError(502, f"analyse de l'offre non exploitable : {exc}")
+        except LLMError as exc:
+            raise ApiError(502, f"service d'analyse indisponible : {exc}")
+        return Response(201, self._serialize_offer(offer))
+
+    def _post_offer_url(self, body: dict, url: str, user: User | None) -> Response:
+        """Voie URL (OPP-148) : fetch + extraction + intake.
+
+        ``UnsupportedUrlError`` (schéma non http(s), cible interne/SSRF) → 400 (faute de
+        saisie) ; tout autre échec de récupération (``UrlUnreachableError``, ``BlockedError``,
+        ``EmptyContentError``) → 502 (la page n'a pu être exploitée). Erreurs d'analyse LLM :
+        502 comme la voie texte. Source par défaut = domaine de l'URL (utile au catalogue).
+        """
+        if self.offer_url_intake is None:
+            # Voie non câblée : 404 neutre (comme une route non montée), cohérent avec /letter.
+            raise self._not_found(user, "intake d'offre par URL non disponible")
+        source = body.get("source")
+        if not (isinstance(source, str) and source.strip()):
+            from urllib.parse import urlsplit
+
+            source = urlsplit(url).hostname or "url"
+        else:
+            source = source.strip()
+        try:
+            offer = self.offer_url_intake(url, source=source)
+        except UnsupportedUrlError as exc:
+            raise ApiError(400, f"URL refusée : {exc}")
+        except UrlFetchError as exc:
+            # UrlUnreachableError / BlockedError / EmptyContentError : récupération échouée.
+            raise ApiError(502, f"récupération de l'offre impossible : {exc}")
         except ValueError as exc:
             raise ApiError(400, str(exc))
         except OfferAnalysisError as exc:

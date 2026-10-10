@@ -15,7 +15,9 @@ WORKDIR /app
 #    uniquement quand pyproject change, pas à chaque modification de code).
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-cache-dir -e ".[dev]"
+# `scrape` inclus pour que les tests d'extraction HTML (OPP-148) s'exécutent en CI/Docker
+# plutôt que d'être sautés (importorskip bs4) ; le cœur métier reste sans dépendance.
+RUN pip install --no-cache-dir -e ".[dev,scrape]"
 
 # 2) Tests (copiés après l'install ; montés en volume en dev via docker-compose).
 COPY tests ./tests
