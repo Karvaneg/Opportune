@@ -144,6 +144,17 @@ def test_search_returns_offers_and_total_from_content_range():
     assert page.total == 1234
 
 
+def test_search_reads_total_from_lowercase_content_range():
+    # Régression : un serveur (HTTP/2, proxy…) peut renvoyer l'en-tête en minuscules. La
+    # lecture du total doit rester insensible à la casse, sinon la pagination se tronque.
+    body = json.dumps({"resultats": [{"id": "a"}, {"id": "b"}]})
+    client, _ = _client([HttpResponse(200, {"content-range": "offres 0-1/1234"}, body)])
+
+    page = client.search(token="tok", start=0, end=149)
+
+    assert page.total == 1234
+
+
 def test_search_treats_206_as_success():
     body = json.dumps({"resultats": [{"id": "x"}]})
     client, _ = _client([HttpResponse(206, {"Content-Range": "offres 0-0/9000"}, body)])

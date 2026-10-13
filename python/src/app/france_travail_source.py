@@ -30,16 +30,12 @@ from app.france_travail_client import (
     credentials_from_env,
 )
 from app.offer_source import RawOffer
+from app.source_support import assemble_raw_text, clamp
 
 # Provenance estampillée sur chaque offre (champ ``RawOffer.source``).
 SOURCE_NAME = "france-travail"
 # URL de détail candidat, repli quand l'offre ne porte pas de lien d'origine.
 _DETAIL_URL = "https://candidat.francetravail.fr/offres/recherche/detail/"
-
-
-def _clamp(value: int, low: int, high: int) -> int:
-    """Ramène ``value`` dans ``[low, high]`` (bornes incluses)."""
-    return max(low, min(value, high))
 
 
 def _offer_url(offer: dict) -> str:
@@ -61,30 +57,16 @@ def _offer_url(offer: dict) -> str:
 def _raw_text(offer: dict) -> str:
     """Recompose un texte d'offre lisible à partir des champs structurés de l'API.
 
-    En-tête (intitulé — entreprise), puis lieu et type de contrat, puis la description. Seules
-    les lignes renseignées sont conservées : une offre sans description reste exploitable par
-    l'intake (en-tête seul), et une offre entièrement vide produit un texte vide — que le socle
-    traitera comme un échec d'intake, pas comme une offre fantôme persistée.
+    Extrait les champs propres à France Travail (intitulé, entreprise, lieu, contrat,
+    description) puis délègue l'assemblage à ``assemble_raw_text`` (socle partagé).
     """
-    intitule = (offer.get("intitule") or "").strip()
-    entreprise = ((offer.get("entreprise") or {}).get("nom") or "").strip()
-    lieu = ((offer.get("lieuTravail") or {}).get("libelle") or "").strip()
-    contrat = (offer.get("typeContratLibelle") or offer.get("typeContrat") or "").strip()
-    description = (offer.get("description") or "").strip()
-
-    titre = f"{intitule} — {entreprise}" if intitule and entreprise else intitule or entreprise
-    header = [
-        ligne
-        for ligne in (
-            titre,
-            f"Lieu : {lieu}" if lieu else "",
-            f"Type de contrat : {contrat}" if contrat else "",
-        )
-        if ligne
-    ]
-    # En-tête (lignes renseignées) puis description, séparés par une ligne vide.
-    blocs = [bloc for bloc in ("\n".join(header), description) if bloc]
-    return "\n\n".join(blocs).strip()
+    return assemble_raw_text(
+        title=(offer.get("intitule") or "").strip(),
+        company=((offer.get("entreprise") or {}).get("nom") or "").strip(),
+        location=((offer.get("lieuTravail") or {}).get("libelle") or "").strip(),
+        contract=(offer.get("typeContratLibelle") or offer.get("typeContrat") or "").strip(),
+        description=(offer.get("description") or "").strip(),
+    )
 
 
 def _to_raw_offer(offer: dict) -> RawOffer:
@@ -109,8 +91,8 @@ class FranceTravailSource:
         filters: "Mapping[str, str] | None" = None,
     ) -> None:
         self._client = client
-        self._page_size = _clamp(page_size, 1, PAGE_SIZE_MAX)
-        self._max_offers = _clamp(max_offers, 1, WINDOW_MAX)
+        self._page_size = clamp(page_size, 1, PAGE_SIZE_MAX)
+        self._max_offers = clamp(max_offers, 1, WINDOW_MAX)
         self._filters = dict(filters) if filters else None
 
     def fetch(self) -> Iterator[RawOffer]:

@@ -27,6 +27,7 @@ from app.adzuna_client import (
     credentials_from_env,
 )
 from app.offer_source import RawOffer
+from app.source_support import assemble_raw_text, clamp
 
 # Provenance estampillée sur chaque offre (champ ``RawOffer.source``).
 SOURCE_NAME = "adzuna"
@@ -35,39 +36,22 @@ SOURCE_NAME = "adzuna"
 DEFAULT_MAX_OFFERS = 200
 
 
-def _clamp(value: int, low: int, high: int) -> int:
-    """Ramène ``value`` dans ``[low, high]`` (bornes incluses)."""
-    return max(low, min(value, high))
-
-
 def _raw_text(offer: dict) -> str:
     """Recompose un texte d'offre lisible à partir des champs structurés d'Adzuna.
 
-    En-tête (titre — entreprise), puis lieu et type de contrat, puis l'extrait de description.
-    Seules les lignes renseignées sont conservées : une offre sans description reste exploitable
-    (en-tête seul), une offre entièrement vide produit un texte vide — que le socle traitera
-    comme un échec d'intake, pas comme une offre fantôme persistée.
+    Extrait les champs propres à Adzuna (titre, entreprise, lieu, contrat, extrait de
+    description) puis délègue l'assemblage à ``assemble_raw_text`` (socle partagé).
     """
-    title = (offer.get("title") or "").strip()
-    company = ((offer.get("company") or {}).get("display_name") or "").strip()
-    location = ((offer.get("location") or {}).get("display_name") or "").strip()
     contract = " ".join(
         part for part in (offer.get("contract_type"), offer.get("contract_time")) if part
     ).strip()
-    description = (offer.get("description") or "").strip()
-
-    titre = f"{title} — {company}" if title and company else title or company
-    header = [
-        ligne
-        for ligne in (
-            titre,
-            f"Lieu : {location}" if location else "",
-            f"Type de contrat : {contract}" if contract else "",
-        )
-        if ligne
-    ]
-    blocs = [bloc for bloc in ("\n".join(header), description) if bloc]
-    return "\n\n".join(blocs).strip()
+    return assemble_raw_text(
+        title=(offer.get("title") or "").strip(),
+        company=((offer.get("company") or {}).get("display_name") or "").strip(),
+        location=((offer.get("location") or {}).get("display_name") or "").strip(),
+        contract=contract,
+        description=(offer.get("description") or "").strip(),
+    )
 
 
 def _to_raw_offer(offer: dict) -> RawOffer:
@@ -98,7 +82,7 @@ class AdzunaSource:
         permanent: bool = True,
     ) -> None:
         self._client = client
-        self._page_size = _clamp(page_size, 1, RESULTS_PER_PAGE_MAX)
+        self._page_size = clamp(page_size, 1, RESULTS_PER_PAGE_MAX)
         self._max_offers = max(1, max_offers)
         merged = dict(filters) if filters else {}
         if permanent:

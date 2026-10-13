@@ -169,5 +169,8 @@ class AdzunaClient:
         except json.JSONDecodeError as exc:
             raise AdzunaError("réponse de recherche illisible") from exc
         offers = tuple(payload.get("results") or ())
+        # ``count`` est le total réel annoncé ; Adzuna le renvoie tantôt entier, tantôt
+        # flottant. On accepte les deux (bool exclu) ; absent/illisible → repli sur ce qu'on a vu.
         total = payload.get("count")
-        return SearchPage(offers=offers, total=int(total) if isinstance(total, int) else len(offers))
+        usable_total = isinstance(total, (int, float)) and not isinstance(total, bool)
+        return SearchPage(offers=offers, total=int(total) if usable_total else len(offers))

@@ -102,6 +102,16 @@ def test_search_returns_offers_and_total_from_count():
     assert page.total == 137
 
 
+def test_search_reads_total_when_count_is_float():
+    # Régression : Adzuna renvoie parfois ``count`` en flottant. On doit l'accepter (sinon
+    # repli sur la taille de page → arrêt prématuré de la pagination dès la première page).
+    client, _ = _client([HttpResponse(200, json.dumps({"count": 137.0, "results": [{"id": "a"}]}))])
+
+    page = client.search(page=1, results_per_page=50)
+
+    assert page.total == 137
+
+
 def test_search_falls_back_to_seen_count_when_count_absent():
     client, _ = _client([HttpResponse(200, json.dumps({"results": [{"id": "a"}]}))])
 

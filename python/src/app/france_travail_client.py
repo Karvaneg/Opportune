@@ -142,6 +142,21 @@ def _default_transport(
         raise FranceTravailUnavailableError(f"API France Travail injoignable : {exc}") from exc
 
 
+def _header(headers: Mapping[str, str], name: str) -> "str | None":
+    """Lit un en-tête sans dépendre de la casse.
+
+    Le transport réel rend les en-têtes en ``dict`` simple (``dict(response.headers)``), ce qui
+    perd l'insensibilité à la casse qu'offrait ``http.client.HTTPMessage`` : une réponse qui
+    renverrait ``content-range`` en minuscules deviendrait introuvable et tronquerait la
+    pagination. On compare donc les clés en minuscules.
+    """
+    target = name.lower()
+    for key, value in headers.items():
+        if key.lower() == target:
+            return value
+    return None
+
+
 def _parse_total(content_range: "str | None", *, fallback: int) -> int:
     """Extrait le total de l'en-tête ``Content-Range: offres p-d/total`` ; repli sinon.
 
@@ -245,5 +260,5 @@ class FranceTravailClient:
         except json.JSONDecodeError as exc:
             raise FranceTravailError("réponse de recherche illisible") from exc
         offers = tuple(payload.get("resultats") or ())
-        total = _parse_total(response.headers.get("Content-Range"), fallback=start + len(offers))
+        total = _parse_total(_header(response.headers, "Content-Range"), fallback=start + len(offers))
         return SearchPage(offers=offers, total=total)
