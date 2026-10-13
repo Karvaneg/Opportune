@@ -284,7 +284,7 @@ après un `BatchReviewError` (ou une interruption) ne redouble jamais les cartes
 Si un message est supprimé côté Discord, `SubmissionStore.forget(recommendation_id)` autorise
 une re-soumission au prochain run.
 
-## Collecter des offres CDI réelles (OPP-120)
+## Collecter des offres réelles (OPP-120 / OPP-122)
 
 La collecte réelle branche une **source** (port `SourceOffres`) sur le socle de collecte
 (OPP-119) : dédoublonnage **avant** analyse LLM, normalisation, persistance. Chaque runner ne
@@ -292,6 +292,24 @@ fait que lire sa configuration, assembler sa source et lancer la passe (briques 
 `app.collection_runner`). Les runners affichent un bilan (collectées / persistées / doublons /
 échecs) et sortent en code non nul si la **source** a échoué (quota, réseau, identifiants) ;
 les échecs d'analyse **par offre** sont consignés sans interrompre la passe.
+
+### RSS — connecteur actif, sans secret
+
+`app.rss_runner` ingère des offres depuis des **flux RSS/Atom** d'alertes emploi (`app.rss_feed`
+parse RSS 2.0 / RDF / Atom ; `app.rss_source` fetch SSRF-safe + nettoyage HTML du contenu). Aucun
+identifiant requis : c'est le connecteur le plus simple et le plus pérenne.
+
+```bash
+export OPPORTUNE_LLM_TIMEOUT=300                # timeout LLM (s) pour l'analyse d'intake
+# OLLAMA_HOST / OLLAMA_MODEL / OPPORTUNE_DB_PATH : cf. sections dédiées
+
+python -m app.rss_runner --feed https://exemple.fr/offres.rss --feed https://autre.fr/flux.xml
+RSS_FEED_URLS="https://a.rss,https://b.xml" python -m app.rss_runner   # ou via l'environnement
+```
+
+Options : `--feed` (répétable) ou `RSS_FEED_URLS` (séparé par virgules/espaces), `--max` (plafond
+d'offres sur l'ensemble des flux, défaut 500). Les flux sont parcourus en séquence ; l'échec d'un
+flux (réseau, XML malformé) arrête la passe en `source_error`, les offres déjà émises restant acquises.
 
 ### Adzuna — connecteur actif
 
