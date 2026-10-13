@@ -16,7 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
-from app.offer import Offer
+from app.offer import Offer, compute_offer_id
 
 _COLUMNS = (
     "id",
@@ -82,6 +82,7 @@ class OfferStore:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute(_CREATE_TABLE)
         self._migrate_created_at()
+        self._migrate_offer_ids()
         self.conn.commit()
 
     def _migrate_created_at(self) -> None:
@@ -98,6 +99,45 @@ class OfferStore:
         self.conn.execute(
             "UPDATE offers SET created_at = ? WHERE created_at = ''", (_utcnow_iso(),)
         )
+
+    def _migrate_offer_ids(self) -> None:
+        """Recale les id sur le schéma d'identité courant (canonicalisation d'URL, OPP-119).
+
+        Les offres ingérées avant OPP-119 portent un id dérivé d'un schéma plus ancien
+        (URL minusculée *en entier*, slash final / ``utm_*`` / port par défaut conservés).
+        On recalcule l'id déterministe de chaque ligne à partir de ses ``source``/``url``/
+        ``raw_text`` stockés ; s'il a changé, on réécrit la clé. Deux liens qui
+        canonicalisent désormais vers le même id (« même offre, deux liens ») sont
+        **fusionnés** : la ligne la plus anciennement ingérée (``created_at``) fait foi.
+
+        Idempotent : une base déjà au schéma courant ne bouge pas (l'id recalculé est
+        identique), donc ré-exécuter à chaque ouverture est sans effet.
+        """
+        rows = self.conn.execute(
+            "SELECT id, source, url, raw_text, created_at FROM offers"
+        ).fetchall()
+        for row in rows:
+            new_id = compute_offer_id(row["source"], row["url"], row["raw_text"])
+            if new_id == row["id"]:
+                continue
+            existing = self.conn.execute(
+                "SELECT created_at FROM offers WHERE id = ?", (new_id,)
+            ).fetchone()
+            if existing is None:
+                self.conn.execute(
+                    "UPDATE offers SET id = ? WHERE id = ?", (new_id, row["id"])
+                )
+            elif (row["created_at"] or "") < (existing["created_at"] or ""):
+                # Collision : la ligne courante est la plus ancienne → elle remplace
+                # celle déjà sous le nouvel id.
+                self.conn.execute("DELETE FROM offers WHERE id = ?", (new_id,))
+                self.conn.execute(
+                    "UPDATE offers SET id = ? WHERE id = ?", (new_id, row["id"])
+                )
+            else:
+                # La ligne déjà présente sous le nouvel id est au moins aussi ancienne :
+                # on écarte le doublon courant.
+                self.conn.execute("DELETE FROM offers WHERE id = ?", (row["id"],))
 
     def save(self, offer: Offer) -> None:
         """Insère l'offre ou met à jour la ligne existante (upsert sur ``id``).

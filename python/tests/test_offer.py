@@ -46,6 +46,14 @@ def test_compute_offer_id_ignores_whitespace_reformatting_of_raw_text():
     )
 
 
+def test_compute_offer_id_dedups_same_url_differing_only_by_tracking():
+    # OPP-119 : deux liens vers la même offre ne différant que par des paramètres de
+    # tracking (et un slash final) donnent le même id — via la canonicalisation d'URL.
+    assert compute_offer_id("indeed", "https://x.com/job/42?utm_source=li", "t A") == (
+        compute_offer_id("indeed", "https://x.com/job/42/#apply", "t B autre")
+    )
+
+
 def test_compute_offer_id_disambiguates_distinct_raw_texts_without_url():
     # Sans url, deux textes d'offre réellement différents ne se télescopent pas
     # (sinon écrasement silencieux).

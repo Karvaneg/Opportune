@@ -24,22 +24,26 @@ from app.offer_normalization import (
     normalize_location,
     normalize_skills,
 )
+from app.url_canonical import canonicalize_url
 
 
 def compute_offer_id(source: str, url: str, raw_text: str) -> str:
     """Identifiant stable d'une offre, indépendant de toute sortie du LLM.
 
-    Quand une ``url`` est fournie, elle sert seule de discriminant (avec la
-    ``source``) : l'id reste **stable** même si le LLM reformule le titre à la
-    ré-analyse. Sans url (offre collée), on retombe sur le ``raw_text`` d'origine —
-    invariant déterministe, antérieur à l'analyse : ré-ingérer le même texte donne le
-    même id (donc un upsert, pas un doublon), quelle que soit la reformulation du LLM.
+    Quand une ``url`` est fournie, sa forme **canonique** (``canonicalize_url``) sert
+    seule de discriminant (avec la ``source``) : l'id reste **stable** même si le LLM
+    reformule le titre à la ré-analyse, et deux liens vers la même offre qui ne diffèrent
+    que par des paramètres de tracking (``utm_*``…), l'ordre des paramètres ou un slash
+    final donnent le **même** id (dédup « même offre, deux liens » — OPP-119). Sans url
+    (offre collée), on retombe sur le ``raw_text`` d'origine — invariant déterministe,
+    antérieur à l'analyse : ré-ingérer le même texte donne le même id (donc un upsert, pas
+    un doublon), quelle que soit la reformulation du LLM.
 
     Le texte brut est **normalisé** (casse ignorée, suites d'espaces/retours ligne
     réduites à une espace) pour qu'un simple reformatage du collage — repli de lignes,
     espaces en trop — ne fabrique pas une offre distincte.
     """
-    identity = url.strip().lower() or " ".join(raw_text.split()).lower()
+    identity = canonicalize_url(url) or " ".join(raw_text.split()).lower()
     key = source.strip().lower() + "\n" + identity
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
