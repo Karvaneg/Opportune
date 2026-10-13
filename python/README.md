@@ -284,34 +284,51 @@ après un `BatchReviewError` (ou une interruption) ne redouble jamais les cartes
 Si un message est supprimé côté Discord, `SubmissionStore.forget(recommendation_id)` autorise
 une re-soumission au prochain run.
 
-## Collecter des offres CDI réelles (France Travail)
+## Collecter des offres CDI réelles (OPP-120)
 
-`app.france_travail_runner` est le premier connecteur de **collecte réelle** (OPP-120) : il
-interroge l'API officielle France Travail « Offres d'emploi v2 », puis alimente le socle de
-collecte (OPP-119) — dédoublonnage **avant** analyse LLM, normalisation, persistance. La
-source (`app.france_travail_source`) implémente le port `SourceOffres` ; le runner ne fait que
-la câbler au client LLM et au dépôt d'offres.
+La collecte réelle branche une **source** (port `SourceOffres`) sur le socle de collecte
+(OPP-119) : dédoublonnage **avant** analyse LLM, normalisation, persistance. Chaque runner ne
+fait que lire sa configuration, assembler sa source et lancer la passe (briques communes dans
+`app.collection_runner`). Les runners affichent un bilan (collectées / persistées / doublons /
+échecs) et sortent en code non nul si la **source** a échoué (quota, réseau, identifiants) ;
+les échecs d'analyse **par offre** sont consignés sans interrompre la passe.
 
-Prérequis : créer une application sur [francetravail.io](https://francetravail.io), souscrire à
-l'API « Offres d'emploi v2 », et renseigner ses identifiants OAuth2 (cf. `.env.example`).
+### Adzuna — connecteur actif
+
+`app.adzuna_runner` interroge l'[API Adzuna](https://developer.adzuna.com) (marché français),
+en ciblant par défaut les contrats permanents (≈ CDI). Inscription gratuite et instantanée sur
+developer.adzuna.com : l'`app_id` et l'`app_key` sont affichés aussitôt (cf. `.env.example`).
+
+```bash
+export ADZUNA_APP_ID=...                        # requis
+export ADZUNA_APP_KEY=...                        # requis
+export OPPORTUNE_LLM_TIMEOUT=300                # timeout LLM (s) pour l'analyse d'intake
+# OLLAMA_HOST / OLLAMA_MODEL / OPPORTUNE_DB_PATH : cf. sections dédiées
+
+python -m app.adzuna_runner --what "python" --where "Paris" --max 100
+python -m app.adzuna_runner --tous-contrats     # ne pas restreindre aux CDI
+```
+
+Options : `--what`, `--where` (filtres de recherche), `--max` (plafond d'offres, défaut 200 —
+modéré pour ménager le quota gratuit de 2 500 appels/mois), `--tous-contrats` (lève le filtre
+CDI). Le runner pagine jusqu'au total annoncé (`count`) ou au plafond.
+
+### France Travail — connecteur dormant
+
+`app.france_travail_runner` interroge l'API officielle France Travail « Offres d'emploi ».
+⚠️ **Cette API n'est plus en accès self-service** : elle a été restreinte (usage automatisé/IA
+massif) et nécessite désormais une demande d'accès + l'acceptation d'un contrat de licence sur
+[francetravail.io](https://francetravail.io). Le connecteur est **prêt mais inactif** tant que
+l'accès n'est pas accordé.
 
 ```bash
 export FRANCE_TRAVAIL_CLIENT_ID=...             # requis : identifiant de l'application
 export FRANCE_TRAVAIL_CLIENT_SECRET=...         # requis : secret (SECRET, jamais en dur)
-export OPPORTUNE_LLM_TIMEOUT=300                # timeout LLM (s) pour l'analyse d'intake
-# OLLAMA_HOST / OLLAMA_MODEL / OPPORTUNE_DB_PATH : cf. sections dédiées
 
-python -m app.france_travail_runner                              # toutes les offres CDI (fenêtre ~1150)
 python -m app.france_travail_runner --mots-cles "python" --max 150
 python -m app.france_travail_runner --code-rome M1805 --commune 75056
 ```
 
-Options : `--mots-cles`, `--code-rome`, `--commune` (filtres passés à la recherche), `--max`
-(plafond d'offres, borné à la fenêtre dure ~1150 de l'API). Le runner affiche un bilan
-(collectées / persistées / doublons / échecs) et sort en code non nul si la **source** a
-échoué (quota 429, réseau, identifiants) — visible dans un ordonnanceur. Les échecs d'analyse
-**par offre** sont consignés sans interrompre la passe (résilience du socle OPP-119).
-
-> Le runner enchaîne les pages (`range` de 150) jusqu'au total annoncé ou à la fenêtre dure de
-> l'API (~1150 offres). Dépasser cette fenêtre (fragmentation par date/département) est hors
-> périmètre de ce premier connecteur.
+Options : `--mots-cles`, `--code-rome`, `--commune`, `--max` (plafond borné à la fenêtre dure
+de l'API, `range` ≤ 1000/1149, soit ~1150 offres par requête ; au-delà il faudrait fragmenter
+par date/département, hors périmètre).

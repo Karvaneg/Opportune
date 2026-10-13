@@ -20,12 +20,12 @@ import argparse
 import os
 from typing import Mapping
 
+from app.collection_runner import format_report, run_collection
 from app.db import connect
 from app.france_travail_client import WINDOW_MAX
 from app.france_travail_source import build_france_travail_source
 from app.llm import resolve_llm_timeout
 from app.llm_client import LLMClient, OllamaLLMClient
-from app.offer_collection import CollectionReport, collect_offers
 from app.offer_source import SourceOffres
 from app.offer_store import OfferRepository, OfferStore
 
@@ -40,20 +40,6 @@ def _filters_from_args(args: argparse.Namespace) -> dict[str, str]:
     return {key: value for key, value in mapping.items() if value}
 
 
-def run_france_travail_collection(
-    *,
-    source: SourceOffres,
-    llm_client: LLMClient,
-    store: OfferRepository,
-) -> CollectionReport:
-    """Lance une passe de collecte sur une source déjà assemblée ; retourne le bilan.
-
-    Fine enveloppe autour de ``collect_offers`` : présente pour offrir un point d'injection
-    testable (source/LLM/dépôt factices) partagé par ``main`` et les tests.
-    """
-    return collect_offers(source, client=llm_client, store=store)
-
-
 def _build_defaults(
     env: Mapping[str, str], args: argparse.Namespace
 ) -> "tuple[SourceOffres, LLMClient, OfferRepository]":
@@ -64,21 +50,6 @@ def _build_defaults(
     llm_client = OllamaLLMClient(timeout=resolve_llm_timeout(env))
     store = OfferStore(connect())
     return source, llm_client, store
-
-
-def _format_report(report: CollectionReport) -> str:
-    """Rend le bilan de collecte en une synthèse lisible pour la sortie console."""
-    lines = [
-        f"Collectées : {report.collected}",
-        f"Persistées : {report.stored}",
-        f"Doublons   : {report.duplicates}",
-        f"Échecs     : {len(report.failures)}",
-    ]
-    if report.source_error:
-        lines.append(f"Erreur source : {report.source_error}")
-    for failure in report.failures:
-        lines.append(f"  - échec {failure.raw.url or '(sans url)'} : {failure.error}")
-    return "\n".join(lines)
 
 
 def main(argv: "list[str] | None" = None) -> int:
@@ -97,8 +68,8 @@ def main(argv: "list[str] | None" = None) -> int:
     args = parser.parse_args(argv)
 
     source, llm_client, store = _build_defaults(os.environ, args)
-    report = run_france_travail_collection(source=source, llm_client=llm_client, store=store)
-    print(_format_report(report))
+    report = run_collection(source, llm_client=llm_client, store=store)
+    print(format_report(report))
     return 1 if report.source_error else 0
 
 
