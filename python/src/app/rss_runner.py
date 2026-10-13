@@ -12,6 +12,11 @@ Exécution ::
 Les flux proviennent des options ``--feed`` (répétables) ou de la variable ``RSS_FEED_URLS``
 (séparée par des virgules). Tout collaborateur est injectable (via ``collection_runner``) : une
 passe se teste sans réseau ni Ollama.
+
+Contrairement aux autres connecteurs, celui-ci **requiert l'extra ``scrape``** (BeautifulSoup) :
+le contenu d'un article RSS est du HTML que ``rss_source`` nettoie avant l'intake. On le vérifie
+en amont — faute de quoi *chaque* offre échouerait, et toute la passe remonterait en
+``source_error`` avec un message peu parlant.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+from importlib.util import find_spec
 from typing import Mapping
 
 from app.collection_runner import format_report, run_collection
@@ -40,6 +46,15 @@ def _feeds_from(args: argparse.Namespace, env: Mapping[str, str]) -> list[str]:
     return [url for url in _FEED_SPLIT.split(raw) if url]
 
 
+def _scrape_extra_missing() -> bool:
+    """L'extra ``scrape`` (BeautifulSoup) — requis pour nettoyer le HTML des flux — est-il absent ?
+
+    Sonde la disponibilité du module sans l'importer (``find_spec``), pour échouer vite et clair
+    plutôt que de laisser ``extract_offer_text`` lever offre après offre.
+    """
+    return find_spec("bs4") is None
+
+
 def main(argv: "list[str] | None" = None) -> int:
     """Point d'entrée CLI : assemble depuis les flux, lance la passe, affiche le bilan.
 
@@ -56,6 +71,13 @@ def main(argv: "list[str] | None" = None) -> int:
     feeds = _feeds_from(args, os.environ)
     if not feeds:
         print("Aucun flux : passez --feed <url> ou définissez RSS_FEED_URLS.")
+        return 1
+
+    if _scrape_extra_missing():
+        print(
+            "Extra 'scrape' manquant : le nettoyage HTML du contenu RSS en dépend. "
+            'Installez-le avec `pip install -e ".[scrape]"`.'
+        )
         return 1
 
     source = build_rss_source(feeds, max_offers=args.max)

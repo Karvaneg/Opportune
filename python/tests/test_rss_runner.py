@@ -34,3 +34,10 @@ def test_main_returns_1_without_feeds(monkeypatch, capsys):
     monkeypatch.delenv("RSS_FEED_URLS", raising=False)
     assert main([]) == 1
     assert "Aucun flux" in capsys.readouterr().out
+
+
+def test_main_returns_1_when_scrape_extra_missing(monkeypatch, capsys):
+    # Flux fourni mais extra 'scrape' absent : on échoue vite, avant tout réseau/LLM/DB.
+    monkeypatch.setattr("app.rss_runner._scrape_extra_missing", lambda: True)
+    assert main(["--feed", "https://exemple.fr/offres.rss"]) == 1
+    assert "scrape" in capsys.readouterr().out

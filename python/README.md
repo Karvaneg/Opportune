@@ -299,7 +299,11 @@ les échecs d'analyse **par offre** sont consignés sans interrompre la passe.
 parse RSS 2.0 / RDF / Atom ; `app.rss_source` fetch SSRF-safe + nettoyage HTML du contenu). Aucun
 identifiant requis : c'est le connecteur le plus simple et le plus pérenne.
 
+Le contenu d'un article RSS étant du HTML, ce runner **requiert l'extra `scrape`** (BeautifulSoup) ;
+il échoue d'emblée avec un message clair s'il est absent.
+
 ```bash
+pip install -e ".[scrape]"                       # requis : nettoyage HTML du contenu des flux
 export OPPORTUNE_LLM_TIMEOUT=300                # timeout LLM (s) pour l'analyse d'intake
 # OLLAMA_HOST / OLLAMA_MODEL / OPPORTUNE_DB_PATH : cf. sections dédiées
 
