@@ -3,10 +3,12 @@
 Base SQLite en mémoire (``:memory:``) : aucune I/O disque, aucun réseau.
 """
 
+import hashlib
+
 import pytest
 
 from app.db import connect
-from app.offer import Offer
+from app.offer import Offer, compute_offer_id
 from app.offer_store import OfferRepository, OfferStore
 
 
@@ -123,14 +125,79 @@ def test_migrates_legacy_table_without_created_at():
         "contract_type TEXT NOT NULL, summary TEXT NOT NULL, attention_points TEXT NOT NULL, "
         "source TEXT NOT NULL, url TEXT NOT NULL, raw_text TEXT NOT NULL)"
     )
+    # Id dérivé du schéma (une vraie ligne historique n'a jamais un id littéral) : pour
+    # ``http://x``, la forme canonique vaut l'ancienne → la migration d'id (OPP-119) est un
+    # no-op et ce test reste focalisé sur le seul backfill ``created_at``.
+    legacy_id = compute_offer_id("indeed", "http://x", "t")
     conn.execute(
         "INSERT INTO offers VALUES "
-        "('legacy','Dev','Acme','Paris','[]','Senior','CDI','s','[]','indeed','http://x','t')"
+        "(?,'Dev','Acme','Paris','[]','Senior','CDI','s','[]','indeed','http://x','t')",
+        (legacy_id,),
     )
     conn.commit()
 
     store = OfferStore(conn)  # déclenche la migration
-    fetched = store.get("legacy")
+    fetched = store.get(legacy_id)
     assert fetched is not None
     assert fetched.created_at != ""  # ligne historique datée (backfill)
     conn.close()
+
+
+def test_migrates_legacy_offer_ids_to_canonical_scheme():
+    # Offre ingérée avant OPP-119 : id dérivé du schéma ancien (URL minusculée en entier,
+    # slash final conservé). L'ouverture doit recaler l'id sur le schéma canonique courant,
+    # pour que la ré-ingestion de la même URL upsert au lieu de dupliquer.
+    conn = connect(":memory:")
+    OfferStore(conn)  # crée la table au schéma courant
+    url = "https://x.com/Job/42/"
+    legacy_id = hashlib.sha256(
+        ("indeed\n" + url.strip().lower()).encode("utf-8")
+    ).hexdigest()[:16]
+    conn.execute(
+        "INSERT INTO offers (id, title, company, location, skills, seniority, "
+        "contract_type, summary, attention_points, source, url, raw_text, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (legacy_id, "Dev", "Acme", "Paris", "[]", "Senior", "CDI", "s", "[]",
+         "indeed", url, "t", "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+
+    OfferStore(conn)  # ré-ouverture → migration des id
+    canonical_id = compute_offer_id("indeed", url, "t")
+    assert canonical_id != legacy_id  # le schéma a bien changé
+    assert store_get(conn, canonical_id) is not None
+    assert store_get(conn, legacy_id) is None
+    conn.close()
+
+
+def test_migrates_legacy_ids_merging_collisions_keeps_oldest():
+    # Deux liens de la MÊME offre (slash final) stockés sous deux id anciens distincts :
+    # la migration les fusionne vers l'unique id canonique, la plus ancienne faisant foi.
+    conn = connect(":memory:")
+    OfferStore(conn)
+    for url, created in (
+        ("https://x.com/job/9", "2026-01-01T00:00:00+00:00"),   # plus ancienne
+        ("https://x.com/job/9/", "2026-02-01T00:00:00+00:00"),  # doublon plus récent
+    ):
+        legacy_id = hashlib.sha256(
+            ("indeed\n" + url.strip().lower()).encode("utf-8")
+        ).hexdigest()[:16]
+        conn.execute(
+            "INSERT INTO offers (id, title, company, location, skills, seniority, "
+            "contract_type, summary, attention_points, source, url, raw_text, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (legacy_id, "Dev", "Acme", "Paris", "[]", "Senior", "CDI", "s", "[]",
+             "indeed", url, "t", created),
+        )
+    conn.commit()
+
+    store = OfferStore(conn)  # migration + fusion
+    assert store.count() == 1
+    survivor = store.get(compute_offer_id("indeed", "https://x.com/job/9", "t"))
+    assert survivor is not None
+    assert survivor.created_at == "2026-01-01T00:00:00+00:00"  # la plus ancienne survit
+    conn.close()
+
+
+def store_get(conn, offer_id):
+    return conn.execute("SELECT 1 FROM offers WHERE id = ?", (offer_id,)).fetchone()
