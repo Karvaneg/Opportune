@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { ApiHttpError } from "./api/client";
+import { createAuthAwareQueryClient } from "./api/queryClient";
 import { useAuth } from "./auth/AuthContext";
+import type { Me } from "./api/types";
 import { LoginGate } from "./pages/LoginGate";
 import { OffersPage } from "./pages/OffersPage";
 import { RecommendationPage } from "./pages/RecommendationPage";
@@ -17,23 +18,7 @@ function navClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function App() {
-  const { status, token, identity, logout } = useAuth();
-
-  // Un 401 sur n'importe quelle requête → purge du jeton (retour à la barrière de login).
-  const queryClient = useMemo(
-    () =>
-      new QueryClient({
-        queryCache: new QueryCache({
-          onError: (error) => {
-            if (error instanceof ApiHttpError && error.status === 401) logout();
-          },
-        }),
-        defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
-      }),
-    // Recréé à chaque changement de jeton → cache neuf par session : un nouveau login
-    // (même erroné) ne réaffiche jamais les données mises en cache d'une session précédente.
-    [token, logout],
-  );
+  const { status, token, identity, logout, expireSession } = useAuth();
 
   // Plein-écran réservé à la **revérification au démarrage** d'un jeton stocké (`token`
   // déjà présent, encore en `checking`). Pendant un login interactif, `token` est null
@@ -47,6 +32,25 @@ export function App() {
   }
 
   if (status !== "authenticated") return <LoginGate />;
+
+  // Sous-arbre monté uniquement pendant une session authentifiée : le `QueryClient` y naît
+  // et meurt avec la session (démonté au logout/expiration), garantissant un cache neuf par
+  // session sans le recréer à chaque transition de `token`.
+  return <AuthenticatedApp identity={identity} logout={logout} expireSession={expireSession} />;
+}
+
+function AuthenticatedApp({
+  identity,
+  logout,
+  expireSession,
+}: {
+  identity: Me | null;
+  logout: () => void;
+  expireSession: () => void;
+}) {
+  // Un 401 sur n'importe quelle requête (lecture ou écriture) → fin de session : purge du
+  // jeton et retour à la barrière de login, avec message d'expiration (cf. expireSession).
+  const queryClient = useMemo(() => createAuthAwareQueryClient(expireSession), [expireSession]);
 
   return (
     <QueryClientProvider client={queryClient}>
