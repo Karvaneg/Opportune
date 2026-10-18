@@ -5,7 +5,9 @@ import { useApiMutation } from "./mutations";
 import type { OffersCatalogPage, OfferSummary, RecommendationDetail } from "./types";
 
 // Clé de cache du catalogue : page + candidat ciblé (chaque combinaison a son cache).
+// `all` est le préfixe commun (invalidation de toutes les pages/candidats, cf. `useAddOffer`).
 export const offerKeys = {
+  all: ["offers"] as const,
   catalog: (page: number, candidateId: string) => ["offers", page, candidateId] as const,
 };
 
@@ -39,11 +41,14 @@ export interface AddOfferVariables {
  * Ajoute une offre, par texte collé (OPP-145) ou par URL (OPP-148) : `POST /offers`. Le back
  * analyse via LLM puis persiste (id dérivé du texte → pas de doublon). Latence LLM (+ fetch
  * pour une URL) → l'appelant gère l'attente. Erreurs remontées telles quelles : 400 (saisie
- * ou URL refusée/SSRF), 502 (analyse/LLM, ou récupération de l'URL impossible).
+ * ou URL refusée/SSRF), 502 (analyse/LLM, ou récupération de l'URL impossible). Au succès,
+ * invalide le catalogue (préfixe `["offers"]`, toutes pages/candidats) pour que la nouvelle
+ * offre y apparaisse sans rechargement (OPP-161).
  */
 export function useAddOffer() {
   return useApiMutation<OfferSummary, AddOfferVariables>({
     mutationFn: (variables, token) => apiPost<OfferSummary>("/offers", token, variables),
+    invalidateKeys: () => [offerKeys.all],
   });
 }
 
