@@ -286,7 +286,7 @@ function ApplicationConfirm({
       </h3>
 
       {applied ? (
-        <div className="rounded-md bg-emerald-100 p-3">
+        <div className="flex items-center justify-between gap-3 rounded-md bg-emerald-100 p-3">
           <p className="text-sm text-emerald-900">
             🎉 Tu as candidaté à cette offre
             {appliedAt ? ` — le ${formatDay(appliedAt)}` : ""}.
@@ -295,9 +295,11 @@ function ApplicationConfirm({
             type="button"
             onClick={() => unmarkApplied.mutate()}
             disabled={unmarkApplied.isPending}
-            className="mt-2 text-xs font-medium text-emerald-800 underline hover:text-emerald-900 disabled:opacity-50"
+            aria-label="Annuler la candidature"
+            title="Annuler la candidature (je n'ai pas candidaté)"
+            className="shrink-0 text-lg font-bold leading-none text-red-600 hover:text-red-700 disabled:opacity-50"
           >
-            Annuler (je n'ai pas candidaté)
+            ✕
           </button>
         </div>
       ) : noted ? (
