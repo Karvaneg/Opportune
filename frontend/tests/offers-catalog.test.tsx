@@ -121,4 +121,84 @@ describe("OffersPage", () => {
     expect(await screen.findByText("Sans score")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
   });
+
+  // --- Ajout d'offre, déplacé de « Runs » vers « Offres » (OPP-161) ---
+
+  it("ajoute une offre en collant son texte (POST /offers) et affiche le résultat", async () => {
+    const calls: { body: { text?: string; url?: string } }[] = [];
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/offers") && init?.method === "POST") {
+          calls.push({ body: JSON.parse(String(init?.body ?? "{}")) });
+          return okJson({ id: "o1", title: "Data Engineer", company: "Holis" });
+        }
+        return okJson(CATALOG); // GET /offers
+      }),
+    );
+    renderOffers();
+    await screen.findByText("Full-stack"); // catalogue chargé
+
+    await userEvent.type(screen.getByLabelText("Texte de l'offre"), "Nous recrutons un Data Engineer");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter l'offre" }));
+
+    expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.text).toContain("Data Engineer");
+  });
+
+  it("ajoute une offre par URL (POST /offers avec url) quand le texte est vide", async () => {
+    const calls: { body: { text?: string; url?: string } }[] = [];
+    const okJson = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/offers") && init?.method === "POST") {
+          calls.push({ body: JSON.parse(String(init?.body ?? "{}")) });
+          return okJson({ id: "o1", title: "Data Engineer", company: "Holis" });
+        }
+        return okJson(CATALOG);
+      }),
+    );
+    renderOffers();
+    await screen.findByText("Full-stack");
+
+    await userEvent.type(screen.getByLabelText("URL de l'offre"), "https://example.com/jobs/42");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter l'offre" }));
+
+    expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.url).toBe("https://example.com/jobs/42");
+    expect(calls[0].body.text).toBeUndefined();
+  });
+
+  it("ne montre pas « Ajouter une offre » à un non-reviewer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve(
+              String(url).includes("/me")
+                ? { id: "u", role: "candidate", owned_count: 1, owned_candidate_ids: ["cand-1"] }
+                : CATALOG,
+            ),
+        } as Response),
+      ),
+    );
+    renderOffers();
+    await screen.findByText("Full-stack");
+    expect(screen.queryByLabelText("Texte de l'offre")).toBeNull();
+  });
 });
