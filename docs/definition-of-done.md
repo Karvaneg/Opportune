@@ -7,25 +7,29 @@
 ## 1. Fonctionnel
 
 - [ ] Le **critère d'acceptation** du ticket est satisfait et vérifié.
-- [ ] Le comportement est **déterministe** (heuristique + JSON), sans LLM ni
-      dépendance à la stack cible tant qu'elle n'est pas explicitement engagée.
+- [ ] La **logique métier** (matching, scoring, normalisation) reste **pure, déterministe
+      et testable sans LLM ni réseau** ; les appels LLM (Ollama/Ministral, pour l'analyse
+      et la rédaction) passent par un contrat injectable, mocké dans les tests.
 - [ ] Les cas limites et les entrées vides/incomplètes sont gérés proprement.
 
 ## 2. Code
 
-- [ ] **Une responsabilité par fichier** : modèles purs (`models/`), persistance
-      (`*Store.js`), logique (`services/`) ; chaque dossier expose un barrel `index.js`.
+- [ ] **Une responsabilité par fichier** sous `python/src/app/` : fonctions pures,
+      services (`*_service.py`) et dépôts SQLite (`*_store.py`) séparés.
 - [ ] Réutilisation avant duplication (ex. lexique de compétences partagé).
 - [ ] Commentaires **en français**, densité et style cohérents avec l'existant.
-- [ ] Aucune **dépendance externe** ajoutée sans justification explicite.
-- [ ] **Erreurs typées** (`src/errors`) là où l'appelant doit distinguer les cas.
+- [ ] Aucune **dépendance externe** ajoutée sans justification explicite : le cœur vise
+      zéro dépendance, les extras (`scrape`, `discord`) restent confinés et importés paresseusement.
+- [ ] **Erreurs typées** (exceptions dédiées) là où l'appelant doit distinguer les cas.
 
 ## 3. Tests
 
-- [ ] Tests **co-localisés** `*.test.js` avec `node:test`, couvrant le cas nominal,
-      les cas limites et les erreurs.
-- [ ] `npm test` (`node --test`) **entièrement au vert**, sans test ignoré.
-- [ ] Les tests n'écrivent pas dans les données réelles (fichiers temporaires).
+- [ ] Tests sous `python/tests/`, avec `pytest`, couvrant le cas nominal, les cas
+      limites et les erreurs.
+- [ ] `pytest` **entièrement au vert**, sans test ignoré (venv `python/.venv/bin/pytest`
+      ou `docker compose run --rm app pytest`).
+- [ ] Les tests n'écrivent pas dans les données réelles (SQLite en mémoire / fichiers
+      temporaires) et ne dépendent pas du réseau.
 
 ## 4. Fidélité et sécurité
 

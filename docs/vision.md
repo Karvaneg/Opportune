@@ -3,10 +3,12 @@
 > ℹ️ Ce document décrit la **vision produit** et la **stack cible** d'Opportune.
 > L'implémentation actuelle est la **V2 Python** (cœur métier, orchestrateur Hermes,
 > API HTTP — bibliothèque standard, SQLite), qui réalise déjà une bonne partie de cette
-> cible : scoring des offres, génération de lettre de motivation (Ollama/Ministral) et
-> validation humaine via Discord (cœur composé et testé). Restent notamment en chantier
-> la **collecte réelle** des offres, le **CV adapté** et le message LinkedIn, et le
-> **récepteur Discord live**. L'ancienne implémentation Node.js/JSON n'a plus cours.
+> cible : **collecte réelle** d'offres (Adzuna, flux RSS, ajout par URL), scoring des
+> offres, génération de lettre de motivation (Ollama/Ministral) et validation humaine
+> via un **frontend web** (React/Vite) — la validation Discord (push-to-triage, récepteur
+> live inclus) reste disponible mais n'est plus l'interface courante. Restent notamment en
+> chantier le **CV adapté** et le **message LinkedIn**. L'ancienne implémentation
+> Node.js/JSON n'a plus cours.
 
 ## Objectif
 
@@ -27,7 +29,8 @@ offre sélectionnée → dossier personnalisé → validation → envoi manuel o
 | **Ministral + Ollama**    | Analyse et rédaction                          |
 | **Anthropic**             | Contrôle qualité des candidatures importantes |
 | **Kyutai**                | Commandes vocales et notes vocales            |
-| **Discord**               | Interface de validation (push-to-triage, MVP) |
+| **Frontend web**          | Interface de validation courante (React/Vite) |
+| **Discord**               | Validation push-to-triage (MVP historique)    |
 | **SQLite**                | Suivi des offres et candidatures              |
 | **Python / Docker / WSL** | Orchestration                                 |
 
