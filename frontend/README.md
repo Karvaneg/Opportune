@@ -1,17 +1,20 @@
 # Opportune — Frontend (Hermes)
 
-Dashboard interne de consultation des runs Hermes. Consomme l'API Python
-(`python/src/api`). Stack : React 19 + TypeScript + Vite, Tailwind v4, TanStack Query,
-React Router, Vitest + Testing Library.
+Dashboard interne Hermes : consultation des runs **et** actions de candidature validées
+(décision, lettre de motivation, ajout d'offre). Consomme l'API Python (`python/src/api`).
+Stack : React 19 + TypeScript + Vite, Tailwind v4, TanStack Query, React Router,
+Vitest + Testing Library.
 
-## Périmètre (OPP-100)
+## Périmètre
 
-- Page `/runs/:runId` : métadonnées du run, évaluations, erreurs, et recommandations
-  paginées (lecture seule).
-- Auth MVP : jeton saisi dans l'UI → `authStorage` (localStorage) → `Authorization: Bearer`.
-  Déconnexion explicite + purge automatique du jeton sur `401`.
-- Le listing des runs (`GET /runs`) est **hors périmètre** → OPP-101.
-- Le durcissement de l'auth (session) → OPP-102.
+- **Login** (`LoginGate`) : jeton saisi dans l'UI → session (`authStorage`, localStorage) →
+  `Authorization: Bearer` ; déconnexion explicite + purge automatique du jeton sur `401` (OPP-102).
+- **Runs** : liste paginée (`/`) et détail d'un run (`/runs/:runId`) — métadonnées,
+  évaluations, erreurs, recommandations paginées.
+- **Catalogue d'offres** (`/offres`) : tout le stock, annoté du **score de match** (calcul
+  par règles, sans IA) pour le candidat sélectionné ; ajout d'une offre par texte collé ou URL.
+- **Recommandation** (`/recommendations/:id`) : détail, **panneau lettre** de motivation
+  (générer / éditer / supprimer) et **décision** humaine (réservée au rôle `reviewer`).
 
 ## Développement
 

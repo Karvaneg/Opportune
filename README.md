@@ -16,7 +16,7 @@ Le projet est en **migration V1 → V2** :
 
 ```
 python/         Back V2 : métier, orchestrateur Hermes, API HTTP, persistance SQLite
-frontend/       Front V2 : dashboard React/Vite de consultation des runs Hermes
+frontend/       Front V2 : dashboard React/Vite (runs, offres scorées, lettres, décisions)
 docs/           Vision, definition of done, décisions d'architecture (ADR)
 scripts/        Scripts utilitaires (dont la recette E9)
 handoffs/       Passations de contexte entre sessions
@@ -40,11 +40,12 @@ Chaque brique V2 a son propre README détaillé :
                                   GET /me, /runs            SQLite (run_store)
 ```
 
-- L'API expose la consultation (`GET /me`, `GET /runs`, détail, recommandations paginées)
-  et les actions sensibles (`POST /recommendations/{id}/decision`, `/confirm`) — ces
-  dernières exigent le rôle `reviewer` et une confirmation explicite.
-- Le frontend est en **lecture seule** à ce stade (Epic E9) ; il consomme l'API via un
-  proxy `/api` (cf. [`frontend/README.md`](frontend/README.md)).
+- L'API expose la consultation (`GET /me`, `GET /runs`, détail, recommandations paginées,
+  catalogue d'offres scoré `GET /offers`) et les actions (décision, lettre de motivation,
+  `/confirm`) — ces dernières exigent le rôle `reviewer` et une confirmation explicite.
+- Le frontend consomme l'API via un proxy `/api` (cf. [`frontend/README.md`](frontend/README.md)) :
+  consultation (runs, recommandations, catalogue d'offres) **et** actions validées —
+  décision humaine, génération/édition/suppression de lettre, ajout d'offre.
 - Auth : jeton porteur validé par `GET /me`, persisté côté client — voir
   [`docs/adr/0002-auth-frontend-localstorage-me.md`](docs/adr/0002-auth-frontend-localstorage-me.md).
 
