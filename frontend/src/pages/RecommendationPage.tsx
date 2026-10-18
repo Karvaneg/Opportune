@@ -19,6 +19,8 @@ import {
 import { useIsReviewer } from "../auth/roles";
 import type {
   ApplicationIntent,
+  DecisionHistoryEvent,
+  DecisionStatus,
   Letter,
   OfferAction,
   RecommendationDetail,
@@ -120,34 +122,87 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         application={reco.application}
       />
 
-      <div>
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Historique de décision
-        </h3>
-        {reco.history.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-            Aucun événement.
-          </p>
-        ) : (
-          <ol className="space-y-2">
-            {reco.history.map((event, i) => (
-              <li
-                key={i}
-                className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-3"
-              >
-                <div className="flex items-center gap-2">
-                  <StatusBadge kind="decision" value={event.status} />
-                  {event.comment && (
-                    <span className="text-sm text-slate-600">{event.comment}</span>
-                  )}
-                </div>
-                <span className="shrink-0 text-xs text-slate-400">{formatDate(event.at)}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
+      <DecisionTimeline history={reco.history} application={reco.application} />
     </>
+  );
+}
+
+/**
+ * Historique unifié : fusionne **à l'affichage** les événements de décision humaine
+ * (`history`) et les jalons de candidature (`application`) dans une seule frise triée par
+ * date. On ne mélange pas les modèles côté back (décision ≠ action) — c'est une agrégation de
+ * présentation. L'intention/candidature reflètent l'état courant : annuler une candidature la
+ * retire aussi de la frise.
+ */
+function DecisionTimeline({
+  history,
+  application,
+}: {
+  history: DecisionHistoryEvent[];
+  application: ApplicationIntent | null;
+}) {
+  type Item =
+    | { at: string; kind: "decision"; status: DecisionStatus; comment: string | null }
+    | { at: string; kind: "intent" | "applied" };
+
+  const items: Item[] = [
+    ...history.map(
+      (e): Item => ({ at: e.at, kind: "decision", status: e.status, comment: e.comment }),
+    ),
+  ];
+  if (application?.confirmed) {
+    items.push({ at: application.confirmed_at, kind: "intent" });
+  }
+  if (application?.applied && application.applied_at) {
+    items.push({ at: application.applied_at, kind: "applied" });
+  }
+  // Tri chronologique ascendant (dates ISO) ; ordre d'insertion préservé à égalité de date.
+  items.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Historique
+      </h3>
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+          Aucun événement.
+        </p>
+      ) : (
+        <ol className="space-y-2">
+          {items.map((item, i) => (
+            <li
+              key={i}
+              className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-3"
+            >
+              <div className="flex items-center gap-2">
+                {item.kind === "decision" ? (
+                  <>
+                    <StatusBadge kind="decision" value={item.status} />
+                    {item.comment && (
+                      <span className="text-sm text-slate-600">{item.comment}</span>
+                    )}
+                  </>
+                ) : (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      item.kind === "applied"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-indigo-100 text-indigo-800"
+                    }`}
+                  >
+                    {item.kind === "applied"
+                      ? "Candidature effectuée"
+                      : "Intention de candidater notée"}
+                  </span>
+                )}
+              </div>
+              <span className="shrink-0 text-xs text-slate-400">{formatDate(item.at)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 

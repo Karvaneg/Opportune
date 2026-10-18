@@ -83,6 +83,25 @@ describe("RecommendationPage", () => {
     expect(screen.getAllByText("Approuvé").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("l'historique agrège les jalons de candidature (intention + candidature)", async () => {
+    stubFetch(200, {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-04T12:00:00+00:00",
+        status: "simulated",
+        applied: true,
+        applied_at: "2026-10-05T09:00:00+00:00",
+      },
+    });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    // Les deux jalons apparaissent dans la frise, en plus des décisions.
+    expect(await screen.findByText("Intention de candidater notée")).toBeInTheDocument();
+    expect(screen.getByText("Candidature effectuée")).toBeInTheDocument();
+  });
+
   it("404 → message neutre (anti-énumération)", async () => {
     stubFetch(404, { error: "recommandation inconnue" });
     renderPage("cand-1:absente");
