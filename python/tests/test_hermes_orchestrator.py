@@ -54,7 +54,7 @@ def _seed_three(offers):
                        created_at="2026-01-01T00:00:00+00:00"))  # parfaite → 100, plus ancienne
     offers.save(_offer(id="b", title="B", url="http://b", skills=["Python", "Go"],
                        created_at="2026-01-02T00:00:00+00:00"))  # → 78
-    offers.save(_offer(  # faible → 0, plus récente
+    offers.save(_offer(  # faible → 11 (séniorité 6/8 graduée), plus récente
         id="c", title="C", url="http://c", skills=["Java"],
         contract_type="Freelance", location="Lyon", seniority="Lead",
         created_at="2026-01-03T00:00:00+00:00",
@@ -68,7 +68,7 @@ def test_returns_recommendations_ordered_by_date(env):
     results = orchestrator.recommend_for_candidate("cand-1")
     assert all(isinstance(r, HermesRecommendation) for r in results)
     assert [(r.recommendation.offer.id, r.recommendation.score) for r in results] == [
-        ("c", 0), ("b", 78), ("a", 100),
+        ("c", 11), ("b", 78), ("a", 100),
     ]
 
 

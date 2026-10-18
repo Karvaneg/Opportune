@@ -78,6 +78,16 @@ def test_contract_compatible_cdi():
     assert compare_contract_type(_offer(contract_type="CDI"), _profile(contract_type="CDI")).compatible is True
 
 
+def test_contract_compound_label_recognised_as_cdi():
+    # OPP-156 : « CDI (permanent) » (libellé composé déjà persisté) reste reconnu comme CDI au
+    # moment de comparer, sans ré-ingestion. Le libellé d'origine est conservé à l'affichage.
+    result = compare_contract_type(
+        _offer(contract_type="CDI (permanent)"), _profile(contract_type="CDI")
+    )
+    assert result.compatible is True
+    assert result.offer == "CDI (permanent)"
+
+
 def test_contract_incompatible():
     result = compare_contract_type(_offer(contract_type="Freelance"), _profile(contract_type="CDI"))
     assert result.compatible is False

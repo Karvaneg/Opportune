@@ -40,13 +40,29 @@ def test_perfect_match_scores_100():
 
 
 def test_all_unfavorable_scores_0():
+    # Tout défavorable, séniorité comprise : 0 an d'expérience face à une exigence → ratio 0.
     match = _match(
         skills=SkillMatch(matched=[], missing=["Go"]),
         contract_type=ContractMatch(offer="Freelance", profile="CDI", compatible=False),
         location=LocationMatch(offer="Lyon", profile="Paris", status="mismatch"),
-        seniority=SeniorityMatch(offer_label="Senior", required_years=5, profile_years=2, status="insufficient"),
+        seniority=SeniorityMatch(offer_label="Senior", required_years=5, profile_years=0, status="insufficient"),
     )
     assert score_match(match).score == 0
+
+
+def test_insufficient_seniority_is_graduated_not_zeroed():
+    # Near-miss (OPP-156) : 2 ans face à 5 requis → ratio 0.4 sur la dimension séniorité (poids
+    # 0.15) → 6/100, au lieu d'un 0 sec. Seule la séniorité est évaluable ici (autres inconnues).
+    match = _match(
+        skills=SkillMatch(matched=[], missing=[]),  # total 0 → non évaluable
+        contract_type=ContractMatch(offer=None, profile=None, compatible=None),
+        location=LocationMatch(offer=None, profile=None, status="unknown"),
+        seniority=SeniorityMatch(offer_label="Senior", required_years=5, profile_years=2, status="insufficient"),
+    )
+    result = score_match(match)
+    # Séniorité seule évaluable → score = sous-score séniorité renormalisé = 0.4 → 40.
+    assert result.score == 40
+    assert result.breakdown["seniority"].value == 0.4
 
 
 def test_unknown_dimension_is_excluded_not_zeroed():
