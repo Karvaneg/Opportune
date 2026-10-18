@@ -51,7 +51,7 @@ class ApplicationActionRepository(Protocol):
 
     def save(self, action: ApplicationAction) -> None: ...
 
-    def set_applied(self, recommendation_id: str, applied_at: str) -> None: ...
+    def set_applied(self, recommendation_id: str, applied_at: str | None) -> None: ...
 
     def get_by_recommendation(self, recommendation_id: str) -> ApplicationAction | None: ...
 
@@ -110,11 +110,12 @@ class ApplicationActionStore:
         )
         self.conn.commit()
 
-    def set_applied(self, recommendation_id: str, applied_at: str) -> None:
-        """Marque une candidature comme **réellement effectuée** (date déclarée).
+    def set_applied(self, recommendation_id: str, applied_at: str | None) -> None:
+        """Pose ou retire la date de candidature **réellement effectuée** de l'action.
 
-        Met à jour ``applied_at`` de l'action existante. L'appelant (``ActionService``) a
-        déjà vérifié son existence et porte l'idempotence ; ici on persiste simplement.
+        ``applied_at`` non ``None`` = candidature déclarée (date) ; ``None`` = annulation (retour
+        à l'état « intention notée »). L'appelant (``ActionService``) a déjà vérifié l'existence
+        de l'action et porte l'idempotence ; ici on persiste simplement.
         """
         self.conn.execute(
             "UPDATE application_actions SET applied_at = ? WHERE recommendation_id = ?",

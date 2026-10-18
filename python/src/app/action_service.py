@@ -124,14 +124,17 @@ class ActionService:
         self.messages.save(action)
         return action, False
 
-    def mark_applied(self, recommendation_id: str) -> tuple[ApplicationAction, bool]:
+    def mark_applied(
+        self, recommendation_id: str, applied_at: str | None = None
+    ) -> tuple[ApplicationAction, bool]:
         """Déclare qu'on a **réellement candidaté** à une recommandation (suivi, OPP-xxx).
 
         Exige une **intention préalablement notée** (``confirm_application``) : sans elle,
         lève ``ActionNotAllowedError`` (→ 409) — on ne « candidate » pas une offre qu'on n'a
-        pas d'abord décidé de viser. Rien n'est envoyé : on horodate la déclaration. Idempotent
+        pas d'abord décidé de viser. ``applied_at`` permet de déclarer une date **passée**
+        (ex. « candidaté il y a 15 jours ») ; ``None`` = aujourd'hui. Rien n'est envoyé. Idempotent
         — si la candidature est déjà marquée, la retourne avec ``already = True`` sans réécrire
-        la date. Retourne le couple ``(action, already_applied)``.
+        la date (pour la corriger : annuler puis re-déclarer). Retourne ``(action, already_applied)``.
         """
         existing = self.applications.get_by_recommendation(recommendation_id)
         if existing is None:
@@ -141,9 +144,24 @@ class ActionService:
         if existing.applied_at is not None:
             return existing, True
 
-        applied_at = self._now()
-        self.applications.set_applied(recommendation_id, applied_at)
-        return replace(existing, applied_at=applied_at), False
+        when = applied_at if applied_at is not None else self._now()
+        self.applications.set_applied(recommendation_id, when)
+        return replace(existing, applied_at=when), False
+
+    def unmark_applied(self, recommendation_id: str) -> ApplicationAction:
+        """Annule une candidature déclarée par erreur : retour à l'état « intention notée ».
+
+        L'intention est **conservée** (on retire seulement la date de candidature). Exige une
+        intention existante (sinon ``ActionNotAllowedError`` → 409). Idempotent : annuler une
+        candidature non déclarée ne change rien. Retourne l'action remise à jour.
+        """
+        existing = self.applications.get_by_recommendation(recommendation_id)
+        if existing is None:
+            raise ActionNotAllowedError("aucune candidature à annuler pour cette offre")
+        if existing.applied_at is None:
+            return existing
+        self.applications.set_applied(recommendation_id, None)
+        return replace(existing, applied_at=None)
 
     def get_application(self, recommendation_id: str) -> ApplicationAction | None:
         """Relit l'intention de candidater confirmée pour une recommandation, ou ``None``.

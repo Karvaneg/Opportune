@@ -14,7 +14,8 @@ Endpoints :
     GET  /recommendations/{recommendation_id}          (OPP-094)
     POST /recommendations/{recommendation_id}/decision (OPP-094)
     POST /applications/{recommendation_id}/confirm      (OPP-096, action sensible)
-    POST /applications/{recommendation_id}/applied      (suivi : « j'ai candidaté »)
+    POST   /applications/{recommendation_id}/applied    (suivi : « j'ai candidaté », date optionnelle)
+    DELETE /applications/{recommendation_id}/applied    (annule la candidature déclarée)
     POST /messages/{contact_id}/confirm                 (OPP-096, action sensible)
 
 Le POST recommande et pré-évalue les offres du candidat (filtrables via ``filters`` :
@@ -47,6 +48,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from urllib.parse import parse_qs, unquote
 
@@ -284,8 +286,12 @@ class HermesApi:
 
             match = _APPLICATION_APPLIED.match(path)
             if match:
-                self._require(method, "POST", path)
-                return self._post_application_applied(unquote(match["rid"]), user)
+                rid = unquote(match["rid"])
+                if method == "POST":
+                    return self._post_application_applied(rid, body, user)
+                if method == "DELETE":
+                    return self._delete_application_applied(rid, user)
+                raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
             match = _MESSAGE_CONFIRM.match(path)
             if match:
@@ -870,21 +876,57 @@ class HermesApi:
         return Response(200, self._serialize_action(action, already))
 
     def _post_application_applied(
-        self, recommendation_id: str, user: User | None
+        self, recommendation_id: str, body: dict, user: User | None
     ) -> Response:
         """Déclare qu'on a **réellement candidaté** à une recommandation (suivi, OPP-xxx).
 
         Pointage déclaratif, pas un envoi : **aucune** garde ``{"confirm": true}`` (contrairement
         à l'intention), mais les mêmes gardes d'accès (existence → propriété → rôle ``reviewer``).
-        Exige une intention préalablement notée (sinon 409). Idempotent. Renvoie l'état courant
-        de l'intention/candidature pour rafraîchir l'UI.
+        ``applied_at`` (optionnel) permet de dater une candidature **passée** ; absent = aujourd'hui.
+        Exige une intention préalablement notée (sinon 409). Idempotent. Renvoie l'état courant.
         """
         self._guard_sensitive_target(user, recommendation_id)
+        applied_at = self._parse_applied_at(body)
         try:
-            self.actions.mark_applied(recommendation_id)
+            self.actions.mark_applied(recommendation_id, applied_at)
         except ActionNotAllowedError as exc:
             raise ApiError(409, str(exc))
         return Response(200, self._serialize_application(recommendation_id) or {})
+
+    def _delete_application_applied(
+        self, recommendation_id: str, user: User | None
+    ) -> Response:
+        """Annule une candidature déclarée par erreur : retour à l'état « intention notée ».
+
+        Mêmes gardes d'accès que la déclaration. Exige une intention existante (sinon 409).
+        Idempotent. Renvoie l'état courant (``applied`` repasse à ``false``).
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        try:
+            self.actions.unmark_applied(recommendation_id)
+        except ActionNotAllowedError as exc:
+            raise ApiError(409, str(exc))
+        return Response(200, self._serialize_application(recommendation_id) or {})
+
+    @staticmethod
+    def _parse_applied_at(body: dict) -> str | None:
+        """Valide la date de candidature optionnelle du corps (``applied_at``).
+
+        ``None``/absent → la couche métier datera à aujourd'hui. Sinon, exige une chaîne ISO
+        8601 parseable (date seule ``YYYY-MM-DD`` ou datetime) — 400 autrement. La garde « pas
+        dans le futur » est portée côté UI (``max`` du sélecteur de date) ; ici on ne fait que
+        rejeter un format inexploitable.
+        """
+        raw = body.get("applied_at")
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise ApiError(400, "applied_at doit être une date ISO 8601 (chaîne)")
+        try:
+            datetime.fromisoformat(raw)
+        except ValueError:
+            raise ApiError(400, "applied_at doit être une date ISO 8601 valide")
+        return raw
 
     def _post_message_confirm(
         self, contact_id: str, body: dict, user: User | None

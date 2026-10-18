@@ -230,6 +230,68 @@ def test_mark_applied_route_absent_without_action_service(env):
     assert resp.status == 404
 
 
+def test_mark_applied_accepts_chosen_past_date(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    # Candidature déclarée à une date passée choisie (ex. « il y a 15 jours »).
+    resp = api.dispatch(
+        "POST", f"/applications/{_RID}/applied", {"applied_at": "2026-09-20"}
+    )
+    assert resp.status == 200
+    assert resp.body["applied"] is True
+    assert resp.body["applied_at"] == "2026-09-20"  # pas remplacée par la date du jour
+
+
+@pytest.mark.parametrize("bad", ["pas une date", "2026-13-40", 20260920])
+def test_mark_applied_rejects_invalid_date(env, bad):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+    resp = api.dispatch("POST", f"/applications/{_RID}/applied", {"applied_at": bad})
+    assert resp.status == 400
+    assert "applied_at" in resp.body["error"]
+
+
+def test_unmark_applied_reverts_to_noted_intent(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+    api.dispatch("POST", f"/applications/{_RID}/applied", None)
+
+    resp = api.dispatch("DELETE", f"/applications/{_RID}/applied", None)
+    assert resp.status == 200
+    # L'intention reste notée ; seule la candidature est annulée.
+    assert resp.body["confirmed"] is True
+    assert resp.body["applied"] is False
+    assert resp.body["applied_at"] is None
+
+
+def test_unmark_applied_requires_existing_intent(env):
+    api, _, _, _ = env
+    _approve(api)  # aucune intention notée
+    resp = api.dispatch("DELETE", f"/applications/{_RID}/applied", None)
+    assert resp.status == 409
+    assert "annuler" in resp.body["error"]
+
+
+def test_unmark_applied_is_idempotent_when_not_applied(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+    # Intention notée mais jamais candidaté : annuler ne change rien, reste 200.
+    resp = api.dispatch("DELETE", f"/applications/{_RID}/applied", None)
+    assert resp.status == 200
+    assert resp.body["applied"] is False
+
+
+def test_mark_applied_wrong_method_is_405(env):
+    api, _, _, _ = env
+    resp = api.dispatch("PUT", f"/applications/{_RID}/applied", None)
+    assert resp.status == 405
+
+
 def test_application_store_migrates_legacy_table_without_applied_at():
     """Une base créée avant l'ajout de ``applied_at`` est migrée au branchement du store."""
     conn = connect(":memory:")

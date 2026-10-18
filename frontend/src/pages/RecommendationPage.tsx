@@ -6,6 +6,7 @@ import {
   useMarkApplied,
   useRecommendation,
   useRescoreOffer,
+  useUnmarkApplied,
   useValidateRecommendation,
   type DecisionVerb,
 } from "../api/recommendations";
@@ -260,8 +261,11 @@ function ApplicationConfirm({
 }) {
   const isReviewer = useIsReviewer();
   const [open, setOpen] = useState(false);
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, défaut du sélecteur
+  const [appliedDate, setAppliedDate] = useState(today);
   const confirm = useConfirmApplication(recommendationId);
   const markApplied = useMarkApplied(recommendationId);
+  const unmarkApplied = useUnmarkApplied(recommendationId);
 
   if (!isReviewer) return null;
 
@@ -282,10 +286,20 @@ function ApplicationConfirm({
       </h3>
 
       {applied ? (
-        <p className="rounded-md bg-emerald-100 p-3 text-sm text-emerald-900">
-          🎉 Tu as candidaté à cette offre
-          {appliedAt ? ` — le ${formatDate(appliedAt)}` : ""}.
-        </p>
+        <div className="rounded-md bg-emerald-100 p-3">
+          <p className="text-sm text-emerald-900">
+            🎉 Tu as candidaté à cette offre
+            {appliedAt ? ` — le ${formatDay(appliedAt)}` : ""}.
+          </p>
+          <button
+            type="button"
+            onClick={() => unmarkApplied.mutate()}
+            disabled={unmarkApplied.isPending}
+            className="mt-2 text-xs font-medium text-emerald-800 underline hover:text-emerald-900 disabled:opacity-50"
+          >
+            Annuler (je n'ai pas candidaté)
+          </button>
+        </div>
       ) : noted ? (
         <>
           <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
@@ -295,14 +309,27 @@ function ApplicationConfirm({
               Aucun envoi n'est effectué : Opportune garde la trace de ton suivi.
             </span>
           </p>
-          <button
-            type="button"
-            onClick={() => markApplied.mutate()}
-            disabled={markApplied.isPending}
-            className="mt-3 rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
-          >
-            J'ai candidaté
-          </button>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="text-xs text-slate-600">
+              Date de candidature
+              <input
+                type="date"
+                value={appliedDate}
+                max={today}
+                onChange={(e) => setAppliedDate(e.target.value)}
+                aria-label="Date de candidature"
+                className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => markApplied.mutate({ applied_at: appliedDate })}
+              disabled={markApplied.isPending}
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+            >
+              J'ai candidaté
+            </button>
+          </div>
         </>
       ) : (
         <>
@@ -329,6 +356,11 @@ function ApplicationConfirm({
       {markApplied.isError && (
         <div className="mt-3">
           <ErrorNotice error={markApplied.error} />
+        </div>
+      )}
+      {unmarkApplied.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={unmarkApplied.error} />
         </div>
       )}
 
@@ -611,4 +643,10 @@ function Meta({ label, value, mono }: { label: string; value: string; mono?: boo
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("fr-FR");
+}
+
+/** Date **seule** (sans heure) — pour une date choisie par l'utilisateur (ex. candidature). */
+function formatDay(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR");
 }
