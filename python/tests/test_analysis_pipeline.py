@@ -74,9 +74,10 @@ def test_pipeline_weak_match_recommends_ignorer(store):
         location="Lyon", total_experience_years=1,
     )
     dossier = run_pipeline("texte", source="indeed", profile=weak, client=client, store=store)
-    # Séniorité graduée (OPP-156) : Bob a 1 an face à « Senior » (5 ans requis) → 1/5 pèse un
-    # peu (3/100) au lieu d'un 0 sec ; le reste (skills/contrat/lieu) reste défavorable.
-    assert dossier.explanation.score == 3
+    # Garde-fou métier (OPP-162) : Bob (skills « Java ») n'a aucune compétence en commun avec
+    # l'offre → couverture 0 → le facteur compétences écrase le score à 0, même si la séniorité
+    # est partiellement créditée. Offre d'un autre métier = 0, pas « un peu de points via le reste ».
+    assert dossier.explanation.score == 0
     assert dossier.recommendation.action == "ignorer"
 
 

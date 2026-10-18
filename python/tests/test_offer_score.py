@@ -86,6 +86,36 @@ def test_partial_skill_coverage_weighted():
     assert score_match(match).score == 78
 
 
+def test_low_skill_coverage_gates_whole_score():
+    # OPP-162 : couverture compétences très faible (1/10 = 0.1) → facteur 0.1/0.5 = 0.2 appliqué
+    # au score. Sans garde-fou, contrat+séniorité+lieu maintiendraient un score élevé malgré
+    # une offre d'un autre métier.
+    missing = [f"skill{i}" for i in range(9)]
+    match = _match(skills=SkillMatch(matched=["Python"], missing=missing))
+    # base = (0.1*0.45 + 1*0.30 + 1*0.15 + 1*0.10) / 1.0 = 0.595 ; ×0.2 = 0.119 → 12.
+    assert score_match(match).score == 12
+
+
+def test_low_skill_coverage_adds_a_reason():
+    match = _match(skills=SkillMatch(matched=["Python"], missing=[f"s{i}" for i in range(9)]))
+    negatives = explain_score(match).negatives
+    assert any("hors de ton métier" in r.message for r in negatives)
+
+
+def test_skill_gate_not_applied_when_skills_unevaluable():
+    # Compétences non listées (total 0) → pas de garde-fou, on n'écrase pas ce qu'on ignore.
+    match = _match(skills=SkillMatch(matched=[], missing=[]))
+    # Seuls contrat/séniorité/lieu évaluables, tous à 1 → 100, inchangé.
+    assert score_match(match).score == 100
+
+
+def test_good_skill_coverage_is_not_penalized():
+    # Couverture ≥ genou (0.5) → facteur 1, aucun effet : 3/4 = 0.75.
+    match = _match(skills=SkillMatch(matched=["a", "b", "c"], missing=["d"]))
+    # base = (0.75*0.45 + 1*0.30 + 1*0.15 + 1*0.10) = 0.8875 → 89, sans réduction.
+    assert score_match(match).score == 89
+
+
 def test_no_evaluable_dimension_scores_none():
     # Aucune dimension mesurable → score None (« non évaluable »), à distinguer d'un 0
     # (adéquation nulle mais mesurée).

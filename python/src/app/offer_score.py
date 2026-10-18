@@ -40,6 +40,35 @@ WEIGHTS = {
     "location": 0.10,
 }
 
+# Garde-fou « incompatibilité métier » (OPP-162). La moyenne pondérée seule laisse le contrat
+# (0.30) + le lieu (0.10) + la séniorité (0.15) porter une offre d'un tout autre métier (ex. :
+# 2 compétences sur 29 → ~7% de couverture, mais 53% au total). On applique donc un **facteur
+# multiplicatif** dérivé de la couverture des compétences : en deçà de ce « genou », le score
+# final est réduit proportionnellement ; au-dessus, aucun effet (facteur 1). Les compétences
+# redeviennent déterminantes sans réécrire la pondération. Non appliqué si les compétences ne
+# sont pas évaluables (offre qui n'en liste aucune) — on n'écrase pas ce qu'on ignore.
+SKILL_GATE_KNEE = 0.5
+
+
+def _skill_gate(skills: SkillMatch) -> tuple[float, str | None]:
+    """Facteur multiplicatif [0,1] sur le score global + une raison si le facteur mord.
+
+    Couverture = ``matched / (matched + missing)`` (part des compétences de l'offre couvertes
+    par le profil, directionnel OPP-151). ``>= SKILL_GATE_KNEE`` → 1.0 (pas de pénalité) ;
+    en dessous → ``couverture / genou`` (proportionnel). ``1.0`` sans raison si non évaluable.
+    """
+    total = len(skills.matched) + len(skills.missing)
+    if total == 0:
+        return 1.0, None
+    coverage = len(skills.matched) / total
+    if coverage >= SKILL_GATE_KNEE:
+        return 1.0, None
+    reason = (
+        f"Couverture des compétences trop partielle ({len(skills.matched)}/{total}) : "
+        "offre probablement hors de ton métier, score fortement réduit"
+    )
+    return coverage / SKILL_GATE_KNEE, reason
+
 # Une évaluation de dimension : sous-score dans [0,1] (ou ``None`` si non évaluable) et
 # les raisons associées, sous forme de couples ``(impact, message)``. Regrouper score et
 # raisons ici évite de dédoubler la correspondance statut → sens (un seul endroit à faire
@@ -159,9 +188,21 @@ def _compute(match: OfferProfileMatch) -> tuple[int | None, dict[str, DimensionS
         for impact, message in dim_reasons:
             reasons.append(Reason(dimension=dimension, weight=weight, impact=impact, message=message))
 
-    # Non évaluable → None (distinct d'un 0 mesuré). Arrondi au plus proche, moitié vers
-    # le haut (``round`` builtin ferait un arrondi au pair, contre-intuitif ici).
-    score = None if total_weight == 0 else int(weighted / total_weight * 100 + 0.5)
+    # Non évaluable → None (distinct d'un 0 mesuré).
+    if total_weight == 0:
+        return None, breakdown, reasons
+
+    # Garde-fou métier (OPP-162) : la moyenne pondérée est écrasée par un facteur dérivé de la
+    # couverture des compétences (une offre d'un autre métier ne doit pas flotter via contrat/
+    # lieu). Le facteur et sa raison sont portés par ``_skill_gate``.
+    base = weighted / total_weight
+    factor, gate_reason = _skill_gate(match.skills)
+    if gate_reason is not None:
+        reasons.append(
+            Reason(dimension="skills", weight=WEIGHTS["skills"], impact="negative", message=gate_reason)
+        )
+    # Arrondi au plus proche, moitié vers le haut (``round`` builtin ferait un arrondi au pair).
+    score = int(base * factor * 100 + 0.5)
     return score, breakdown, reasons
 
 

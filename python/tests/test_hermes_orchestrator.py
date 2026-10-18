@@ -68,7 +68,7 @@ def test_returns_recommendations_ordered_by_date(env):
     results = orchestrator.recommend_for_candidate("cand-1")
     assert all(isinstance(r, HermesRecommendation) for r in results)
     assert [(r.recommendation.offer.id, r.recommendation.score) for r in results] == [
-        ("c", 11), ("b", 78), ("a", 100),
+        ("c", 0), ("b", 78), ("a", 100),
     ]
 
 

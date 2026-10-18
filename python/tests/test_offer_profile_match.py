@@ -204,6 +204,19 @@ def test_location_remote_detected_outside_location_field():
     assert result.reason == "offer-remote"
 
 
+def test_location_remote_contradicted_by_onsite_is_mismatch():
+    # OPP-162 : « télétravail possible MAIS présentiel / en laboratoire obligatoire » ne doit
+    # pas être crédité comme remote — l'écart de lieu reste bloquant.
+    result = compare_location(
+        _offer(
+            location="Guidel (56) – Présentiel (télétravail complet possible mais "
+            "validation en laboratoire obligatoire)"
+        ),
+        _profile(location="Gironde"),
+    )
+    assert result.status == "mismatch"
+
+
 # --- Séniorité / expérience --------------------------------------------------
 
 
@@ -231,6 +244,26 @@ def test_seniority_unknown_when_label_unrecognized():
 def test_seniority_not_required_when_unspecified():
     result = compare_seniority(_offer(seniority="Non précisé"), _profile(total_experience_years=6))
     assert result.status == "not_required"
+
+
+def test_seniority_explicit_years_override_level_mapping():
+    # OPP-162 : « Confirmé (5 ans minimum) » valait 3 (via « confirmé ») ; le nombre explicite
+    # doit primer → 5 requis, donc 2 ans = insuffisant (et non « ok » contre 3).
+    result = compare_seniority(
+        _offer(seniority="Confirmé (5 ans d'expérience minimum)"),
+        _profile(total_experience_years=2),
+    )
+    assert result.required_years == 5
+    assert result.status == "insufficient"
+
+
+def test_seniority_explicit_years_range_takes_lowest():
+    # « 3 à 5 ans » → on exige dès le seuil le plus bas (3).
+    result = compare_seniority(
+        _offer(seniority="3 à 5 ans d'expérience"), _profile(total_experience_years=4)
+    )
+    assert result.required_years == 3
+    assert result.status == "ok"
 
 
 def test_seniority_range_takes_lowest_level():
