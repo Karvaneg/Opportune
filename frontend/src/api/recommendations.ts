@@ -78,6 +78,8 @@ export function useRescoreOffer(
  * Double consentement côté UI ; le body est `{confirm: true}` (booléen strict exigé par le
  * back). Idempotent (`already_confirmed`). Exige une décision humaine `approved` côté back,
  * sinon 409 — remonté tel quel (`ApiHttpError`) pour être expliqué à l'utilisateur.
+ * Au succès, invalide le détail de la reco : l'intention notée (`application`) est relue et
+ * son badge persistant (avec sa date) s'affiche sans rechargement.
  */
 export function useConfirmApplication(recommendationId: string) {
   return useApiMutation<ActionConfirmation, void>({
@@ -87,5 +89,6 @@ export function useConfirmApplication(recommendationId: string) {
         token,
         { confirm: true },
       ),
+    invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
   });
 }

@@ -27,6 +27,7 @@ const DETAIL = {
     { status: "pending", at: "2026-09-04T10:00:00+00:00", comment: null },
     { status: "approved", at: "2026-09-04T11:00:00+00:00", comment: "Bonne adéquation" },
   ],
+  application: null,
 };
 
 /** fetch factice : identité sur /me, détail reco (ou status arbitraire) sinon. */
@@ -219,19 +220,19 @@ function stubApplication(opts: { role?: string; http?: number; body?: unknown } 
   return calls;
 }
 
-describe("RecommendationPage — confirmation de candidature (OPP-110)", () => {
-  it("aucune candidature sans confirmation explicite, puis statut affiché", async () => {
+describe("RecommendationPage — intention de candidater (OPP-110)", () => {
+  it("aucune intention sans confirmation explicite, puis trace affichée", async () => {
     const calls = stubApplication();
     renderPage();
     await screen.findByText("Développeur Full-Stack");
 
     // Ouvrir la modale ne déclenche AUCUN appel.
-    await userEvent.click(screen.getByRole("button", { name: /Candidater/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Je vais candidater" }));
     expect(calls.length).toBe(0);
 
     // Seule la confirmation explicite POST l'action.
-    await userEvent.click(screen.getByRole("button", { name: "Confirmer la candidature" }));
-    expect(await screen.findByText(/Candidature confirmée/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Oui, je vais candidater" }));
+    expect(await screen.findByText(/noté que tu vas candidater/)).toBeInTheDocument();
     expect(calls.length).toBe(1);
   });
 
@@ -240,28 +241,50 @@ describe("RecommendationPage — confirmation de candidature (OPP-110)", () => {
     renderPage();
     await screen.findByText("Développeur Full-Stack");
 
-    await userEvent.click(screen.getByRole("button", { name: /Candidater/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Confirmer la candidature" }));
+    await userEvent.click(screen.getByRole("button", { name: "Je vais candidater" }));
+    await userEvent.click(screen.getByRole("button", { name: "Oui, je vais candidater" }));
 
     expect(await screen.findByText(/décision humaine 'approved'/)).toBeInTheDocument();
   });
 
   it("re-confirmer ne duplique pas l'action (already_confirmed)", async () => {
-    stubApplication({ body: { action_id: "a1", status: "simulated", already_confirmed: true } });
+    const calls = stubApplication({
+      body: { action_id: "a1", status: "simulated", already_confirmed: true },
+    });
     renderPage();
     await screen.findByText("Développeur Full-Stack");
 
-    await userEvent.click(screen.getByRole("button", { name: /Candidater/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Confirmer la candidature" }));
+    await userEvent.click(screen.getByRole("button", { name: "Je vais candidater" }));
+    await userEvent.click(screen.getByRole("button", { name: "Oui, je vais candidater" }));
 
-    expect(await screen.findByText(/déjà confirmée/)).toBeInTheDocument();
+    expect(await screen.findByText(/noté que tu vas candidater/)).toBeInTheDocument();
+    expect(calls.length).toBe(1);
   });
 
-  it("un non-reviewer ne voit pas le bouton Candidater", async () => {
+  it("une intention déjà notée s'affiche au chargement, sans bouton", async () => {
+    // Le détail porte `application` (état persistant) : la trace apparaît directement, pas le bouton.
+    stubFetch(200, {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-18T12:00:00+00:00",
+        status: "simulated",
+      },
+    });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    expect(await screen.findByText(/noté que tu vas candidater/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Je vais candidater" })).toBeNull();
+    // Le jargon technique (`simulated`) ne fuit jamais à l'écran.
+    expect(screen.queryByText(/simulated/)).toBeNull();
+  });
+
+  it("un non-reviewer ne voit pas le bouton d'intention", async () => {
     stubApplication({ role: "candidate" });
     renderPage();
     await screen.findByText("Développeur Full-Stack");
-    expect(screen.queryByRole("button", { name: /Candidater/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Je vais candidater" })).toBeNull();
   });
 });
 

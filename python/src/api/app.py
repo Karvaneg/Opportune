@@ -993,4 +993,25 @@ class HermesApi:
                 {"status": ev.status, "at": ev.at, "comment": ev.comment}
                 for ev in decision.history
             ],
+            # Intention de candidater notée (OPP-096). ``None`` si aucune, ou si le service
+            # d'actions n'est pas câblé — le front n'affiche alors aucun marqueur.
+            "application": self._serialize_application(decision.id),
+        }
+
+    def _serialize_application(self, recommendation_id: str) -> dict | None:
+        """État persistant de l'intention de candidater, pour affichage (OPP-096).
+
+        ``None`` si le service d'actions n'est pas câblé ou si aucune intention n'a été notée.
+        ``status`` (``simulated`` en V2) est exposé tel quel : le front en fait un libellé
+        lisible plutôt que de montrer le jargon.
+        """
+        if self.actions is None:
+            return None
+        application = self.actions.get_application(recommendation_id)
+        if application is None:
+            return None
+        return {
+            "confirmed": True,
+            "confirmed_at": application.confirmed_at,
+            "status": application.status,
         }

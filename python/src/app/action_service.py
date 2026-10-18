@@ -122,3 +122,12 @@ class ActionService:
         )
         self.messages.save(action)
         return action, False
+
+    def get_application(self, recommendation_id: str) -> ApplicationAction | None:
+        """Relit l'intention de candidater confirmée pour une recommandation, ou ``None``.
+
+        Lecture **pure** (aucune création, aucune garde ``approved``) : sert à afficher dans
+        l'UI qu'une intention a déjà été notée, sans avoir à re-POSTer la confirmation. La
+        propriété est vérifiée en amont (le détail de la reco est owner-gated).
+        """
+        return self.applications.get_by_recommendation(recommendation_id)
