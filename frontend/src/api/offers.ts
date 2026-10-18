@@ -5,7 +5,9 @@ import { useApiMutation } from "./mutations";
 import type { OffersCatalogPage, OfferSummary, RecommendationDetail } from "./types";
 
 // Clé de cache du catalogue : page + candidat ciblé (chaque combinaison a son cache).
+// `all` est le préfixe commun (invalidation de toutes les pages/candidats, cf. `useAddOffer`).
 export const offerKeys = {
+  all: ["offers"] as const,
   catalog: (page: number, candidateId: string) => ["offers", page, candidateId] as const,
 };
 
@@ -46,7 +48,7 @@ export interface AddOfferVariables {
 export function useAddOffer() {
   return useApiMutation<OfferSummary, AddOfferVariables>({
     mutationFn: (variables, token) => apiPost<OfferSummary>("/offers", token, variables),
-    invalidateKeys: () => [["offers"]],
+    invalidateKeys: () => [offerKeys.all],
   });
 }
 
