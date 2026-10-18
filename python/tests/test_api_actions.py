@@ -7,6 +7,7 @@ l'idempotence par cible, et le non-montage des routes quand le service n'est pas
 """
 
 import itertools
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -235,13 +236,29 @@ def test_mark_applied_accepts_chosen_past_date(env):
     _approve(api)
     api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
 
-    # Candidature déclarée à une date passée choisie (ex. « il y a 15 jours »).
+    # Candidature déclarée à un jour passé choisi (ex. « il y a 15 jours »). Le jour est retenu,
+    # l'heure reçoit l'instant courant (ici l'horloge du fixture, minuit).
     resp = api.dispatch(
         "POST", f"/applications/{_RID}/applied", {"applied_at": "2026-09-20"}
     )
     assert resp.status == 200
     assert resp.body["applied"] is True
-    assert resp.body["applied_at"] == "2026-09-20"  # pas remplacée par la date du jour
+    assert resp.body["applied_at"] == "2026-09-20T00:00:00+00:00"
+
+
+def test_mark_applied_keeps_chosen_day_but_records_current_time(env):
+    """Le jour déclaré est conservé ; l'heure (et le fuseau) viennent de l'instant d'enregistrement."""
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    # Horloge d'enregistrement à une heure non triviale, un autre jour que le jour déclaré.
+    api.actions._now = lambda: "2026-10-18T14:30:45+00:00"
+    resp = api.dispatch(
+        "POST", f"/applications/{_RID}/applied", {"applied_at": "2026-10-03"}
+    )
+    assert resp.status == 200
+    assert resp.body["applied_at"] == "2026-10-03T14:30:45+00:00"
 
 
 @pytest.mark.parametrize("bad", ["pas une date", "2026-13-40", 20260920])
@@ -252,6 +269,20 @@ def test_mark_applied_rejects_invalid_date(env, bad):
     resp = api.dispatch("POST", f"/applications/{_RID}/applied", {"applied_at": bad})
     assert resp.status == 400
     assert "applied_at" in resp.body["error"]
+
+
+def test_mark_applied_rejects_future_date(env):
+    """On ne candidate pas « demain » : une date clairement future est rejetée (400)."""
+    api, applications, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    future = (datetime.now(timezone.utc).date() + timedelta(days=10)).isoformat()
+    resp = api.dispatch("POST", f"/applications/{_RID}/applied", {"applied_at": future})
+    assert resp.status == 400
+    assert "applied_at" in resp.body["error"]
+    # Rien n'a été marqué : l'intention reste sans candidature déclarée.
+    assert applications.get_by_recommendation(_RID).applied_at is None
 
 
 def test_unmark_applied_reverts_to_noted_intent(env):

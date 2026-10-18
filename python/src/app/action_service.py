@@ -131,8 +131,10 @@ class ActionService:
 
         Exige une **intention préalablement notée** (``confirm_application``) : sans elle,
         lève ``ActionNotAllowedError`` (→ 409) — on ne « candidate » pas une offre qu'on n'a
-        pas d'abord décidé de viser. ``applied_at`` permet de déclarer une date **passée**
-        (ex. « candidaté il y a 15 jours ») ; ``None`` = aujourd'hui. Rien n'est envoyé. Idempotent
+        pas d'abord décidé de viser. ``applied_at`` permet de déclarer un **jour passé** (ex.
+        « candidaté il y a 15 jours ») : seule sa **date** est retenue, l'**heure** reçoit
+        toujours l'instant courant (``self._now()``) — on ne demande pas d'horaire à l'humain
+        mais on horodate l'enregistrement. ``None`` = aujourd'hui. Rien n'est envoyé. Idempotent
         — si la candidature est déjà marquée, la retourne avec ``already = True`` sans réécrire
         la date (pour la corriger : annuler puis re-déclarer). Retourne ``(action, already_applied)``.
         """
@@ -144,9 +146,20 @@ class ActionService:
         if existing.applied_at is not None:
             return existing, True
 
-        when = applied_at if applied_at is not None else self._now()
+        when = self._at_now_time(applied_at) if applied_at is not None else self._now()
         self.applications.set_applied(recommendation_id, when)
         return replace(existing, applied_at=when), False
+
+    def _at_now_time(self, day: str) -> str:
+        """Combine le **jour** déclaré (``day``, ISO) avec l'**heure courante** de ``self._now()``.
+
+        L'humain choisit une date sans horaire ; on garde cette date mais on y colle l'heure
+        (et le fuseau) de l'instant d'enregistrement, pour un horodatage réaliste même quand le
+        jour déclaré n'est pas aujourd'hui.
+        """
+        now = datetime.fromisoformat(self._now())
+        chosen = datetime.fromisoformat(day)
+        return now.replace(year=chosen.year, month=chosen.month, day=chosen.day).isoformat()
 
     def unmark_applied(self, recommendation_id: str) -> ApplicationAction:
         """Annule une candidature déclarée par erreur : retour à l'état « intention notée ».

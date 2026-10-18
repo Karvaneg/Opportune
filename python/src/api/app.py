@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from urllib.parse import parse_qs, unquote
 
@@ -913,9 +913,10 @@ class HermesApi:
         """Valide la date de candidature optionnelle du corps (``applied_at``).
 
         ``None``/absent → la couche métier datera à aujourd'hui. Sinon, exige une chaîne ISO
-        8601 parseable (date seule ``YYYY-MM-DD`` ou datetime) — 400 autrement. La garde « pas
-        dans le futur » est portée côté UI (``max`` du sélecteur de date) ; ici on ne fait que
-        rejeter un format inexploitable.
+        8601 parseable (date seule ``YYYY-MM-DD`` ou datetime) — 400 autrement. On rejette aussi
+        une date clairement **future** : candidater « demain » n'a pas de sens pour un pointage
+        de suivi (la même borne existe côté UI via ``max``, on la double ici pour les appels
+        directs à l'API). Une tolérance d'un jour absorbe les décalages de fuseau du client.
         """
         raw = body.get("applied_at")
         if raw is None:
@@ -923,9 +924,11 @@ class HermesApi:
         if not isinstance(raw, str):
             raise ApiError(400, "applied_at doit être une date ISO 8601 (chaîne)")
         try:
-            datetime.fromisoformat(raw)
+            parsed = datetime.fromisoformat(raw)
         except ValueError:
             raise ApiError(400, "applied_at doit être une date ISO 8601 valide")
+        if parsed.date() > datetime.now(timezone.utc).date() + timedelta(days=1):
+            raise ApiError(400, "applied_at ne peut pas être dans le futur")
         return raw
 
     def _post_message_confirm(

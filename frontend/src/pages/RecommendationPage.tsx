@@ -157,7 +157,9 @@ function DecisionTimeline({
     items.push({ at: application.applied_at, kind: "applied" });
   }
   // Tri chronologique ascendant (dates ISO) ; ordre d'insertion préservé à égalité de date.
-  items.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  // `parseIsoDate` traite les dates seules en heure locale (sinon elles se classent à minuit
+  // UTC, donc potentiellement le mauvais jour face aux timestamps de décision).
+  items.sort((a, b) => parseIsoDate(a.at).getTime() - parseIsoDate(b.at).getTime());
 
   return (
     <div>
@@ -316,7 +318,9 @@ function ApplicationConfirm({
 }) {
   const isReviewer = useIsReviewer();
   const [open, setOpen] = useState(false);
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, défaut du sélecteur
+  // YYYY-MM-DD en **heure locale** (`en-CA` formate en ISO court) : `toISOString()` donnerait
+  // la date UTC et pourrait proposer « demain » le soir pour un fuseau en retard sur UTC.
+  const today = new Date().toLocaleDateString("en-CA"); // défaut + borne `max` du sélecteur
   const [appliedDate, setAppliedDate] = useState(today);
   const confirm = useConfirmApplication(recommendationId);
   const markApplied = useMarkApplied(recommendationId);
@@ -328,6 +332,8 @@ function ApplicationConfirm({
   // ou tout juste confirmée dans la session ; de même, « candidaté » vaut dès que le back le
   // porte ou qu'on vient de le déclarer. `confirmed_at`/`applied_at` viennent de l'état
   // persistant (le détail est re-fetché après chaque POST, donc les dates arrivent au re-rendu).
+  // Le flag optimiste `markApplied.data` est remis à zéro par l'annulation (`unmarkApplied` →
+  // `markApplied.reset()`), sinon il resterait « collé » et masquerait le retour à l'intention.
   const notedAt = application?.confirmed_at ?? null;
   const appliedAt = application?.applied_at ?? null;
   const noted = application?.confirmed === true || (confirm.data != null && !confirm.isError);
@@ -348,7 +354,7 @@ function ApplicationConfirm({
           </p>
           <button
             type="button"
-            onClick={() => unmarkApplied.mutate()}
+            onClick={() => unmarkApplied.mutate(undefined, { onSuccess: () => markApplied.reset() })}
             disabled={unmarkApplied.isPending}
             aria-label="Annuler la candidature"
             title="Annuler la candidature (je n'ai pas candidaté)"
@@ -380,7 +386,12 @@ function ApplicationConfirm({
             </label>
             <button
               type="button"
-              onClick={() => markApplied.mutate({ applied_at: appliedDate })}
+              onClick={() =>
+                markApplied.mutate(
+                  { applied_at: appliedDate },
+                  { onSuccess: () => unmarkApplied.reset() },
+                )
+              }
               disabled={markApplied.isPending}
               className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
             >
@@ -702,8 +713,17 @@ function formatDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("fr-FR");
 }
 
+/**
+ * Parse une date ISO en tolérant les dates **seules** (`YYYY-MM-DD`). `new Date("2026-10-03")`
+ * les interprète en UTC (minuit UTC → jour décalé dans un fuseau en retard) ; on force l'heure
+ * locale en complétant `T00:00:00` pour qu'elles s'ordonnent et s'affichent au bon jour.
+ */
+function parseIsoDate(iso: string): Date {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso);
+}
+
 /** Date **seule** (sans heure) — pour une date choisie par l'utilisateur (ex. candidature). */
 function formatDay(iso: string): string {
-  const d = new Date(iso);
+  const d = parseIsoDate(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR");
 }
