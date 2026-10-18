@@ -16,6 +16,7 @@ décision. Ce service lit la décision (pour autoriser) mais persiste dans ses p
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -123,11 +124,33 @@ class ActionService:
         self.messages.save(action)
         return action, False
 
+    def mark_applied(self, recommendation_id: str) -> tuple[ApplicationAction, bool]:
+        """Déclare qu'on a **réellement candidaté** à une recommandation (suivi, OPP-xxx).
+
+        Exige une **intention préalablement notée** (``confirm_application``) : sans elle,
+        lève ``ActionNotAllowedError`` (→ 409) — on ne « candidate » pas une offre qu'on n'a
+        pas d'abord décidé de viser. Rien n'est envoyé : on horodate la déclaration. Idempotent
+        — si la candidature est déjà marquée, la retourne avec ``already = True`` sans réécrire
+        la date. Retourne le couple ``(action, already_applied)``.
+        """
+        existing = self.applications.get_by_recommendation(recommendation_id)
+        if existing is None:
+            raise ActionNotAllowedError(
+                "note d'abord ton intention de candidater avant de déclarer la candidature"
+            )
+        if existing.applied_at is not None:
+            return existing, True
+
+        applied_at = self._now()
+        self.applications.set_applied(recommendation_id, applied_at)
+        return replace(existing, applied_at=applied_at), False
+
     def get_application(self, recommendation_id: str) -> ApplicationAction | None:
         """Relit l'intention de candidater confirmée pour une recommandation, ou ``None``.
 
         Lecture **pure** (aucune création, aucune garde ``approved``) : sert à afficher dans
-        l'UI qu'une intention a déjà été notée, sans avoir à re-POSTer la confirmation. La
-        propriété est vérifiée en amont (le détail de la reco est owner-gated).
+        l'UI qu'une intention a déjà été notée (et si elle a abouti à une candidature), sans
+        avoir à re-POSTer. La propriété est vérifiée en amont (le détail de la reco est
+        owner-gated).
         """
         return self.applications.get_by_recommendation(recommendation_id)

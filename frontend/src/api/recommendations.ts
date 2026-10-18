@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
-import type { ActionConfirmation, RecommendationDetail } from "./types";
+import type { ActionConfirmation, ApplicationIntent, RecommendationDetail } from "./types";
 
 // Clé de cache du détail d'une recommandation. Distincte des `runKeys` : une reco se
 // consulte par son id stable (cf. decision_id), indépendamment du run qui l'a produite.
@@ -88,6 +88,24 @@ export function useConfirmApplication(recommendationId: string) {
         `/applications/${encodeURIComponent(recommendationId)}/confirm`,
         token,
         { confirm: true },
+      ),
+    invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
+  });
+}
+
+/**
+ * Déclaration « j'ai candidaté » : `POST /applications/{id}/applied`. Pointage de suivi, pas
+ * un envoi — aucune modale ni `{confirm}`. Exige une intention préalablement notée côté back
+ * (sinon 409, remonté tel quel). Idempotent. Au succès, invalide le détail : le badge
+ * « candidaté » (avec sa date) s'affiche sans rechargement.
+ */
+export function useMarkApplied(recommendationId: string) {
+  return useApiMutation<ApplicationIntent, void>({
+    mutationFn: (_variables, token) =>
+      apiPost<ApplicationIntent>(
+        `/applications/${encodeURIComponent(recommendationId)}/applied`,
+        token,
+        {},
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
   });

@@ -14,6 +14,7 @@ Endpoints :
     GET  /recommendations/{recommendation_id}          (OPP-094)
     POST /recommendations/{recommendation_id}/decision (OPP-094)
     POST /applications/{recommendation_id}/confirm      (OPP-096, action sensible)
+    POST /applications/{recommendation_id}/applied      (suivi : « j'ai candidaté »)
     POST /messages/{contact_id}/confirm                 (OPP-096, action sensible)
 
 Le POST recommande et pré-évalue les offres du candidat (filtrables via ``filters`` :
@@ -121,6 +122,7 @@ _RECOMMENDATION_DECISION = re.compile(r"^/recommendations/(?P<rid>[^/]+)/decisio
 _RECOMMENDATION_LETTER = re.compile(r"^/recommendations/(?P<rid>[^/]+)/letter$")
 _RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
 _APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
+_APPLICATION_APPLIED = re.compile(r"^/applications/(?P<rid>[^/]+)/applied$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
 _OFFERS = re.compile(r"^/offers$")
 
@@ -279,6 +281,11 @@ class HermesApi:
             if match:
                 self._require(method, "POST", path)
                 return self._post_application_confirm(unquote(match["rid"]), body, user)
+
+            match = _APPLICATION_APPLIED.match(path)
+            if match:
+                self._require(method, "POST", path)
+                return self._post_application_applied(unquote(match["rid"]), user)
 
             match = _MESSAGE_CONFIRM.match(path)
             if match:
@@ -862,6 +869,23 @@ class HermesApi:
             raise ApiError(409, str(exc))
         return Response(200, self._serialize_action(action, already))
 
+    def _post_application_applied(
+        self, recommendation_id: str, user: User | None
+    ) -> Response:
+        """Déclare qu'on a **réellement candidaté** à une recommandation (suivi, OPP-xxx).
+
+        Pointage déclaratif, pas un envoi : **aucune** garde ``{"confirm": true}`` (contrairement
+        à l'intention), mais les mêmes gardes d'accès (existence → propriété → rôle ``reviewer``).
+        Exige une intention préalablement notée (sinon 409). Idempotent. Renvoie l'état courant
+        de l'intention/candidature pour rafraîchir l'UI.
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        try:
+            self.actions.mark_applied(recommendation_id)
+        except ActionNotAllowedError as exc:
+            raise ApiError(409, str(exc))
+        return Response(200, self._serialize_application(recommendation_id) or {})
+
     def _post_message_confirm(
         self, contact_id: str, body: dict, user: User | None
     ) -> Response:
@@ -1014,4 +1038,7 @@ class HermesApi:
             "confirmed": True,
             "confirmed_at": application.confirmed_at,
             "status": application.status,
+            # Cycle de vie : ``applied`` = l'humain a déclaré avoir candidaté (OPP-xxx).
+            "applied": application.applied_at is not None,
+            "applied_at": application.applied_at,
         }

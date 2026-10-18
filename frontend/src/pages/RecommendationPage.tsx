@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiHttpError } from "../api/client";
 import {
   useConfirmApplication,
+  useMarkApplied,
   useRecommendation,
   useRescoreOffer,
   useValidateRecommendation,
@@ -260,30 +261,49 @@ function ApplicationConfirm({
   const isReviewer = useIsReviewer();
   const [open, setOpen] = useState(false);
   const confirm = useConfirmApplication(recommendationId);
+  const markApplied = useMarkApplied(recommendationId);
 
   if (!isReviewer) return null;
 
-  // Intention notée = soit déjà en base au chargement, soit tout juste confirmée dans la session.
-  // `confirmed_at` vient de l'état persistant ; après un POST frais, on retombe sur « à l'instant »
-  // (le détail sera re-fetché et portera la date au prochain rendu).
+  // Trois états du cycle de vie. L'intention est notée dès qu'elle est en base (au chargement)
+  // ou tout juste confirmée dans la session ; de même, « candidaté » vaut dès que le back le
+  // porte ou qu'on vient de le déclarer. `confirmed_at`/`applied_at` viennent de l'état
+  // persistant (le détail est re-fetché après chaque POST, donc les dates arrivent au re-rendu).
   const notedAt = application?.confirmed_at ?? null;
-  const justNoted = confirm.data != null && !confirm.isError;
-  const noted = application?.confirmed === true || justNoted;
+  const appliedAt = application?.applied_at ?? null;
+  const noted = application?.confirmed === true || (confirm.data != null && !confirm.isError);
+  const applied =
+    application?.applied === true || (markApplied.data != null && !markApplied.isError);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Intention de candidater
+        Candidature
       </h3>
 
-      {noted ? (
-        <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-          ✅ Tu as noté que tu vas candidater à cette offre
-          {notedAt ? ` — le ${formatDate(notedAt)}` : ""}.
-          <span className="mt-1 block text-xs text-emerald-700">
-            Aucun envoi n'est effectué : Opportune garde la trace de ton intention.
-          </span>
+      {applied ? (
+        <p className="rounded-md bg-emerald-100 p-3 text-sm text-emerald-900">
+          🎉 Tu as candidaté à cette offre
+          {appliedAt ? ` — le ${formatDate(appliedAt)}` : ""}.
         </p>
+      ) : noted ? (
+        <>
+          <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+            ✅ Tu as noté que tu vas candidater à cette offre
+            {notedAt ? ` — le ${formatDate(notedAt)}` : ""}.
+            <span className="mt-1 block text-xs text-emerald-700">
+              Aucun envoi n'est effectué : Opportune garde la trace de ton suivi.
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={() => markApplied.mutate()}
+            disabled={markApplied.isPending}
+            className="mt-3 rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+          >
+            J'ai candidaté
+          </button>
+        </>
       ) : (
         <>
           <p className="mb-2 text-sm text-slate-600">
@@ -304,6 +324,11 @@ function ApplicationConfirm({
       {confirm.isError && (
         <div className="mt-3">
           <ErrorNotice error={confirm.error} />
+        </div>
+      )}
+      {markApplied.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={markApplied.error} />
         </div>
       )}
 
