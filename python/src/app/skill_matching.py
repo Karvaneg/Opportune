@@ -18,8 +18,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-# Variante (en minuscules, espaces réduits) → forme canonique. Uniquement des équivalences
-# franches : même compétence, autre orthographe / abréviation. Étendre au besoin.
+# Variante (en minuscules, espaces réduits) → forme canonique. La règle par défaut reste
+# l'**équivalence franche** : même compétence, autre orthographe / abréviation / version
+# (``js``→``javascript``, ``html5``→``html``). Une **exception assumée** (OPP-157) : la famille
+# REST plus bas regroupe des libellés *sémantiquement* proches — pas de simples variantes
+# orthographiques — pour tuer les quasi-doublons d'une même offre. C'est un choix produit (le
+# dédoublonnage prime), à ne pas prendre comme feu vert pour y verser des rapprochements lâches :
+# toute nouvelle entrée hors « même techno » doit rester une convergence évidente et commentée.
 _ALIASES: dict[str, str] = {
     "js": "javascript",
     "ecmascript": "javascript",
@@ -44,6 +49,25 @@ _ALIASES: dict[str, str] = {
     "gh actions": "github actions",
     "tailwindcss": "tailwind",
     "tailwind css": "tailwind",
+    # Versions = même techno (HTML5 ≡ HTML, CSS3 ≡ CSS).
+    "html5": "html",
+    "css3": "css",
+    # Variantes d'intégration/livraison continue → une seule forme canonique.
+    "cicd": "ci/cd",
+    "ci-cd": "ci/cd",
+    "ci cd": "ci/cd",
+    # Famille REST — convergence SÉMANTIQUE assumée (cf. note en tête de _ALIASES), pas
+    # orthographique : « REST », « RESTful », « RESTful Design »… désignent le même domaine de
+    # compétence côté recrutement. But premier = éviter qu'une même offre compte « REST API » ET
+    # « RESTful Design » comme deux manques distincts. Effet de bord accepté : un profil nommant
+    # l'un couvre l'autre.
+    "rest": "rest api",
+    "restful": "rest api",
+    "rest apis": "rest api",
+    "restful api": "rest api",
+    "restful apis": "rest api",
+    "restful design": "rest api",
+    "api rest": "rest api",
 }
 
 # Compétence canonique → compétences qu'elle **implique** (spécifique ⇒ général). La
@@ -58,8 +82,9 @@ _IMPLIES: dict[str, set[str]] = {
     "next.js": {"react"},
     "nuxt.js": {"vue"},
     "redux": {"react"},
-    "github actions": {"github", "git"},
-    "gitlab ci": {"git"},
+    "github actions": {"github", "git", "ci/cd"},
+    "gitlab ci": {"git", "ci/cd"},
+    "jenkins": {"ci/cd"},
     "github": {"git"},
 }
 

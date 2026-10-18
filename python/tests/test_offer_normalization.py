@@ -125,3 +125,8 @@ def test_drop_non_skills_keeps_recognized_competencies():
 
 def test_drop_non_skills_preserves_order_and_case():
     assert drop_non_skills(["PostgreSQL", "iso", "GraphQL"]) == ["PostgreSQL", "GraphQL"]
+
+
+def test_drop_non_skills_removes_enumeration_filler():
+    # OPP-157 : le petit LLM clôt souvent une énumération par « etc. » / « … ».
+    assert drop_non_skills(["React", "etc.", "Node.js", "...", "…"]) == ["React", "Node.js"]

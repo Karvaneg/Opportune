@@ -22,6 +22,14 @@ def test_canonicalize_unknown_skill_is_left_normalized():
     assert canonicalize("Rust") == "rust"
 
 
+def test_canonicalize_versions_and_rest_family():
+    # OPP-157 : versions = même techno ; la famille REST converge (évite les quasi-doublons).
+    assert canonicalize("HTML5") == "html"
+    assert canonicalize("CSS3") == "css"
+    assert canonicalize("REST API") == canonicalize("RESTful Design") == "rest api"
+    assert canonicalize("CI-CD") == canonicalize("CICD") == "ci/cd"
+
+
 # --- expand_skills (familles / implications) ---------------------------------
 
 
@@ -46,6 +54,13 @@ def test_family_is_unidirectional():
 def test_github_actions_implies_git_and_github():
     owned = expand_skills(["GitHub Actions"])
     assert {"github actions", "github", "git"} <= owned
+
+
+def test_ci_cd_implied_by_pipelines():
+    # OPP-157 : maîtriser GitHub Actions / GitLab CI / Jenkins implique « CI/CD ».
+    assert "ci/cd" in expand_skills(["GitHub Actions"])
+    assert "ci/cd" in expand_skills(["GitLab CI"])
+    assert "ci/cd" in expand_skills(["Jenkins"])
 
 
 def test_expand_skips_blank_and_dedups():
