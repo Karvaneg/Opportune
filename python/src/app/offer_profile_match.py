@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from app.candidate_profile import CandidateProfile
 from app.offer import Offer
+from app.offer_normalization import normalize_contract
 from app.skill_matching import canonicalize, expand_skills
 
 # Valeurs sentinelles émises par le LLM pour un champ **absent de l'offre** : le prompt
@@ -90,11 +91,15 @@ def compare_contract_type(offer: Offer, profile: CandidateProfile) -> ContractMa
     profile_type = profile.contract_type if _is_specified(profile.contract_type) else None
     if offer_type is None or profile_type is None:
         return ContractMatch(offer=offer_type, profile=profile_type, compatible=None)
-    accepted = _PROFILE_CONTRACT_TO_OFFER.get(profile_type.lower(), set())
+    # Canonicalise des deux côtés avant de comparer : rattrape les libellés composés que le
+    # LLM glisse dans le champ (« CDI (permanent) » → « CDI »), y compris sur les offres déjà
+    # persistées — la normalisation d'ingestion ne les corrigerait que pour les offres neuves.
+    # Les libellés d'origine restent affichés (``offer``/``profile``) pour l'explicabilité.
+    accepted = _PROFILE_CONTRACT_TO_OFFER.get(normalize_contract(profile_type).lower(), set())
     return ContractMatch(
         offer=offer_type,
         profile=profile_type,
-        compatible=offer_type.lower() in accepted,
+        compatible=normalize_contract(offer_type).lower() in accepted,
     )
 
 

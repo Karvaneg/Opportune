@@ -20,6 +20,28 @@ def test_contract_keeps_unknown_value_cleaned():
     assert normalize_contract("  Portage   salarial ") == "Portage salarial"
 
 
+def test_contract_canonicalises_compound_labels():
+    # Libellés composés produits par le LLM (OPP-156) : un synonyme non ambigu à l'intérieur
+    # suffit à retrouver la forme canonique.
+    assert normalize_contract("CDI (permanent)") == "CDI"
+    assert normalize_contract("CDI - temps plein") == "CDI"
+    assert normalize_contract("Contrat CDD, 6 mois") == "CDD"
+
+
+def test_contract_ambiguous_compound_stays_cleaned():
+    # Deux formes canoniques en conflit → on n'invente pas, on conserve le libellé nettoyé.
+    assert normalize_contract("CDD puis CDI") == "CDD puis CDI"
+
+
+def test_contract_weak_synonym_not_matched_inside_compound():
+    # « mission »/« consultant » sont trop génériques pour réécrire un libellé composé : on ne
+    # les reconnaît qu'en lookup direct, pas noyés dans une phrase (sinon on freelanciserait à
+    # tort des libellés entiers). Exact → canonicalisé ; composé → conservé.
+    assert normalize_contract("Mission") == "Freelance"
+    assert normalize_contract("Mission d'intérêt général") == "Mission d'intérêt général"
+    assert normalize_contract("Consultant junior en CDI") == "CDI"
+
+
 def test_location_collapses_whitespace():
     assert normalize_location("  Paris   15e  ") == "Paris 15e"
 

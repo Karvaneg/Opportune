@@ -31,10 +31,43 @@ _CONTRACT_SYNONYMS = {
 }
 
 
+# Tokens alphabétiques (accents compris) pour repérer un synonyme à l'intérieur d'un
+# libellé composé (« CDI (permanent) », « CDI - temps plein »).
+_CONTRACT_WORD_RE = re.compile(r"[a-zà-ÿ]+", re.IGNORECASE)
+
+# Synonymes mono-mot trop génériques pour être cherchés *à l'intérieur* d'un libellé composé :
+# « mission »/« consultant » apparaissent dans quantité de libellés non-freelance (« mission
+# d'intérêt général », « consultant junior en CDI »). On les garde en lookup direct (exact) mais
+# on les exclut du matching par token, sinon ils réécriraient à tort des libellés entiers.
+_CONTRACT_WEAK_SYNONYMS = frozenset({"mission", "consultant"})
+
+
 def normalize_contract(value: str) -> str:
-    """Canonicalise un type de contrat ; conserve la valeur nettoyée si inconnu."""
+    """Canonicalise un type de contrat ; conserve la valeur nettoyée si inconnu.
+
+    Gère les libellés **composés** que le LLM produit parfois (« CDI (permanent) »,
+    « CDI - temps plein ») : à défaut de synonyme direct, on cherche les synonymes connus
+    présents dans le libellé (tokens pour les mots simples, sous-chaîne pour les locutions),
+    hors synonymes mono-mot ambigus (``_CONTRACT_WEAK_SYNONYMS``) qu'on ne reconnaît qu'en exact.
+    Si tous ceux trouvés désignent la **même** forme canonique, on la retient ; en cas de
+    conflit (« CDD puis CDI ») ou d'absence, on conserve la valeur nettoyée — on ne perd ni
+    n'invente d'information.
+    """
     cleaned = " ".join(value.split())
-    return _CONTRACT_SYNONYMS.get(cleaned.lower(), cleaned)
+    lowered = cleaned.lower()
+    direct = _CONTRACT_SYNONYMS.get(lowered)
+    if direct is not None:
+        return direct
+    tokens = set(_CONTRACT_WORD_RE.findall(lowered))
+    found = {
+        canonical
+        for synonym, canonical in _CONTRACT_SYNONYMS.items()
+        if synonym not in _CONTRACT_WEAK_SYNONYMS
+        and ((synonym in tokens) or (" " in synonym and synonym in lowered))
+    }
+    if len(found) == 1:
+        return next(iter(found))
+    return cleaned
 
 
 def normalize_location(value: str) -> str:

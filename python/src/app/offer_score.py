@@ -76,7 +76,17 @@ def _seniority_eval(seniority: SeniorityMatch) -> _Eval:
     if seniority.status == "ok":
         return 1.0, [("positive", f"Expérience suffisante ({years} ans ≥ {seniority.required_years} requis)")]
     if seniority.status == "insufficient":
-        return 0.0, [("negative", f"Expérience insuffisante ({years} ans < {seniority.required_years} requis)")]
+        # Near-miss gradué (OPP-156) : une expérience un peu courte ne vaut plus un 0 sec mais
+        # un score partiel = années détenues / requises (borné [0,1[). Un écart 2 vs 3 ans pèse
+        # ainsi ~0.67 au lieu de 0 — plus réaliste qu'un rejet binaire. ``required_years`` est
+        # forcément > 0 ici (sinon le statut serait « ok »), et ``profile_years`` est renseigné.
+        ratio = 0.0
+        if seniority.required_years and seniority.profile_years is not None:
+            ratio = max(0.0, min(1.0, seniority.profile_years / seniority.required_years))
+        # « un peu courte » suppose un near-miss : on le réserve au cas où le profil crédite au
+        # moins un peu d'expérience (ratio > 0). Sans aucune année créditée, l'écart est total.
+        libelle = "un peu courte" if ratio > 0 else "insuffisante"
+        return ratio, [("negative", f"Expérience {libelle} ({years} ans < {seniority.required_years} requis)")]
     if seniority.status == "not_required":
         return None, []  # pas d'exigence → non discriminant, aucune raison
     return None, [("unknown", "Séniorité non évaluée")]

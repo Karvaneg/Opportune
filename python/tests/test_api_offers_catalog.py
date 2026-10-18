@@ -38,7 +38,7 @@ def _seed_three(offers):
                        created_at="2026-02-01T00:00:00+00:00"))  # 1/2 → 78
     offers.save(_offer(id="c", title="C", url="http://c", skills=["Java"],
                        contract_type="Freelance", location="Lyon", seniority="Lead",
-                       created_at="2026-03-01T00:00:00+00:00"))  # faible → 0
+                       created_at="2026-03-01T00:00:00+00:00"))  # faible → 11 (séniorité 6/8 graduée)
 
 
 def _build(*, auth=None):
@@ -79,7 +79,7 @@ def test_get_offers_annotates_score_for_candidate():
     resp = api.dispatch("GET", "/offers?candidate_id=cand-1")
     assert resp.status == 200
     assert [(i["id"], i["score"]) for i in resp.body["items"]] == [
-        ("c", 0), ("b", 78), ("a", 100),
+        ("c", 11), ("b", 78), ("a", 100),
     ]
     # La bande de reco pilote l'affichage côté client (seuils serveur, pas de duplication).
     assert [i["action"] for i in resp.body["items"]] == ["ignorer", "a_etudier", "postuler"]
