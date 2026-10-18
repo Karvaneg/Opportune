@@ -85,8 +85,10 @@ export function RunRecommendations({ runId }: { runId: string }) {
         <>
           {/* Légende : chaque offre porte deux badges de registres distincts (OPP-149). */}
           <p className="text-xs text-slate-400">
-            Pour chaque offre : score, puis <span className="text-slate-500">pré-évaluation
-            automatique</span> et <span className="text-slate-500">décision humaine</span>.
+            Pour chaque offre : <span className="text-slate-500">score au moment du run</span>,
+            puis <span className="text-slate-500">pré-évaluation automatique</span> et{" "}
+            <span className="text-slate-500">décision humaine</span>. Le score à jour (recalculé)
+            est visible dans l'onglet Offres et sur le détail de l'offre.
           </p>
           <ul className="space-y-2">
             {data.items.map((item) => (
@@ -105,7 +107,12 @@ export function RunRecommendations({ runId }: { runId: string }) {
                   <p className="text-sm text-slate-500">{item.company || "—"}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-700">{item.score}</span>
+                  <span
+                    className="text-sm font-semibold text-slate-700"
+                    title="Score au moment du run (figé). Le score à jour est dans l'onglet Offres."
+                  >
+                    {item.score}
+                  </span>
                   <StatusBadge kind="advisory" value={item.advisory_status} />
                   <StatusBadge kind="decision" value={item.decision_status} />
                 </div>
