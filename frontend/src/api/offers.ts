@@ -58,6 +58,10 @@ export interface EvaluateOfferVariables {
  * (score + décision `pending` créés si l'offre n'avait jamais été évaluée), **sans créer de
  * run**, et préserve une décision humaine déjà prise. Retourne le détail de la recommandation
  * (dont `recommendation_id`) vers lequel l'appelant navigue.
+ *
+ * Même route que `useRescoreOffer` (OPP-150, recommendations.ts) : garder les deux synchronisés
+ * si le contrat bouge. La divergence est volontaire — ici pas de reco préexistante à invalider,
+ * donc pas d'`invalidateKeys` (le catalogue se refetch au remontage de la page).
  */
 export function useEvaluateOffer() {
   return useApiMutation<RecommendationDetail, EvaluateOfferVariables>({

@@ -81,7 +81,8 @@ export function OffersPage() {
  * Ligne de catalogue. Le **titre ouvre la fiche interne** de l'offre pour le candidat ciblé
  * (OPP-160) : on évalue l'offre à la volée (get-or-create, sans run) puis on navigue vers sa
  * recommandation. Plus besoin de passer par un run. Le lien « voir sur le site » reste
- * accessible en **secondaire**. Sans candidat ciblé, le titre reste un simple lien externe.
+ * accessible en **secondaire**. Sans candidat ciblé, le titre n'est plus cliquable (texte
+ * brut) ; l'offre externe reste joignable via ce lien secondaire.
  */
 function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: string }) {
   const navigate = useNavigate();
