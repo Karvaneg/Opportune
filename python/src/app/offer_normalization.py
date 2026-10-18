@@ -144,6 +144,11 @@ _NON_SKILL_TERMS = frozenset(
         "ademe",
         "greentech",
         "microsoft",
+        # remplissage d'énumération (le petit LLM clôt souvent une liste par « etc. »)
+        "etc",
+        "etc.",
+        "...",
+        "…",
     }
 )
 

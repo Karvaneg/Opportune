@@ -71,6 +71,35 @@ def test_skills_unspecified_sentinel_is_ignored():
     assert result.missing == []
 
 
+def test_skills_extraction_noise_is_dropped():
+    # OPP-157 : le bruit d'extraction (« etc. », normes) ne gonfle plus le dénominateur,
+    # même sur une offre déjà persistée (filtrage au moment de comparer).
+    offer = _offer(skills=["Python", "etc.", "ISO", "Go"])
+    profile = _profile(skills=["python"])
+    result = compare_skills(offer, profile)
+    assert result.matched == ["Python"]
+    assert result.missing == ["Go"]  # « etc. » et « ISO » retirés, pas comptés manquants
+
+
+def test_skills_quasi_duplicates_counted_once():
+    # OPP-157 : « REST API » et « RESTful Design » partagent la même forme canonique → une
+    # seule entrée manquante, pas deux (sinon pénalité double pour un seul concept).
+    offer = _offer(skills=["REST API", "RESTful Design", "Python"])
+    profile = _profile(skills=["python"])
+    result = compare_skills(offer, profile)
+    assert result.matched == ["Python"]
+    assert result.missing == ["REST API"]  # le second quasi-doublon est absorbé
+
+
+def test_skills_ci_cd_matched_via_pipeline_family():
+    # OPP-157 : une offre exigeant « CI/CD » est couverte par un profil « GitHub Actions ».
+    offer = _offer(skills=["CI/CD"])
+    profile = _profile(skills=["GitHub Actions"])
+    result = compare_skills(offer, profile)
+    assert result.matched == ["CI/CD"]
+    assert result.missing == []
+
+
 # --- Type de contrat ---------------------------------------------------------
 
 

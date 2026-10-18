@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from app.candidate_profile import CandidateProfile
 from app.offer import Offer
-from app.offer_normalization import normalize_contract
+from app.offer_normalization import drop_non_skills, normalize_contract
 from app.skill_matching import canonicalize, expand_skills
 
 # Valeurs sentinelles émises par le LLM pour un champ **absent de l'offre** : le prompt
@@ -50,17 +50,30 @@ def compare_skills(offer: Offer, profile: CandidateProfile) -> SkillMatch:
     couvre « JavaScript ») ; chaque compétence d'offre est comparée sous forme canonique.
     ``missing`` = exigées par l'offre mais non couvertes. Les libellés d'origine de l'offre
     sont conservés à l'affichage.
+
+    Deux filets au moment de comparer (OPP-157), pour que le dénominateur reflète la vraie
+    adéquation technique — y compris sur les offres **déjà persistées**, que la normalisation
+    d'ingestion ne corrigerait pas :
+
+    - ``drop_non_skills`` retire le bruit d'extraction (normes/organismes/tâches, « etc. ») ;
+    - **dédoublonnage par forme canonique** : « REST API » et « RESTful Design » (même canon)
+      ne comptent qu'une fois, de même que « React » et « ReactJS ».
     """
     owned = expand_skills(profile.skills)
     matched: list[str] = []
     missing: list[str] = []
+    seen: set[str] = set()
     # On ignore les sentinelles « Non précisé » (le LLM peut en glisser une dans la liste
     # plutôt que de la laisser vide) : une telle entrée n'est pas une compétence exigée, la
     # compter en ``missing`` pénaliserait à tort une offre éparse (OPP-151).
-    for skill in offer.skills:
+    for skill in drop_non_skills(offer.skills):
         if not _is_specified(skill):
             continue
-        (matched if canonicalize(skill) in owned else missing).append(skill)
+        canonical = canonicalize(skill)
+        if canonical in seen:  # quasi-doublon (même forme canonique) → compté une seule fois
+            continue
+        seen.add(canonical)
+        (matched if canonical in owned else missing).append(skill)
     return SkillMatch(matched=matched, missing=missing)
 
 
