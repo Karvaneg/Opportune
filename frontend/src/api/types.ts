@@ -74,6 +74,19 @@ export interface RecommendationDetail {
   status: DecisionStatus;
   comment: string | null;
   history: DecisionHistoryEvent[];
+  /**
+   * Intention de candidater déjà notée (OPP-096), ou `null` si aucune. `confirmed_at` est
+   * la date de la note ; `status` reste technique (`simulated` en V2, aucun envoi réel) et
+   * n'est pas affiché tel quel — le front en fait un libellé lisible.
+   */
+  application: ApplicationIntent | null;
+}
+
+/** État persistant de l'intention de candidater (lue dans le détail d'une recommandation). */
+export interface ApplicationIntent {
+  confirmed: boolean;
+  confirmed_at: string; // ISO 8601
+  status: string;
 }
 
 /** Réponse paginée de `GET /runs/{run_id}/recommendations`. */

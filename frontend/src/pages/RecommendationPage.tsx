@@ -15,7 +15,12 @@ import {
   useLetter,
 } from "../api/letters";
 import { useIsReviewer } from "../auth/roles";
-import type { Letter, OfferAction, RecommendationDetail } from "../api/types";
+import type {
+  ApplicationIntent,
+  Letter,
+  OfferAction,
+  RecommendationDetail,
+} from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
 import { StatusBadge } from "../components/StatusBadge";
 
@@ -108,7 +113,10 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
       <RescoreOffer reco={reco} />
       <LetterPanel recommendationId={reco.recommendation_id} />
       <RecommendationActions recommendationId={reco.recommendation_id} />
-      <ApplicationConfirm recommendationId={reco.recommendation_id} />
+      <ApplicationConfirm
+        recommendationId={reco.recommendation_id}
+        application={reco.application}
+      />
 
       <div>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -236,40 +244,63 @@ function RecommendationActions({ recommendationId }: { recommendationId: string 
 }
 
 /**
- * Confirmation explicite d'une candidature (OPP-110) — reviewers uniquement. Double
- * consentement via modale : ouvrir ne déclenche rien ; seule la confirmation POST l'action.
- * Le 409 (« décision approuvée requise ») et l'idempotence (`already_confirmed`) sont
- * rendus lisibles. Exécution simulée à ce stade.
+ * Note d'une **intention de candidater** (OPP-110) — reviewers uniquement. Double consentement
+ * via modale : ouvrir ne déclenche rien ; seule la confirmation POST l'action. L'action
+ * n'envoie **rien** vers l'extérieur (exécution simulée en V2) : elle trace que tu comptes
+ * candidater. L'état est **persistant** — relu depuis `reco.application` au chargement — et
+ * s'affiche même après rechargement. Le 409 (« décision approuvée requise ») reste lisible.
  */
-function ApplicationConfirm({ recommendationId }: { recommendationId: string }) {
+function ApplicationConfirm({
+  recommendationId,
+  application,
+}: {
+  recommendationId: string;
+  application: ApplicationIntent | null;
+}) {
   const isReviewer = useIsReviewer();
   const [open, setOpen] = useState(false);
   const confirm = useConfirmApplication(recommendationId);
 
   if (!isReviewer) return null;
 
+  // Intention notée = soit déjà en base au chargement, soit tout juste confirmée dans la session.
+  // `confirmed_at` vient de l'état persistant ; après un POST frais, on retombe sur « à l'instant »
+  // (le détail sera re-fetché et portera la date au prochain rendu).
+  const notedAt = application?.confirmed_at ?? null;
+  const justNoted = confirm.data != null && !confirm.isError;
+  const noted = application?.confirmed === true || justNoted;
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Candidature
+        Intention de candidater
       </h3>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        disabled={confirm.isPending}
-        className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
-      >
-        Candidater…
-      </button>
 
-      {confirm.data && (
-        <p className="mt-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-          {confirm.data.already_confirmed
-            ? "Candidature déjà confirmée"
-            : "Candidature confirmée"}{" "}
-          — statut : {confirm.data.status}.
+      {noted ? (
+        <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+          ✅ Tu as noté que tu vas candidater à cette offre
+          {notedAt ? ` — le ${formatDate(notedAt)}` : ""}.
+          <span className="mt-1 block text-xs text-emerald-700">
+            Aucun envoi n'est effectué : Opportune garde la trace de ton intention.
+          </span>
         </p>
+      ) : (
+        <>
+          <p className="mb-2 text-sm text-slate-600">
+            Marque que tu comptes candidater à cette offre. Opportune n'envoie rien à ta
+            place : c'est un suivi de ton intention.
+          </p>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            disabled={confirm.isPending}
+            className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+          >
+            Je vais candidater
+          </button>
+        </>
       )}
+
       {confirm.isError && (
         <div className="mt-3">
           <ErrorNotice error={confirm.error} />
@@ -279,13 +310,13 @@ function ApplicationConfirm({ recommendationId }: { recommendationId: string }) 
       {open && (
         <div
           role="dialog"
-          aria-label="Confirmer la candidature"
+          aria-label="Confirmer l'intention de candidater"
           className="fixed inset-0 z-10 flex items-center justify-center bg-slate-900/30 p-4"
         >
           <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
             <p className="text-sm text-slate-700">
-              Confirmer l'intention de candidater à cette offre ? L'action est explicite et
-              requiert une décision préalablement approuvée.
+              Noter que tu as l'intention de candidater à cette offre ? Rien n'est envoyé —
+              c'est un suivi. L'action requiert une décision préalablement approuvée.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -303,7 +334,7 @@ function ApplicationConfirm({ recommendationId }: { recommendationId: string }) 
                 onClick={() => confirm.mutate(undefined, { onSettled: () => setOpen(false) })}
                 className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
               >
-                Confirmer la candidature
+                Oui, je vais candidater
               </button>
             </div>
           </div>

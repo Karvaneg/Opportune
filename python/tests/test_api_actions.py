@@ -146,6 +146,40 @@ def test_confirm_application_stays_idempotent_after_decision_changes(env):
     assert applications.count() == 1
 
 
+# --- Lecture de l'intention dans le détail de la recommandation --------------
+
+def test_recommendation_detail_exposes_noted_intent(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    resp = api.dispatch("GET", f"/recommendations/{_RID}", None)
+    assert resp.status == 200
+    assert resp.body["application"] == {
+        "confirmed": True,
+        "confirmed_at": "2026-09-05T00:00:00+00:00",
+        "status": "simulated",
+    }
+
+
+def test_recommendation_detail_application_is_none_without_intent(env):
+    api, _, _, _ = env
+    _approve(api)  # décision approuvée mais AUCUNE intention notée
+
+    resp = api.dispatch("GET", f"/recommendations/{_RID}", None)
+    assert resp.status == 200
+    assert resp.body["application"] is None
+
+
+def test_recommendation_detail_application_none_without_action_service(env):
+    _, _, _, orchestrator = env
+    # Sans ActionService câblé, le détail reste lisible et n'affirme aucune intention.
+    api_without_actions = HermesApi(orchestrator)
+    resp = api_without_actions.dispatch("GET", f"/recommendations/{_RID}", None)
+    assert resp.status == 200
+    assert resp.body["application"] is None
+
+
 # --- Message : garde confirm + cible inconnue + pas de garde approved --------
 
 @pytest.mark.parametrize("bad_body", [{}, {"confirm": False}, {"confirm": "true"}, {"confirm": 1}])
