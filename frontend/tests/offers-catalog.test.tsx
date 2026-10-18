@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OffersPage } from "../src/pages/OffersPage";
 import { AuthProvider } from "../src/auth/AuthContext";
@@ -27,23 +28,22 @@ const CATALOG = {
   total_pages: 1,
 };
 
-/** fetch factice : identité (avec périmètre) sur /me, catalogue sinon. */
+/** fetch factice : identité (avec périmètre) sur /me, rescore (ouverture fiche) sinon catalogue. */
 function stubFetch(catalogBody: unknown) {
+  const calls: string[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn((url: string) =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve(
-            String(url).includes("/me")
-              ? { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] }
-              : catalogBody,
-          ),
-      } as Response),
-    ),
+    vi.fn((url: string) => {
+      const s = String(url);
+      const body = s.includes("/me")
+        ? { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] }
+        : s.includes("/rescore")
+          ? (calls.push(s), { recommendation_id: "cand-1:b", candidate_id: "cand-1", offer_id: "b" })
+          : catalogBody;
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+    }),
   );
+  return calls;
 }
 
 function renderOffers() {
@@ -52,7 +52,10 @@ function renderOffers() {
     <AuthProvider storage={memoryStorage("good")}>
       <QueryClientProvider client={qc}>
         <MemoryRouter>
-          <OffersPage />
+          <Routes>
+            <Route path="/" element={<OffersPage />} />
+            <Route path="/recommendations/:id" element={<div>FICHE RECO</div>} />
+          </Routes>
         </MemoryRouter>
       </QueryClientProvider>
     </AuthProvider>,
@@ -77,11 +80,24 @@ describe("OffersPage", () => {
     expect(screen.getByText("78/100")).toHaveClass("bg-amber-100");
     expect(screen.getByText("0/100")).toHaveClass("bg-slate-100");
     expect(screen.getByText(/2 au total/)).toBeInTheDocument();
-    // L'offre avec une URL expose un lien externe sur son titre.
-    expect(screen.getByText("Lead Java").closest("a")).toHaveAttribute(
+    // Le titre n'est plus un lien externe : c'est un bouton qui ouvre la fiche interne.
+    expect(screen.getByRole("button", { name: "Lead Java" })).toBeInTheDocument();
+    // Le lien externe reste accessible en secondaire pour l'offre qui a une URL.
+    expect(screen.getByRole("link", { name: /voir sur le site/ })).toHaveAttribute(
       "href",
       "https://initech.example/c",
     );
+  });
+
+  it("cliquer une offre l'évalue (rescore) et ouvre sa fiche de recommandation", async () => {
+    const calls = stubFetch(CATALOG);
+    renderOffers();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Full-stack" }));
+
+    // Rescore ciblé sur le couple candidat/offre → get-or-create de la décision…
+    await screen.findByText("FICHE RECO"); // …puis navigation vers la fiche.
+    expect(calls.some((u) => u.includes("/candidates/cand-1/offers/b/rescore"))).toBe(true);
   });
 
   it("affiche un état vide quand le catalogue est vide", async () => {

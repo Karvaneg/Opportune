@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useOffers } from "../api/offers";
+import { useNavigate } from "react-router-dom";
+import { useEvaluateOffer, useOffers } from "../api/offers";
 import { useAuth } from "../auth/AuthContext";
 import type { CatalogOffer, RecommendationAction } from "../api/types";
 import { Pager } from "../components/Pager";
@@ -59,7 +60,7 @@ export function OffersPage() {
           <div className="space-y-3">
             <ul className="space-y-2">
               {data.items.map((offer) => (
-                <OfferRow key={offer.id} offer={offer} />
+                <OfferRow key={offer.id} offer={offer} candidateId={target} />
               ))}
             </ul>
             <Pager
@@ -76,30 +77,65 @@ export function OffersPage() {
   );
 }
 
-function OfferRow({ offer }: { offer: CatalogOffer }) {
+/**
+ * Ligne de catalogue. Le **titre ouvre la fiche interne** de l'offre pour le candidat ciblé
+ * (OPP-160) : on évalue l'offre à la volée (get-or-create, sans run) puis on navigue vers sa
+ * recommandation. Plus besoin de passer par un run. Le lien « voir sur le site » reste
+ * accessible en **secondaire**. Sans candidat ciblé, le titre reste un simple lien externe.
+ */
+function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: string }) {
+  const navigate = useNavigate();
+  const evaluate = useEvaluateOffer();
+
+  const openFiche = () =>
+    evaluate.mutate(
+      { candidateId, offerId: offer.id },
+      {
+        onSuccess: (reco) =>
+          navigate(`/recommendations/${encodeURIComponent(reco.recommendation_id)}`, {
+            // Le « ← Retour » de la fiche revient aux Offres (pas à la home Runs par défaut).
+            state: { from: "/offres" },
+          }),
+      },
+    );
+
   return (
     <li className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400">
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-slate-900">
-          {offer.url ? (
-            <a
-              href={offer.url}
-              target="_blank"
-              rel="noreferrer"
-              className="hover:underline"
-            >
-              {offer.title}
-            </a>
-          ) : (
-            offer.title
-          )}
-        </p>
+        {candidateId ? (
+          <button
+            type="button"
+            onClick={openFiche}
+            disabled={evaluate.isPending}
+            className="block w-full truncate text-left font-medium text-slate-900 hover:underline disabled:opacity-60"
+          >
+            {offer.title}
+          </button>
+        ) : (
+          <p className="truncate font-medium text-slate-900">{offer.title}</p>
+        )}
         <p className="truncate text-sm text-slate-500">
           {offer.company} · {offer.location} · {offer.contract_type} ·{" "}
           {formatDate(offer.created_at)}
         </p>
+        {evaluate.isError && (
+          <div className="mt-2">
+            <ErrorNotice error={evaluate.error} />
+          </div>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-3 text-sm">
+        {offer.url && (
+          <a
+            href={offer.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-slate-400 hover:text-slate-600 hover:underline"
+            title="Voir l'offre sur le site"
+          >
+            voir sur le site ↗
+          </a>
+        )}
         <span className="text-slate-400">{offer.source}</span>
         <ScoreBadge score={offer.score} action={offer.action} />
       </div>
