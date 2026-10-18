@@ -14,6 +14,8 @@ Endpoints :
     GET  /recommendations/{recommendation_id}          (OPP-094)
     POST /recommendations/{recommendation_id}/decision (OPP-094)
     POST /applications/{recommendation_id}/confirm      (OPP-096, action sensible)
+    POST   /applications/{recommendation_id}/applied    (suivi : « j'ai candidaté », date optionnelle)
+    DELETE /applications/{recommendation_id}/applied    (annule la candidature déclarée)
     POST /messages/{contact_id}/confirm                 (OPP-096, action sensible)
 
 Le POST recommande et pré-évalue les offres du candidat (filtrables via ``filters`` :
@@ -46,6 +48,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from urllib.parse import parse_qs, unquote
 
@@ -121,6 +124,7 @@ _RECOMMENDATION_DECISION = re.compile(r"^/recommendations/(?P<rid>[^/]+)/decisio
 _RECOMMENDATION_LETTER = re.compile(r"^/recommendations/(?P<rid>[^/]+)/letter$")
 _RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
 _APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
+_APPLICATION_APPLIED = re.compile(r"^/applications/(?P<rid>[^/]+)/applied$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
 _OFFERS = re.compile(r"^/offers$")
 
@@ -279,6 +283,15 @@ class HermesApi:
             if match:
                 self._require(method, "POST", path)
                 return self._post_application_confirm(unquote(match["rid"]), body, user)
+
+            match = _APPLICATION_APPLIED.match(path)
+            if match:
+                rid = unquote(match["rid"])
+                if method == "POST":
+                    return self._post_application_applied(rid, body, user)
+                if method == "DELETE":
+                    return self._delete_application_applied(rid, user)
+                raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
             match = _MESSAGE_CONFIRM.match(path)
             if match:
@@ -862,6 +875,62 @@ class HermesApi:
             raise ApiError(409, str(exc))
         return Response(200, self._serialize_action(action, already))
 
+    def _post_application_applied(
+        self, recommendation_id: str, body: dict, user: User | None
+    ) -> Response:
+        """Déclare qu'on a **réellement candidaté** à une recommandation (suivi, OPP-xxx).
+
+        Pointage déclaratif, pas un envoi : **aucune** garde ``{"confirm": true}`` (contrairement
+        à l'intention), mais les mêmes gardes d'accès (existence → propriété → rôle ``reviewer``).
+        ``applied_at`` (optionnel) permet de dater une candidature **passée** ; absent = aujourd'hui.
+        Exige une intention préalablement notée (sinon 409). Idempotent. Renvoie l'état courant.
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        applied_at = self._parse_applied_at(body)
+        try:
+            self.actions.mark_applied(recommendation_id, applied_at)
+        except ActionNotAllowedError as exc:
+            raise ApiError(409, str(exc))
+        return Response(200, self._serialize_application(recommendation_id) or {})
+
+    def _delete_application_applied(
+        self, recommendation_id: str, user: User | None
+    ) -> Response:
+        """Annule une candidature déclarée par erreur : retour à l'état « intention notée ».
+
+        Mêmes gardes d'accès que la déclaration. Exige une intention existante (sinon 409).
+        Idempotent. Renvoie l'état courant (``applied`` repasse à ``false``).
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        try:
+            self.actions.unmark_applied(recommendation_id)
+        except ActionNotAllowedError as exc:
+            raise ApiError(409, str(exc))
+        return Response(200, self._serialize_application(recommendation_id) or {})
+
+    @staticmethod
+    def _parse_applied_at(body: dict) -> str | None:
+        """Valide la date de candidature optionnelle du corps (``applied_at``).
+
+        ``None``/absent → la couche métier datera à aujourd'hui. Sinon, exige une chaîne ISO
+        8601 parseable (date seule ``YYYY-MM-DD`` ou datetime) — 400 autrement. On rejette aussi
+        une date clairement **future** : candidater « demain » n'a pas de sens pour un pointage
+        de suivi (la même borne existe côté UI via ``max``, on la double ici pour les appels
+        directs à l'API). Une tolérance d'un jour absorbe les décalages de fuseau du client.
+        """
+        raw = body.get("applied_at")
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise ApiError(400, "applied_at doit être une date ISO 8601 (chaîne)")
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            raise ApiError(400, "applied_at doit être une date ISO 8601 valide")
+        if parsed.date() > datetime.now(timezone.utc).date() + timedelta(days=1):
+            raise ApiError(400, "applied_at ne peut pas être dans le futur")
+        return raw
+
     def _post_message_confirm(
         self, contact_id: str, body: dict, user: User | None
     ) -> Response:
@@ -1014,4 +1083,7 @@ class HermesApi:
             "confirmed": True,
             "confirmed_at": application.confirmed_at,
             "status": application.status,
+            # Cycle de vie : ``applied`` = l'humain a déclaré avoir candidaté (OPP-xxx).
+            "applied": application.applied_at is not None,
+            "applied_at": application.applied_at,
         }

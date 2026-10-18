@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS application_actions (
     decision_status_at_confirmation TEXT NOT NULL,
     confirmed_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    status TEXT NOT NULL
+    status TEXT NOT NULL,
+    applied_at TEXT
 )
 """
 
@@ -50,6 +51,8 @@ class ApplicationActionRepository(Protocol):
 
     def save(self, action: ApplicationAction) -> None: ...
 
+    def set_applied(self, recommendation_id: str, applied_at: str | None) -> None: ...
+
     def get_by_recommendation(self, recommendation_id: str) -> ApplicationAction | None: ...
 
 
@@ -69,15 +72,31 @@ class ApplicationActionStore:
         self.conn = conn
         self.conn.row_factory = sqlite3.Row
         self.conn.execute(_CREATE_APPLICATIONS)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Migrations idempotentes pour les bases créées avant un ajout de colonne.
+
+        ``applied_at`` (cycle de vie « candidaté », OPP-xxx) a été ajouté après coup : une
+        base existante a la table sans la colonne. On l'ajoute si elle manque — ``ALTER TABLE
+        ADD COLUMN`` crée la colonne à ``NULL``, ce qui est exactement « intention notée mais
+        pas encore candidaté » pour les lignes historiques.
+        """
+        columns = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(application_actions)")
+        }
+        if "applied_at" not in columns:
+            self.conn.execute("ALTER TABLE application_actions ADD COLUMN applied_at TEXT")
 
     def save(self, action: ApplicationAction) -> None:
         self.conn.execute(
             "INSERT INTO application_actions "
             "(action_id, recommendation_id, candidate_id, decision_status_at_confirmation, "
-            "confirmed_at, created_at, status) "
+            "confirmed_at, created_at, status, applied_at) "
             "VALUES (:action_id, :recommendation_id, :candidate_id, "
-            ":decision_status_at_confirmation, :confirmed_at, :created_at, :status)",
+            ":decision_status_at_confirmation, :confirmed_at, :created_at, :status, :applied_at)",
             {
                 "action_id": action.action_id,
                 "recommendation_id": action.recommendation_id,
@@ -86,7 +105,21 @@ class ApplicationActionStore:
                 "confirmed_at": action.confirmed_at,
                 "created_at": action.created_at,
                 "status": action.status,
+                "applied_at": action.applied_at,
             },
+        )
+        self.conn.commit()
+
+    def set_applied(self, recommendation_id: str, applied_at: str | None) -> None:
+        """Pose ou retire la date de candidature **réellement effectuée** de l'action.
+
+        ``applied_at`` non ``None`` = candidature déclarée (date) ; ``None`` = annulation (retour
+        à l'état « intention notée »). L'appelant (``ActionService``) a déjà vérifié l'existence
+        de l'action et porte l'idempotence ; ici on persiste simplement.
+        """
+        self.conn.execute(
+            "UPDATE application_actions SET applied_at = ? WHERE recommendation_id = ?",
+            (applied_at, recommendation_id),
         )
         self.conn.commit()
 
@@ -105,6 +138,7 @@ class ApplicationActionStore:
             confirmed_at=row["confirmed_at"],
             created_at=row["created_at"],
             status=row["status"],
+            applied_at=row["applied_at"],
         )
 
     def count(self) -> int:

@@ -83,6 +83,25 @@ describe("RecommendationPage", () => {
     expect(screen.getAllByText("Approuvé").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("l'historique agrège les jalons de candidature (intention + candidature)", async () => {
+    stubFetch(200, {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-04T12:00:00+00:00",
+        status: "simulated",
+        applied: true,
+        applied_at: "2026-10-05T09:00:00+00:00",
+      },
+    });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    // Les deux jalons apparaissent dans la frise, en plus des décisions.
+    expect(await screen.findByText("Intention de candidater notée")).toBeInTheDocument();
+    expect(screen.getByText("Candidature effectuée")).toBeInTheDocument();
+  });
+
   it("404 → message neutre (anti-énumération)", async () => {
     stubFetch(404, { error: "recommandation inconnue" });
     renderPage("cand-1:absente");
@@ -269,6 +288,8 @@ describe("RecommendationPage — intention de candidater (OPP-110)", () => {
         confirmed: true,
         confirmed_at: "2026-10-18T12:00:00+00:00",
         status: "simulated",
+        applied: false,
+        applied_at: null,
       },
     });
     renderPage();
@@ -276,8 +297,144 @@ describe("RecommendationPage — intention de candidater (OPP-110)", () => {
 
     expect(await screen.findByText(/noté que tu vas candidater/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Je vais candidater" })).toBeNull();
+    // Une intention notée propose l'étape suivante : déclarer la candidature.
+    expect(screen.getByRole("button", { name: "J'ai candidaté" })).toBeInTheDocument();
     // Le jargon technique (`simulated`) ne fuit jamais à l'écran.
     expect(screen.queryByText(/simulated/)).toBeNull();
+  });
+
+  it("noté → clic « J'ai candidaté » marque la candidature effectuée", async () => {
+    const calls: string[] = [];
+    const detail = {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-18T12:00:00+00:00",
+        status: "simulated",
+        applied: false,
+        applied_at: null as string | null,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        const ok = (b: unknown) =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/applied")) {
+          calls.push(s);
+          detail.application.applied = true;
+          detail.application.applied_at = "2026-10-18T15:00:00+00:00";
+          return ok(detail.application);
+        }
+        return ok(detail); // GET détail (reflète l'état courant après invalidation)
+      }),
+    );
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    await userEvent.click(screen.getByRole("button", { name: "J'ai candidaté" }));
+    expect(await screen.findByText(/Tu as candidaté à cette offre/)).toBeInTheDocument();
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toContain("/applications/");
+    expect(calls[0]).toContain("/applied");
+  });
+
+  it("envoie la date de candidature choisie dans le corps du POST", async () => {
+    const bodies: Array<{ applied_at?: string }> = [];
+    const detail = {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-18T12:00:00+00:00",
+        status: "simulated",
+        applied: false,
+        applied_at: null as string | null,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        const ok = (b: unknown) =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/applied")) {
+          bodies.push(JSON.parse(String(init?.body ?? "{}")));
+          detail.application.applied = true;
+          detail.application.applied_at = "2026-10-03";
+          return ok(detail.application);
+        }
+        return ok(detail);
+      }),
+    );
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    const input = screen.getByLabelText("Date de candidature");
+    await userEvent.clear(input);
+    await userEvent.type(input, "2026-10-03");
+    await userEvent.click(screen.getByRole("button", { name: "J'ai candidaté" }));
+
+    await screen.findByText(/Tu as candidaté à cette offre/);
+    expect(bodies.at(-1)?.applied_at).toBe("2026-10-03");
+  });
+
+  it("candidaté → « Annuler » repasse à l'intention notée", async () => {
+    const detail = {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-18T12:00:00+00:00",
+        status: "simulated",
+        applied: true,
+        applied_at: "2026-10-03" as string | null,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        const ok = (b: unknown) =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/applied") && init?.method === "DELETE") {
+          detail.application.applied = false;
+          detail.application.applied_at = null;
+          return ok(detail.application);
+        }
+        return ok(detail);
+      }),
+    );
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    await screen.findByText(/Tu as candidaté à cette offre/);
+    await userEvent.click(screen.getByRole("button", { name: /Annuler/ }));
+
+    // Retour à l'intention notée : le bouton « J'ai candidaté » réapparaît.
+    expect(await screen.findByRole("button", { name: "J'ai candidaté" })).toBeInTheDocument();
+    expect(screen.queryByText(/Tu as candidaté à cette offre/)).toBeNull();
+  });
+
+  it("une candidature déjà effectuée s'affiche au chargement, sans bouton", async () => {
+    stubFetch(200, {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-18T12:00:00+00:00",
+        status: "simulated",
+        applied: true,
+        applied_at: "2026-10-18T15:00:00+00:00",
+      },
+    });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    expect(await screen.findByText(/Tu as candidaté à cette offre/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "J'ai candidaté" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Je vais candidater" })).toBeNull();
   });
 
   it("un non-reviewer ne voit pas le bouton d'intention", async () => {

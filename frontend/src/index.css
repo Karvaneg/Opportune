@@ -1,1 +1,13 @@
 @import "tailwindcss";
+
+/*
+ * Tailwind v4 ne force plus `cursor: pointer` sur les boutons (changement de preflight).
+ * On le rétablit globalement pour tout élément cliquable actif — les `<a>`/`<Link>` ont déjà
+ * le pointeur par défaut, ce sont les `<button>` qui en manquaient.
+ */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}

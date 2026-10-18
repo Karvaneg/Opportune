@@ -16,6 +16,7 @@ décision. Ce service lit la décision (pour autoriser) mais persiste dans ses p
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -123,11 +124,64 @@ class ActionService:
         self.messages.save(action)
         return action, False
 
+    def mark_applied(
+        self, recommendation_id: str, applied_at: str | None = None
+    ) -> tuple[ApplicationAction, bool]:
+        """Déclare qu'on a **réellement candidaté** à une recommandation (suivi, OPP-xxx).
+
+        Exige une **intention préalablement notée** (``confirm_application``) : sans elle,
+        lève ``ActionNotAllowedError`` (→ 409) — on ne « candidate » pas une offre qu'on n'a
+        pas d'abord décidé de viser. ``applied_at`` permet de déclarer un **jour passé** (ex.
+        « candidaté il y a 15 jours ») : seule sa **date** est retenue, l'**heure** reçoit
+        toujours l'instant courant (``self._now()``) — on ne demande pas d'horaire à l'humain
+        mais on horodate l'enregistrement. ``None`` = aujourd'hui. Rien n'est envoyé. Idempotent
+        — si la candidature est déjà marquée, la retourne avec ``already = True`` sans réécrire
+        la date (pour la corriger : annuler puis re-déclarer). Retourne ``(action, already_applied)``.
+        """
+        existing = self.applications.get_by_recommendation(recommendation_id)
+        if existing is None:
+            raise ActionNotAllowedError(
+                "note d'abord ton intention de candidater avant de déclarer la candidature"
+            )
+        if existing.applied_at is not None:
+            return existing, True
+
+        when = self._at_now_time(applied_at) if applied_at is not None else self._now()
+        self.applications.set_applied(recommendation_id, when)
+        return replace(existing, applied_at=when), False
+
+    def _at_now_time(self, day: str) -> str:
+        """Combine le **jour** déclaré (``day``, ISO) avec l'**heure courante** de ``self._now()``.
+
+        L'humain choisit une date sans horaire ; on garde cette date mais on y colle l'heure
+        (et le fuseau) de l'instant d'enregistrement, pour un horodatage réaliste même quand le
+        jour déclaré n'est pas aujourd'hui.
+        """
+        now = datetime.fromisoformat(self._now())
+        chosen = datetime.fromisoformat(day)
+        return now.replace(year=chosen.year, month=chosen.month, day=chosen.day).isoformat()
+
+    def unmark_applied(self, recommendation_id: str) -> ApplicationAction:
+        """Annule une candidature déclarée par erreur : retour à l'état « intention notée ».
+
+        L'intention est **conservée** (on retire seulement la date de candidature). Exige une
+        intention existante (sinon ``ActionNotAllowedError`` → 409). Idempotent : annuler une
+        candidature non déclarée ne change rien. Retourne l'action remise à jour.
+        """
+        existing = self.applications.get_by_recommendation(recommendation_id)
+        if existing is None:
+            raise ActionNotAllowedError("aucune candidature à annuler pour cette offre")
+        if existing.applied_at is None:
+            return existing
+        self.applications.set_applied(recommendation_id, None)
+        return replace(existing, applied_at=None)
+
     def get_application(self, recommendation_id: str) -> ApplicationAction | None:
         """Relit l'intention de candidater confirmée pour une recommandation, ou ``None``.
 
         Lecture **pure** (aucune création, aucune garde ``approved``) : sert à afficher dans
-        l'UI qu'une intention a déjà été notée, sans avoir à re-POSTer la confirmation. La
-        propriété est vérifiée en amont (le détail de la reco est owner-gated).
+        l'UI qu'une intention a déjà été notée (et si elle a abouti à une candidature), sans
+        avoir à re-POSTer. La propriété est vérifiée en amont (le détail de la reco est
+        owner-gated).
         """
         return self.applications.get_by_recommendation(recommendation_id)

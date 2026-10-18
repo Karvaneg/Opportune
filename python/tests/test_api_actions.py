@@ -7,6 +7,7 @@ l'idempotence par cible, et le non-montage des routes quand le service n'est pas
 """
 
 import itertools
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -159,6 +160,8 @@ def test_recommendation_detail_exposes_noted_intent(env):
         "confirmed": True,
         "confirmed_at": "2026-09-05T00:00:00+00:00",
         "status": "simulated",
+        "applied": False,
+        "applied_at": None,
     }
 
 
@@ -178,6 +181,170 @@ def test_recommendation_detail_application_none_without_action_service(env):
     resp = api_without_actions.dispatch("GET", f"/recommendations/{_RID}", None)
     assert resp.status == 200
     assert resp.body["application"] is None
+
+
+# --- Candidature réellement effectuée : « j'ai candidaté » -------------------
+
+def test_mark_applied_requires_noted_intent(env):
+    api, applications, _, _ = env
+    _approve(api)  # décision OK mais AUCUNE intention notée
+    resp = api.dispatch("POST", f"/applications/{_RID}/applied", None)
+    assert resp.status == 409
+    assert "intention" in resp.body["error"]
+    assert applications.count() == 0  # rien créé
+
+
+def test_mark_applied_after_intent_sets_date_then_idempotent(env):
+    api, applications, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    first = api.dispatch("POST", f"/applications/{_RID}/applied", None)
+    assert first.status == 200
+    assert first.body["applied"] is True
+    assert first.body["applied_at"] == "2026-09-05T00:00:00+00:00"
+    assert applications.count() == 1  # pas de nouvelle action, la même est marquée
+
+    # Re-déclarer ne recrée rien et ne réécrit pas la date (idempotent).
+    second = api.dispatch("POST", f"/applications/{_RID}/applied", None)
+    assert second.status == 200
+    assert second.body["applied"] is True
+    assert second.body["applied_at"] == "2026-09-05T00:00:00+00:00"
+    assert applications.count() == 1
+
+
+def test_recommendation_detail_reflects_applied(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+    api.dispatch("POST", f"/applications/{_RID}/applied", None)
+
+    resp = api.dispatch("GET", f"/recommendations/{_RID}", None)
+    assert resp.body["application"]["applied"] is True
+    assert resp.body["application"]["applied_at"] == "2026-09-05T00:00:00+00:00"
+
+
+def test_mark_applied_route_absent_without_action_service(env):
+    _, _, _, orchestrator = env
+    api_without_actions = HermesApi(orchestrator)
+    resp = api_without_actions.dispatch("POST", f"/applications/{_RID}/applied", None)
+    assert resp.status == 404
+
+
+def test_mark_applied_accepts_chosen_past_date(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    # Candidature déclarée à un jour passé choisi (ex. « il y a 15 jours »). Le jour est retenu,
+    # l'heure reçoit l'instant courant (ici l'horloge du fixture, minuit).
+    resp = api.dispatch(
+        "POST", f"/applications/{_RID}/applied", {"applied_at": "2026-09-20"}
+    )
+    assert resp.status == 200
+    assert resp.body["applied"] is True
+    assert resp.body["applied_at"] == "2026-09-20T00:00:00+00:00"
+
+
+def test_mark_applied_keeps_chosen_day_but_records_current_time(env):
+    """Le jour déclaré est conservé ; l'heure (et le fuseau) viennent de l'instant d'enregistrement."""
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    # Horloge d'enregistrement à une heure non triviale, un autre jour que le jour déclaré.
+    api.actions._now = lambda: "2026-10-18T14:30:45+00:00"
+    resp = api.dispatch(
+        "POST", f"/applications/{_RID}/applied", {"applied_at": "2026-10-03"}
+    )
+    assert resp.status == 200
+    assert resp.body["applied_at"] == "2026-10-03T14:30:45+00:00"
+
+
+@pytest.mark.parametrize("bad", ["pas une date", "2026-13-40", 20260920])
+def test_mark_applied_rejects_invalid_date(env, bad):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+    resp = api.dispatch("POST", f"/applications/{_RID}/applied", {"applied_at": bad})
+    assert resp.status == 400
+    assert "applied_at" in resp.body["error"]
+
+
+def test_mark_applied_rejects_future_date(env):
+    """On ne candidate pas « demain » : une date clairement future est rejetée (400)."""
+    api, applications, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+
+    future = (datetime.now(timezone.utc).date() + timedelta(days=10)).isoformat()
+    resp = api.dispatch("POST", f"/applications/{_RID}/applied", {"applied_at": future})
+    assert resp.status == 400
+    assert "applied_at" in resp.body["error"]
+    # Rien n'a été marqué : l'intention reste sans candidature déclarée.
+    assert applications.get_by_recommendation(_RID).applied_at is None
+
+
+def test_unmark_applied_reverts_to_noted_intent(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+    api.dispatch("POST", f"/applications/{_RID}/applied", None)
+
+    resp = api.dispatch("DELETE", f"/applications/{_RID}/applied", None)
+    assert resp.status == 200
+    # L'intention reste notée ; seule la candidature est annulée.
+    assert resp.body["confirmed"] is True
+    assert resp.body["applied"] is False
+    assert resp.body["applied_at"] is None
+
+
+def test_unmark_applied_requires_existing_intent(env):
+    api, _, _, _ = env
+    _approve(api)  # aucune intention notée
+    resp = api.dispatch("DELETE", f"/applications/{_RID}/applied", None)
+    assert resp.status == 409
+    assert "annuler" in resp.body["error"]
+
+
+def test_unmark_applied_is_idempotent_when_not_applied(env):
+    api, _, _, _ = env
+    _approve(api)
+    api.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True})
+    # Intention notée mais jamais candidaté : annuler ne change rien, reste 200.
+    resp = api.dispatch("DELETE", f"/applications/{_RID}/applied", None)
+    assert resp.status == 200
+    assert resp.body["applied"] is False
+
+
+def test_mark_applied_wrong_method_is_405(env):
+    api, _, _, _ = env
+    resp = api.dispatch("PUT", f"/applications/{_RID}/applied", None)
+    assert resp.status == 405
+
+
+def test_application_store_migrates_legacy_table_without_applied_at():
+    """Une base créée avant l'ajout de ``applied_at`` est migrée au branchement du store."""
+    conn = connect(":memory:")
+    # Reproduit l'ancien schéma (sans ``applied_at``) + une ligne « intention notée ».
+    conn.execute(
+        "CREATE TABLE application_actions ("
+        "action_id TEXT PRIMARY KEY, recommendation_id TEXT NOT NULL UNIQUE, "
+        "candidate_id TEXT NOT NULL, decision_status_at_confirmation TEXT NOT NULL, "
+        "confirmed_at TEXT NOT NULL, created_at TEXT NOT NULL, status TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO application_actions VALUES "
+        "('a1', 'r1', 'cand-1', 'approved', '2026-09-05T00:00:00+00:00', "
+        "'2026-09-05T00:00:00+00:00', 'simulated')"
+    )
+    conn.commit()
+
+    store = ApplicationActionStore(conn)  # doit ALTER TABLE sans perdre la ligne
+    legacy = store.get_by_recommendation("r1")
+    assert legacy is not None
+    assert legacy.applied_at is None  # historique = intention sans candidature déclarée
+    conn.close()
 
 
 # --- Message : garde confirm + cible inconnue + pas de garde approved --------

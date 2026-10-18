@@ -26,7 +26,14 @@ SIMULATED = "simulated"
 
 @dataclass(frozen=True)
 class ApplicationAction:
-    """Intention **confirmée** de candidater à une offre recommandée.
+    """Engagement de candidature pour une offre recommandée, avec son cycle de vie.
+
+    Deux étapes **déclaratives** portées par le même objet (l'exécution reste simulée, cf.
+    module) :
+
+    - ``confirmed_at`` : l'humain a noté son **intention** de candidater (naissance de l'objet) ;
+    - ``applied_at`` : l'humain déclare avoir **réellement candidaté** — ``None`` tant qu'il ne
+      l'a pas fait. Opportune n'envoie rien : c'est un suivi saisi à la main.
 
     ``decision_status_at_confirmation`` fige l'état de la décision humaine au moment de la
     confirmation (``approved`` — seul état autorisé) : trace d'audit du « pourquoi c'était
@@ -40,6 +47,7 @@ class ApplicationAction:
     confirmed_at: str  # ISO 8601
     created_at: str  # ISO 8601
     status: str = SIMULATED
+    applied_at: str | None = None  # ISO 8601 ; None tant que non déclaré « candidaté »
 
 
 @dataclass(frozen=True)

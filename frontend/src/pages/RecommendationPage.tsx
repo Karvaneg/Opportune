@@ -3,8 +3,10 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiHttpError } from "../api/client";
 import {
   useConfirmApplication,
+  useMarkApplied,
   useRecommendation,
   useRescoreOffer,
+  useUnmarkApplied,
   useValidateRecommendation,
   type DecisionVerb,
 } from "../api/recommendations";
@@ -17,6 +19,8 @@ import {
 import { useIsReviewer } from "../auth/roles";
 import type {
   ApplicationIntent,
+  DecisionHistoryEvent,
+  DecisionStatus,
   Letter,
   OfferAction,
   RecommendationDetail,
@@ -118,34 +122,89 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         application={reco.application}
       />
 
-      <div>
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Historique de décision
-        </h3>
-        {reco.history.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-            Aucun événement.
-          </p>
-        ) : (
-          <ol className="space-y-2">
-            {reco.history.map((event, i) => (
-              <li
-                key={i}
-                className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-3"
-              >
-                <div className="flex items-center gap-2">
-                  <StatusBadge kind="decision" value={event.status} />
-                  {event.comment && (
-                    <span className="text-sm text-slate-600">{event.comment}</span>
-                  )}
-                </div>
-                <span className="shrink-0 text-xs text-slate-400">{formatDate(event.at)}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
+      <DecisionTimeline history={reco.history} application={reco.application} />
     </>
+  );
+}
+
+/**
+ * Historique unifié : fusionne **à l'affichage** les événements de décision humaine
+ * (`history`) et les jalons de candidature (`application`) dans une seule frise triée par
+ * date. On ne mélange pas les modèles côté back (décision ≠ action) — c'est une agrégation de
+ * présentation. L'intention/candidature reflètent l'état courant : annuler une candidature la
+ * retire aussi de la frise.
+ */
+function DecisionTimeline({
+  history,
+  application,
+}: {
+  history: DecisionHistoryEvent[];
+  application: ApplicationIntent | null;
+}) {
+  type Item =
+    | { at: string; kind: "decision"; status: DecisionStatus; comment: string | null }
+    | { at: string; kind: "intent" | "applied" };
+
+  const items: Item[] = [
+    ...history.map(
+      (e): Item => ({ at: e.at, kind: "decision", status: e.status, comment: e.comment }),
+    ),
+  ];
+  if (application?.confirmed) {
+    items.push({ at: application.confirmed_at, kind: "intent" });
+  }
+  if (application?.applied && application.applied_at) {
+    items.push({ at: application.applied_at, kind: "applied" });
+  }
+  // Tri chronologique ascendant (dates ISO) ; ordre d'insertion préservé à égalité de date.
+  // `parseIsoDate` traite les dates seules en heure locale (sinon elles se classent à minuit
+  // UTC, donc potentiellement le mauvais jour face aux timestamps de décision).
+  items.sort((a, b) => parseIsoDate(a.at).getTime() - parseIsoDate(b.at).getTime());
+
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Historique
+      </h3>
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+          Aucun événement.
+        </p>
+      ) : (
+        <ol className="space-y-2">
+          {items.map((item, i) => (
+            <li
+              key={i}
+              className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-3"
+            >
+              <div className="flex items-center gap-2">
+                {item.kind === "decision" ? (
+                  <>
+                    <StatusBadge kind="decision" value={item.status} />
+                    {item.comment && (
+                      <span className="text-sm text-slate-600">{item.comment}</span>
+                    )}
+                  </>
+                ) : (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      item.kind === "applied"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-indigo-100 text-indigo-800"
+                    }`}
+                  >
+                    {item.kind === "applied"
+                      ? "Candidature effectuée"
+                      : "Intention de candidater notée"}
+                  </span>
+                )}
+              </div>
+              <span className="shrink-0 text-xs text-slate-400">{formatDate(item.at)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 
@@ -259,31 +318,87 @@ function ApplicationConfirm({
 }) {
   const isReviewer = useIsReviewer();
   const [open, setOpen] = useState(false);
+  // YYYY-MM-DD en **heure locale** (`en-CA` formate en ISO court) : `toISOString()` donnerait
+  // la date UTC et pourrait proposer « demain » le soir pour un fuseau en retard sur UTC.
+  const today = new Date().toLocaleDateString("en-CA"); // défaut + borne `max` du sélecteur
+  const [appliedDate, setAppliedDate] = useState(today);
   const confirm = useConfirmApplication(recommendationId);
+  const markApplied = useMarkApplied(recommendationId);
+  const unmarkApplied = useUnmarkApplied(recommendationId);
 
   if (!isReviewer) return null;
 
-  // Intention notée = soit déjà en base au chargement, soit tout juste confirmée dans la session.
-  // `confirmed_at` vient de l'état persistant ; après un POST frais, on retombe sur « à l'instant »
-  // (le détail sera re-fetché et portera la date au prochain rendu).
+  // Trois états du cycle de vie. L'intention est notée dès qu'elle est en base (au chargement)
+  // ou tout juste confirmée dans la session ; de même, « candidaté » vaut dès que le back le
+  // porte ou qu'on vient de le déclarer. `confirmed_at`/`applied_at` viennent de l'état
+  // persistant (le détail est re-fetché après chaque POST, donc les dates arrivent au re-rendu).
+  // Le flag optimiste `markApplied.data` est remis à zéro par l'annulation (`unmarkApplied` →
+  // `markApplied.reset()`), sinon il resterait « collé » et masquerait le retour à l'intention.
   const notedAt = application?.confirmed_at ?? null;
-  const justNoted = confirm.data != null && !confirm.isError;
-  const noted = application?.confirmed === true || justNoted;
+  const appliedAt = application?.applied_at ?? null;
+  const noted = application?.confirmed === true || (confirm.data != null && !confirm.isError);
+  const applied =
+    application?.applied === true || (markApplied.data != null && !markApplied.isError);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Intention de candidater
+        Candidature
       </h3>
 
-      {noted ? (
-        <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
-          ✅ Tu as noté que tu vas candidater à cette offre
-          {notedAt ? ` — le ${formatDate(notedAt)}` : ""}.
-          <span className="mt-1 block text-xs text-emerald-700">
-            Aucun envoi n'est effectué : Opportune garde la trace de ton intention.
-          </span>
-        </p>
+      {applied ? (
+        <div className="flex items-center justify-between gap-3 rounded-md bg-emerald-100 p-3">
+          <p className="text-sm text-emerald-900">
+            🎉 Tu as candidaté à cette offre
+            {appliedAt ? ` — le ${formatDay(appliedAt)}` : ""}.
+          </p>
+          <button
+            type="button"
+            onClick={() => unmarkApplied.mutate(undefined, { onSuccess: () => markApplied.reset() })}
+            disabled={unmarkApplied.isPending}
+            aria-label="Annuler la candidature"
+            title="Annuler la candidature (je n'ai pas candidaté)"
+            className="shrink-0 text-lg font-bold leading-none text-red-600 hover:text-red-700 disabled:opacity-50"
+          >
+            ✕
+          </button>
+        </div>
+      ) : noted ? (
+        <>
+          <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+            ✅ Tu as noté que tu vas candidater à cette offre
+            {notedAt ? ` — le ${formatDate(notedAt)}` : ""}.
+            <span className="mt-1 block text-xs text-emerald-700">
+              Aucun envoi n'est effectué : Opportune garde la trace de ton suivi.
+            </span>
+          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="text-xs text-slate-600">
+              Date de candidature
+              <input
+                type="date"
+                value={appliedDate}
+                max={today}
+                onChange={(e) => setAppliedDate(e.target.value)}
+                aria-label="Date de candidature"
+                className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() =>
+                markApplied.mutate(
+                  { applied_at: appliedDate },
+                  { onSuccess: () => unmarkApplied.reset() },
+                )
+              }
+              disabled={markApplied.isPending}
+              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+            >
+              J'ai candidaté
+            </button>
+          </div>
+        </>
       ) : (
         <>
           <p className="mb-2 text-sm text-slate-600">
@@ -304,6 +419,16 @@ function ApplicationConfirm({
       {confirm.isError && (
         <div className="mt-3">
           <ErrorNotice error={confirm.error} />
+        </div>
+      )}
+      {markApplied.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={markApplied.error} />
+        </div>
+      )}
+      {unmarkApplied.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={unmarkApplied.error} />
         </div>
       )}
 
@@ -586,4 +711,19 @@ function Meta({ label, value, mono }: { label: string; value: string; mono?: boo
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("fr-FR");
+}
+
+/**
+ * Parse une date ISO en tolérant les dates **seules** (`YYYY-MM-DD`). `new Date("2026-10-03")`
+ * les interprète en UTC (minuit UTC → jour décalé dans un fuseau en retard) ; on force l'heure
+ * locale en complétant `T00:00:00` pour qu'elles s'ordonnent et s'affichent au bon jour.
+ */
+function parseIsoDate(iso: string): Date {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso);
+}
+
+/** Date **seule** (sans heure) — pour une date choisie par l'utilisateur (ex. candidature). */
+function formatDay(iso: string): string {
+  const d = parseIsoDate(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR");
 }

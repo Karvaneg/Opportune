@@ -82,11 +82,17 @@ export interface RecommendationDetail {
   application: ApplicationIntent | null;
 }
 
-/** État persistant de l'intention de candidater (lue dans le détail d'une recommandation). */
+/**
+ * État persistant de l'intention de candidater (lue dans le détail d'une recommandation),
+ * avec son cycle de vie. `applied` = l'utilisateur a déclaré avoir **réellement candidaté**
+ * (`applied_at` = quand), `false` tant qu'il n'a noté que l'intention. Aucun envoi réel.
+ */
 export interface ApplicationIntent {
   confirmed: boolean;
   confirmed_at: string; // ISO 8601
   status: string;
+  applied: boolean;
+  applied_at: string | null; // ISO 8601, ou null si pas encore candidaté
 }
 
 /** Réponse paginée de `GET /runs/{run_id}/recommendations`. */
