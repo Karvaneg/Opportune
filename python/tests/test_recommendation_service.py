@@ -65,7 +65,7 @@ def test_recommend_ranks_by_date_desc(env):
     service, offers = env
     _seed_three(offers)
     recos = service.recommend("cand-1")
-    assert [(r.offer.id, r.score) for r in recos] == [("c", 11), ("b", 78), ("a", 100)]
+    assert [(r.offer.id, r.score) for r in recos] == [("c", 0), ("b", 78), ("a", 100)]
 
 
 def test_recommend_filters_by_min_score(env):
@@ -167,10 +167,10 @@ def test_recommend_one_unknown_candidate_raises(env):
 
 def test_list_catalog_annotates_scores_in_date_order(env):
     service, offers = env
-    _seed_three(offers)  # a=100, b=78, c=11 ; dates a<b<c → ordre c, b, a
+    _seed_three(offers)  # a=100, b=78, c=0 ; dates a<b<c → ordre c, b, a
     entries, total = service.list_catalog(candidate_id="cand-1")
     assert total == 3
-    assert [(e.offer.id, e.score) for e in entries] == [("c", 11), ("b", 78), ("a", 100)]
+    assert [(e.offer.id, e.score) for e in entries] == [("c", 0), ("b", 78), ("a", 100)]
     assert all(isinstance(e, OfferCatalogEntry) for e in entries)
     # La bande de reco accompagne le score (source unique des seuils, OPP-146).
     assert [e.action for e in entries] == ["ignorer", "a_etudier", "postuler"]

@@ -79,7 +79,7 @@ def test_get_offers_annotates_score_for_candidate():
     resp = api.dispatch("GET", "/offers?candidate_id=cand-1")
     assert resp.status == 200
     assert [(i["id"], i["score"]) for i in resp.body["items"]] == [
-        ("c", 11), ("b", 78), ("a", 100),
+        ("c", 0), ("b", 78), ("a", 100),
     ]
     # La bande de reco pilote l'affichage côté client (seuils serveur, pas de duplication).
     assert [i["action"] for i in resp.body["items"]] == ["ignorer", "a_etudier", "postuler"]

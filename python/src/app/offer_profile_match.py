@@ -139,6 +139,16 @@ _OFFER_REMOTE_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
+# Marqueurs d'une **présence sur site imposée** qui contredit un télétravail annoncé
+# (« télétravail possible *mais* validation en laboratoire obligatoire », « présentiel »).
+# Quand ils cohabitent avec un marqueur remote, on refuse de requalifier l'écart de lieu en
+# « non bloquant » : le remote n'est pas réel/garanti (OPP-162).
+_ONSITE_MANDATORY_MARKERS = re.compile(
+    r"pr[ée]sentiel|sur\s*site|sur\s*place|en\s*laboratoire|"
+    r"pr[ée]sence\s+\w*\s*(?:obligatoire|requise|indispensable)",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class LocationMatch:
@@ -165,7 +175,11 @@ def _offer_allows_remote(offer: Offer) -> bool:
     """
     parts: list[str] = [offer.location, offer.title, offer.summary, *offer.attention_points]
     haystack = " ".join(part for part in parts if isinstance(part, str))
-    return bool(_OFFER_REMOTE_MARKERS.search(haystack))
+    if not _OFFER_REMOTE_MARKERS.search(haystack):
+        return False
+    # Remote annoncé mais contredit par une présence sur site imposée → non fiable : on ne
+    # requalifie pas l'écart de lieu (OPP-162).
+    return not _ONSITE_MANDATORY_MARKERS.search(haystack)
 
 
 def compare_location(offer: Offer, profile: CandidateProfile) -> LocationMatch:
@@ -238,9 +252,21 @@ def _min_required_years(normalized: str) -> int | None:
     ``None`` si aucun niveau connu n'apparaît, **ou** si le label porte une exclusion
     (« pas de junior », « débutants s'abstenir ») : on refuse d'inférer un seuil bas qui
     contredirait l'exigence, quitte à retomber sur « non évaluable ».
+
+    Un **nombre d'années explicite** (« 5 ans minimum », « 3 à 5 ans ») **prime** sur le
+    mapping du niveau (OPP-162) : « Confirmé (5 ans minimum) » valait 3 (via « confirmé »)
+    alors que le texte dit 5. On retient alors le **plus bas** des nombres cités (permissif,
+    cohérent avec les plages de niveaux : on exige dès le seuil minimal annoncé).
     """
     if _SENIORITY_EXCLUSION.search(normalized):
         return None
+    # Années explicites, y compris une plage (« 3 à 5 ans » → 3, « 5 ans minimum » → 5). On
+    # exige la présence de « an(s) » pour ne pas confondre avec un code postal (« Guidel (56) »).
+    explicit: list[int] = []
+    for m in re.finditer(r"(\d+)(?:\s*(?:à|a|-|/|et)\s*(\d+))?\s*an", normalized):
+        explicit.extend(int(g) for g in m.groups() if g)
+    if explicit:
+        return min(explicit)
     tokens = re.split(r"[^0-9a-zàâäéèêëîïôöûùüç]+", normalized)
     years = [_SENIORITY_YEARS[token] for token in tokens if token in _SENIORITY_YEARS]
     return min(years) if years else None

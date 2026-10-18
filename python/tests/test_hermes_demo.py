@@ -20,7 +20,7 @@ def test_run_deroule_la_boucle_et_classe_par_date():
     assert ordered == [
         ("offer-devpy", 100),
         ("offer-fullstack", 78),
-        ("offer-javalead", 11),
+        ("offer-javalead", 0),
     ]
     # Chaque résultat porte une décision pending fraîchement créée.
     assert all(r.decision.status == "pending" for r in results)
