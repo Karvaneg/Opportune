@@ -17,6 +17,7 @@ Endpoints :
     POST   /applications/{recommendation_id}/applied    (suivi : « j'ai candidaté », date optionnelle)
     DELETE /applications/{recommendation_id}/applied    (annule la candidature déclarée)
     POST /messages/{contact_id}/confirm                 (OPP-096, action sensible)
+    POST /collect                                       (OPP-167, collecte réelle Adzuna → bilan)
 
 Le POST recommande et pré-évalue les offres du candidat (filtrables via ``filters`` :
 ``contract_type`` exact, ``skills`` en ALL), journalise l'exécution (``run_id``, snapshot
@@ -49,8 +50,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import parse_qs, unquote
+
+if TYPE_CHECKING:
+    from app.offer_collection import CollectionReport
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.auth import AuthProvider, User
@@ -94,6 +98,18 @@ class OfferUrlIntake(Protocol):
     def __call__(self, url: str, *, source: str) -> Offer: ...
 
 
+class OfferCollector(Protocol):
+    """Lance une passe de collecte sur une source réelle et retourne son bilan (OPP-167).
+
+    Encapsule l'assemblage de la source (Adzuna) + ``run_collection`` liés à un ``LLMClient``
+    et à un dépôt d'offres : l'API reste transport-only et testable (on injecte un collector
+    factice, sans réseau ni Ollama). Un échec de la source (identifiants, quota, panne) est
+    rendu **dans le bilan** (``source_error``), pas levé — l'API répond alors 200 avec le détail.
+    """
+
+    def __call__(self, *, what: str, where: str, max_offers: int) -> "CollectionReport": ...
+
+
 @dataclass(frozen=True)
 class Response:
     """Résultat transport-agnostique d'un appel API : statut HTTP + corps."""
@@ -129,12 +145,25 @@ _APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
 _APPLICATION_APPLIED = re.compile(r"^/applications/(?P<rid>[^/]+)/applied$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
 _OFFERS = re.compile(r"^/offers$")
+_COLLECT = re.compile(r"^/collect$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
 
 # Clés de filtre acceptées par POST /recommendations (toute autre clé → 400 explicite).
 _ALLOWED_FILTER_KEYS = {"contract_type", "skills"}
+
+# POST /collect (OPP-167) : plafond d'offres par passe. La collecte est **synchrone** et paie
+# un passage LLM par offre neuve ; le serveur HTTP est **séquentiel** (cf. ``create_server``),
+# donc une passe longue gèle TOUTES les autres requêtes et risque le timeout client. On plafonne
+# donc bas, calibré sur le temps de réponse acceptable d'un passage LLM local par offre :
+# ``_COLLECT_MAX_DEFAULT`` quand le client n'en précise aucun ; ``_COLLECT_MAX_CAP`` écrête
+# toute demande supérieure (le front ne peut pas forcer une passe qui timeouterait). À relever
+# le jour où la collecte devient asynchrone (job en tâche de fond + sondage du bilan).
+# Calibrage : ~40 s/offre neuve mesuré en live (Ollama ministral-3:3b) → défaut 5 (~3-4 min pire
+# cas) / cap 10 (~6-7 min) pour rester sous un timeout proxy/navigateur raisonnable.
+_COLLECT_MAX_DEFAULT = 5
+_COLLECT_MAX_CAP = 10
 
 # Corps 404 générique en mode authentifié : « absent » et « hors périmètre » doivent être
 # indistinguables pour ne pas révéler l'existence d'une ressource d'autrui (anti-énumération).
@@ -152,6 +181,7 @@ class HermesApi:
         offer_intake: OfferIntake | None = None,
         letters: LetterService | None = None,
         offer_url_intake: OfferUrlIntake | None = None,
+        collector: OfferCollector | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -167,6 +197,9 @@ class HermesApi:
         # Lettre de motivation (OPP-147). Optionnel : si absent (pas de LLM câblé), les routes
         # /recommendations/{id}/letter ne sont pas montées (404). Injecté en prod, faux en test.
         self.letters = letters
+        # Collecte d'offres réelles (OPP-167). Optionnel : si absent (pas de source câblée),
+        # POST /collect n'est pas monté (404 neutre). Injecté en prod (Adzuna), faux en test.
+        self.collector = collector
         # Fournisseur d'authentification. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune vérification. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur
         # ``None`` en production. Avec un fournisseur, toute route métier exige un jeton
@@ -288,6 +321,13 @@ class HermesApi:
             if method == "POST":
                 return self._post_offers(body, user)
             raise ApiError(405, f"méthode {method} non autorisée sur {path}")
+
+        if _COLLECT.match(path):
+            # Montée uniquement si un collector est câblé (sinon 404 neutre, comme /offers POST).
+            if self.collector is None:
+                raise self._not_found(user, "collecte d'offres non disponible")
+            self._require(method, "POST", path)
+            return self._post_collect(body, user)
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
@@ -741,6 +781,61 @@ class HermesApi:
             "url": offer.url,
             "created_at": offer.created_at,
             "kind": offer.kind,  # emploi | formation (OPP-166)
+        }
+
+    def _post_collect(self, body: dict, user: User | None) -> Response:
+        """Déclenche une passe de collecte réelle (Adzuna) et renvoie son bilan (OPP-167).
+
+        Curation du **pool partagé** d'offres, comme POST /offers : réservée au rôle
+        ``reviewer`` (401 sans jeton géré en amont, 403 si le rôle manque). ``what`` /
+        ``where`` ciblent la recherche (optionnels) ; ``max`` plafonne la passe (défaut
+        ``_COLLECT_MAX_DEFAULT``, écrêté à ``_COLLECT_MAX_CAP`` car la collecte est synchrone).
+        Un échec de la source est porté par le bilan (``source_error``), pas par le statut HTTP :
+        la réponse reste 200 et le front affiche le détail.
+        """
+        self._guard_reviewer(user)
+        what = self._collect_param(body, "what")
+        where = self._collect_param(body, "where")
+        max_offers = self._collect_max(body)
+        report = self.collector(what=what, where=where, max_offers=max_offers)
+        return Response(200, self._serialize_report(report))
+
+    @staticmethod
+    def _collect_param(body: dict, key: str) -> str:
+        """Lit un critère texte optionnel de la collecte (``what``/``where``) ; 400 si non-chaîne."""
+        raw = body.get(key, "")
+        if raw is None:
+            return ""
+        if not isinstance(raw, str):
+            raise ApiError(400, f"{key} doit être une chaîne")
+        return raw.strip()
+
+    @staticmethod
+    def _collect_max(body: dict) -> int:
+        """Plafond d'offres de la passe : entier ≥ 1 (défaut), écrêté au cap synchrone.
+
+        Rejette ``bool`` (``True`` est un ``int`` en Python) et toute valeur < 1 — on ne lance
+        jamais une passe au plafond ambigu. Une demande supérieure au cap est **silencieusement
+        écrêtée** plutôt que refusée : le front n'a pas à connaître la borne exacte.
+        """
+        raw = body.get("max", _COLLECT_MAX_DEFAULT)
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+            raise ApiError(400, "max doit être un entier ≥ 1")
+        return min(raw, _COLLECT_MAX_CAP)
+
+    @staticmethod
+    def _serialize_report(report: "CollectionReport") -> dict:
+        """Bilan de collecte exposé au front (OPP-167) : compteurs + éventuelle erreur source.
+
+        ``failures`` est réduit à son **cardinal** (le détail par offre reste côté serveur) ;
+        ``source_error`` est ``None`` en cas de passe saine, sinon le message rendant visible
+        une panne de la source (identifiants manquants, quota, réseau)."""
+        return {
+            "collected": report.collected,
+            "stored": report.stored,
+            "duplicates": report.duplicates,
+            "failures": len(report.failures),
+            "source_error": report.source_error,
         }
 
     def _delete_run(self, run_id: str, user: User | None) -> Response:

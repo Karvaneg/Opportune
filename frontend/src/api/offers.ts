@@ -2,7 +2,12 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
-import type { OffersCatalogPage, OfferSummary, RecommendationDetail } from "./types";
+import type {
+  CollectionReport,
+  OffersCatalogPage,
+  OfferSummary,
+  RecommendationDetail,
+} from "./types";
 
 // Clé de cache du catalogue : page + candidat ciblé + étape d'entonnoir (chaque combinaison a
 // son cache). `all` est le préfixe commun (invalidation de toutes les variantes, cf. `useAddOffer`).
@@ -53,6 +58,33 @@ export function useAddOffer() {
   return useApiMutation<OfferSummary, AddOfferVariables>({
     mutationFn: (variables, token) => apiPost<OfferSummary>("/offers", token, variables),
     invalidateKeys: () => [offerKeys.all],
+  });
+}
+
+export interface CollectOffersVariables {
+  /** Mots-clés de recherche (Adzuna `what`) — optionnel. */
+  what?: string;
+  /** Localisation (Adzuna `where`), ex. « Paris » — optionnel. */
+  where?: string;
+}
+
+/**
+ * Déclenche une passe de collecte réelle (Adzuna) : `POST /collect` (OPP-167). Reviewer
+ * uniquement (curation du pool partagé, comme `useAddOffer`). **Synchrone** et coûteuse (un
+ * passage LLM par offre neuve) → le back plafonne le nombre d'offres ; l'appelant gère
+ * l'attente (« Récupération en cours… »). Au succès, invalide le catalogue (préfixe
+ * `["offers"]`, toutes pages/candidats) pour que les nouvelles offres y apparaissent sans
+ * rechargement. Le bilan retourné porte `source_error` (non nul = panne de la source, ex.
+ * identifiants Adzuna manquants) : succès HTTP malgré tout, l'appelant l'affiche.
+ *
+ * L'invalidation n'est déclenchée que si des offres ont réellement été persistées
+ * (`stored > 0`) : une passe sans nouveauté (que des doublons) ou en échec de source
+ * (`stored === 0`) ne change rien au catalogue → inutile de forcer un rechargement.
+ */
+export function useCollectOffers() {
+  return useApiMutation<CollectionReport, CollectOffersVariables>({
+    mutationFn: (variables, token) => apiPost<CollectionReport>("/collect", token, variables),
+    invalidateKeys: (_variables, report) => (report.stored > 0 ? [offerKeys.all] : []),
   });
 }
 

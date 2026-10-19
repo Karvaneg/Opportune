@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEvaluateOffer, useOffers } from "../api/offers";
 import { FUNNEL_LABELS, isFunnelStage } from "../api/funnel";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { useIsReviewer } from "../auth/roles";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
+import { CollectOffers } from "../components/CollectOffers";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
 
@@ -21,6 +23,10 @@ export function OffersPage() {
     const fromUrl = searchParams.get("candidate");
     return fromUrl && cands.includes(fromUrl) ? fromUrl : cands[0] ?? "";
   });
+  // La curation du pool (collecte Adzuna ci-dessous, ajout depuis l'accueil) est réservée au
+  // rôle reviewer : le message de catalogue vide n'oriente vers ces actions que si elles sont
+  // réellement disponibles (sinon « ci-dessus » pointerait vers un bloc masqué).
+  const isReviewer = useIsReviewer();
   const [page, setPage] = useState(1);
   // Filtre par étape d'entonnoir, piloté par l'URL (clic sur une carte du cockpit, OPP-164).
   const rawStage = searchParams.get("stage");
@@ -71,6 +77,8 @@ export function OffersPage() {
         )}
       </div>
 
+      <CollectOffers />
+
       {stageFilter && (
         <div className="flex items-center gap-2 text-sm">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
@@ -91,7 +99,9 @@ export function OffersPage() {
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
             {stageFilter
               ? `Aucune offre « ${FUNNEL_LABELS[stageFilter]} » pour ce candidat.`
-              : "Aucune offre dans le catalogue. Ajoute-en une depuis l'accueil."}
+              : isReviewer
+                ? "Aucune offre dans le catalogue. Récupère-en de nouvelles ci-dessus, ou ajoute-en une depuis l'accueil."
+                : "Aucune offre dans le catalogue pour le moment."}
           </p>
         ) : (
           <div className="space-y-3">
