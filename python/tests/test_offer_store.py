@@ -100,6 +100,17 @@ def test_save_preserves_first_created_at_on_upsert(store):
     assert fetched.created_at == "2026-01-01T00:00:00+00:00"  # mais pas la date
 
 
+def test_kind_roundtrips(store):
+    # OPP-166 : le type d'offre est persisté et relu.
+    store.save(_offer(id="f", kind="formation"))
+    assert store.get("f").kind == "formation"
+
+
+def test_default_kind_is_emploi(store):
+    store.save(_offer())
+    assert store.get("abc123").kind == "emploi"
+
+
 def test_list_all_empty(store):
     assert store.list_all() == []
 
@@ -196,6 +207,68 @@ def test_migrates_legacy_ids_merging_collisions_keeps_oldest():
     survivor = store.get(compute_offer_id("indeed", "https://x.com/job/9", "t"))
     assert survivor is not None
     assert survivor.created_at == "2026-01-01T00:00:00+00:00"  # la plus ancienne survit
+    conn.close()
+
+
+def test_migrates_legacy_table_without_kind_column():
+    # Base antérieure à OPP-166 : table offers sans colonne kind. L'ouverture doit l'ajouter
+    # (défaut emploi) sans planter, et dater l'offre d'emploi existante comme telle.
+    conn = connect(":memory:")
+    conn.execute(
+        "CREATE TABLE offers ("
+        "id TEXT PRIMARY KEY, title TEXT NOT NULL, company TEXT NOT NULL, "
+        "location TEXT NOT NULL, skills TEXT NOT NULL, seniority TEXT NOT NULL, "
+        "contract_type TEXT NOT NULL, summary TEXT NOT NULL, attention_points TEXT NOT NULL, "
+        "source TEXT NOT NULL, url TEXT NOT NULL, raw_text TEXT NOT NULL, "
+        "created_at TEXT NOT NULL DEFAULT '')"
+    )
+    offer_id = compute_offer_id("indeed", "http://x", "Dev Python CDI")
+    conn.execute(
+        "INSERT INTO offers (id, title, company, location, skills, seniority, "
+        "contract_type, summary, attention_points, source, url, raw_text, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (offer_id, "Développeur Python", "Acme", "Paris", "[]", "Senior", "CDI", "s",
+         "[]", "indeed", "http://x", "Dev Python CDI", "2026-01-01T00:00:00+00:00"),
+    )
+    conn.commit()
+
+    store = OfferStore(conn)  # déclenche la migration
+    assert store.get(offer_id).kind == "emploi"
+    conn.close()
+
+
+def test_migration_retypes_existing_formation_by_markers():
+    # OPP-166 : re-typage one-shot de la base existante — une offre d'emploi (kind par défaut)
+    # dont le texte porte des marqueurs explicites de formation est promue en formation.
+    conn = connect(":memory:")
+    store = OfferStore(conn)
+    raw = (
+        "Programme de formation éligible au financement. Dispositif POE "
+        "(Préparation Opérationnelle à l'Emploi), 448 heures."
+    )
+    store.save(_offer(id="poe", title="Ingénieur Test certifié ISTQB", raw_text=raw,
+                      kind="emploi"))
+    # Forcer le kind à emploi en base (comme une ligne pré-OPP-166), puis ré-ouvrir.
+    conn.execute("UPDATE offers SET kind = 'emploi' WHERE id = 'poe'")
+    conn.commit()
+
+    OfferStore(conn)  # ré-ouverture → re-typage (l'id est recalé sur le schéma canonique)
+    canonical = compute_offer_id("indeed", "http://x", raw)
+    assert store.get(canonical).kind == "formation"
+    conn.close()
+
+
+def test_migration_never_demotes_a_formation():
+    # Une formation détectée à l'intake (LLM) mais sans marqueur heuristique ne doit pas être
+    # rétrogradée en emploi par le re-typage.
+    conn = connect(":memory:")
+    store = OfferStore(conn)
+    store.save(_offer(id="f", title="Parcours interne", raw_text="Montée en compétences.",
+                      kind="formation"))
+
+    OfferStore(conn)  # ré-ouverture → le re-typage ne déclasse pas
+    canonical = compute_offer_id("indeed", "http://x", "Montée en compétences.")
+    assert store.get(canonical).kind == "formation"
     conn.close()
 
 

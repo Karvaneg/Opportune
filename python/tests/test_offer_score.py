@@ -195,6 +195,18 @@ def test_score_and_explain_offer_to_profile_end_to_end():
     assert explanation.positives  # au moins une raison positive
 
 
+def test_formation_is_not_scored():
+    # OPP-166 : une formation n'est pas évaluée sur l'adéquation des compétences (son but est
+    # de les acquérir). Score None (jamais 0), aucune raison — même avec un profil parfait.
+    offer = _offer(kind="formation")
+    profile = create_profile(name="Marie", skills=["Python", "SQL"], contract_type="CDI",
+                             location="Paris", total_experience_years=6)
+    assert score_offer_to_profile(offer, profile).score is None
+    explanation = explain_offer_to_profile(offer, profile)
+    assert explanation.score is None
+    assert explanation.positives == [] and explanation.negatives == []
+
+
 def test_sparse_offer_fully_covered_scores_high():
     # OPP-151 (symptôme) : offre peu détaillée (contrat/séniorité/lieu « Non précisé »,
     # défaut LLM) dont tout ce qu'elle exige est couvert par un CV plus riche. Ces

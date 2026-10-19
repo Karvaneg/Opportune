@@ -8,7 +8,7 @@ export type AdvisoryStatus = "approved" | "pending" | "rejected";
 export type DecisionStatus = "pending" | "approved" | "rejected" | "deferred";
 
 /** Action auto figée. `""` = non renseignée au run-time (valeur par défaut côté API). */
-export type OfferAction = "postuler" | "a_etudier" | "ignorer" | "";
+export type OfferAction = "postuler" | "a_etudier" | "ignorer" | "indeterminee" | "";
 
 /**
  * Évaluation telle que sérialisée dans le DÉTAIL d'un run (`GET /runs/{run_id}`).
@@ -67,9 +67,12 @@ export interface RecommendationDetail {
   candidate_id: string;
   offer_id: string;
   action: OfferAction;
-  score: number;
+  /** `null` pour une formation (OPP-166) : pas de score d'adéquation. */
+  score: number | null;
   title: string | null;
   company: string | null;
+  /** Type de l'offre d'origine (OPP-166), ou `null` si l'offre a disparu. */
+  kind: OfferKind | null;
   justification: string;
   status: DecisionStatus;
   comment: string | null;
@@ -134,6 +137,12 @@ export interface ActionConfirmation {
   already_confirmed: boolean;
 }
 
+/**
+ * Type d'offre (OPP-166) : `emploi` (poste à pourvoir, scoré) ou `formation` (cursus /
+ * certification / POE, non scoré — son but est d'acquérir des compétences, pas d'en exiger).
+ */
+export type OfferKind = "emploi" | "formation";
+
 /** Offre persistée renvoyée par `POST /offers` (intake d'offre collée, OPP-145). */
 export interface OfferSummary {
   id: string;
@@ -147,6 +156,7 @@ export interface OfferSummary {
   source: string;
   url: string;
   created_at: string; // ISO 8601, date d'ingestion (OPP-152)
+  kind: OfferKind;
 }
 
 /** Bande de recommandation dérivée du score (seuils côté serveur) — `null` si non noté. */
@@ -169,6 +179,7 @@ export interface CatalogOffer {
   source: string;
   url: string;
   created_at: string; // ISO 8601
+  kind: OfferKind; // OPP-166 : une `formation` est badgée, pas scorée
   score: number | null;
   action: RecommendationAction | null;
 }

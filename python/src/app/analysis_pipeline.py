@@ -33,7 +33,7 @@ from app.offer_recommendation import (
     recommend_action,
     validate_thresholds,
 )
-from app.offer_score import ScoreExplanation, explain_score
+from app.offer_score import ScoreExplanation, explain_offer_to_profile
 from app.offer_store import OfferRepository
 
 
@@ -69,7 +69,12 @@ def run_pipeline(
     validate_thresholds(high, medium)
     offer = intake_offer(raw_text, source=source, url=url, client=client, store=store)
     match = match_offer_to_profile(offer, profile)
-    explanation = explain_score(match)
+    # Scoring via le raccourci qui connaît ``offer.kind`` : une formation (OPP-166) n'est pas
+    # scorée sur l'adéquation (score ``None`` → action ``indeterminee``), au lieu d'un 0 à tort.
+    # On ne réimplémente pas le test de type ici : la règle vit dans ``explain_offer_to_profile``
+    # (source unique). Le ``match`` reste calculé pour le dossier (coût négligeable devant le LLM
+    # d'intake qui précède).
+    explanation = explain_offer_to_profile(offer, profile)
     recommendation = recommend_action(explanation.score, high=high, medium=medium)
     return DecisionDossier(
         offer=offer, match=match, explanation=explanation, recommendation=recommendation

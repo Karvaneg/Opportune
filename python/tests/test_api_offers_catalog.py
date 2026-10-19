@@ -85,6 +85,20 @@ def test_get_offers_annotates_score_for_candidate():
     assert [i["action"] for i in resp.body["items"]] == ["ignorer", "a_etudier", "postuler"]
 
 
+def test_get_offers_exposes_kind_and_leaves_formation_unscored():
+    # OPP-166 : le catalogue expose ``kind`` ; une formation est listée mais sans score ni
+    # bande de reco, même avec un candidat ciblé (le front badge « Formation »).
+    api, offers = _build()
+    offers.save(_offer(id="a", title="A", url="http://a"))  # emploi → scoré
+    offers.save(_offer(id="f", title="Formation ISTQB", url="http://f", kind="formation"))
+    resp = api.dispatch("GET", "/offers?candidate_id=cand-1")
+    assert resp.status == 200
+    by_id = {i["id"]: i for i in resp.body["items"]}
+    assert by_id["a"]["kind"] == "emploi" and by_id["a"]["score"] is not None
+    assert by_id["f"]["kind"] == "formation"
+    assert by_id["f"]["score"] is None and by_id["f"]["action"] is None
+
+
 def test_get_offers_respects_pagination_params():
     api, offers = _build()
     _seed_three(offers)

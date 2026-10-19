@@ -20,14 +20,23 @@ VALID = {
 
 def test_schema_covers_every_validated_field():
     # Le schéma qui contraint le LLM et la validation stricte doivent lister les mêmes
-    # champs : une réponse conforme au schéma passe la validation d'OfferAnalysis.
+    # champs **obligatoires** : une réponse conforme au schéma passe la validation.
     assert set(OFFER_ANALYSIS_SCHEMA["required"]) == set(VALID)
-    assert set(OFFER_ANALYSIS_SCHEMA["properties"]) == set(VALID)
     assert OFFER_ANALYSIS_SCHEMA["properties"]["title"] == {"type": "string"}
     assert OFFER_ANALYSIS_SCHEMA["properties"]["skills"] == {
         "type": "array",
         "items": {"type": "string"},
     }
+
+
+def test_schema_offers_kind_as_optional_enum():
+    # ``kind`` (OPP-166) est proposé au modèle (enum contraint) mais pas requis : l'intake ne
+    # doit pas échouer si le petit modèle l'omet.
+    assert OFFER_ANALYSIS_SCHEMA["properties"]["kind"] == {
+        "type": "string",
+        "enum": ["emploi", "formation"],
+    }
+    assert "kind" not in OFFER_ANALYSIS_SCHEMA["required"]
 
 
 def test_schema_output_passes_validation():
@@ -65,6 +74,22 @@ def test_extra_keys_are_ignored():
     analysis = OfferAnalysis.from_json(json.dumps(payload))
     assert analysis.title == "Développeur Python"
     assert not hasattr(analysis, "salary")
+
+
+def test_kind_defaults_to_emploi_when_absent():
+    # OPP-166 : champ optionnel — une analyse sans ``kind`` reste valide (défaut emploi).
+    assert OfferAnalysis.from_json(json.dumps(VALID)).kind == "emploi"
+
+
+def test_kind_is_read_when_valid():
+    analysis = OfferAnalysis.from_json(json.dumps(dict(VALID, kind="formation")))
+    assert analysis.kind == "formation"
+
+
+def test_kind_out_of_enum_falls_back_to_default_without_error():
+    # Tolérance : une valeur hors enum ne rejette pas l'analyse, elle retombe sur le défaut.
+    analysis = OfferAnalysis.from_json(json.dumps(dict(VALID, kind="stage")))
+    assert analysis.kind == "emploi"
 
 
 def test_malformed_json_is_rejected():

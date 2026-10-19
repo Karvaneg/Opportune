@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
 from app.offer import Offer, compute_offer_id
+from app.offer_kind import DEFAULT_KIND, FORMATION, classify_kind
 
 _COLUMNS = (
     "id",
@@ -31,6 +32,7 @@ _COLUMNS = (
     "source",
     "url",
     "raw_text",
+    "kind",
     "created_at",
 )
 
@@ -53,6 +55,7 @@ CREATE TABLE IF NOT EXISTS offers (
     source TEXT NOT NULL,
     url TEXT NOT NULL,
     raw_text TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'emploi',
     created_at TEXT NOT NULL DEFAULT ''
 )
 """
@@ -83,6 +86,7 @@ class OfferStore:
         self.conn.execute(_CREATE_TABLE)
         self._migrate_created_at()
         self._migrate_offer_ids()
+        self._migrate_kind()
         self.conn.commit()
 
     def _migrate_created_at(self) -> None:
@@ -139,6 +143,33 @@ class OfferStore:
                 # on écarte le doublon courant.
                 self.conn.execute("DELETE FROM offers WHERE id = ?", (row["id"],))
 
+    def _migrate_kind(self) -> None:
+        """Ajoute ``kind`` aux bases antérieures à OPP-166 et re-type les offres existantes.
+
+        Deux temps : (1) si la colonne manque, on l'ajoute avec le défaut ``emploi`` (les
+        offres pré-OPP-166 étaient toutes traitées comme des emplois) ; (2) on **promeut** en
+        ``formation`` les lignes dont le titre/texte porte des marqueurs explicites
+        (``classify_kind``), ce qui re-type d'un coup la base existante (ex. la POE ISTQB).
+
+        La promotion ne **déclasse jamais** une formation en emploi : une formation détectée
+        par le LLM à l'intake mais sans marqueur heuristique reste une formation. Idempotent
+        (ne touche que les ``emploi`` à promouvoir), donc ré-exécuter à chaque ouverture est
+        sans effet une fois la base à jour.
+        """
+        existing = {row["name"] for row in self.conn.execute("PRAGMA table_info(offers)")}
+        if "kind" not in existing:
+            self.conn.execute(
+                f"ALTER TABLE offers ADD COLUMN kind TEXT NOT NULL DEFAULT '{DEFAULT_KIND}'"
+            )
+        rows = self.conn.execute(
+            "SELECT id, title, raw_text FROM offers WHERE kind != ?", (FORMATION,)
+        ).fetchall()
+        for row in rows:
+            if classify_kind(row["title"], row["raw_text"]) == FORMATION:
+                self.conn.execute(
+                    "UPDATE offers SET kind = ? WHERE id = ?", (FORMATION, row["id"])
+                )
+
     def save(self, offer: Offer) -> None:
         """Insère l'offre ou met à jour la ligne existante (upsert sur ``id``).
 
@@ -181,6 +212,7 @@ class OfferStore:
             source=row["source"],
             url=row["url"],
             raw_text=row["raw_text"],
+            kind=row["kind"],
             created_at=row["created_at"],
         )
 

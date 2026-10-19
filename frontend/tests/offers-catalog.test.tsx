@@ -17,10 +17,11 @@ const CATALOG = {
     { id: "c", title: "Lead Java", company: "Initech", location: "Lyon",
       contract_type: "Freelance", seniority: "Lead", source: "indeed",
       url: "https://initech.example/c", created_at: "2026-03-01T00:00:00+00:00",
-      score: 0, action: "ignorer" },
+      kind: "emploi", score: 0, action: "ignorer" },
     { id: "b", title: "Full-stack", company: "Globex", location: "Paris",
       contract_type: "CDI", seniority: "Senior", source: "indeed",
-      url: "", created_at: "2026-02-01T00:00:00+00:00", score: 78, action: "a_etudier" },
+      url: "", created_at: "2026-02-01T00:00:00+00:00", kind: "emploi",
+      score: 78, action: "a_etudier" },
   ],
   page: 1,
   page_size: 20,
@@ -112,7 +113,8 @@ describe("OffersPage", () => {
       items: [
         { id: "x", title: "Sans score", company: "Acme", location: "Paris",
           contract_type: "CDI", seniority: "Senior", source: "collée",
-          url: "", created_at: "2026-01-01T00:00:00+00:00", score: null, action: null },
+          url: "", created_at: "2026-01-01T00:00:00+00:00", kind: "emploi",
+          score: null, action: null },
       ],
       page: 1, page_size: 20, total: 1, total_pages: 1,
     });
@@ -120,6 +122,27 @@ describe("OffersPage", () => {
 
     expect(await screen.findByText("Sans score")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("badge une formation tout en la gardant cliquable (fiche décidable, OPP-166)", async () => {
+    const calls = stubFetch({
+      items: [
+        { id: "f", title: "Formation ISTQB", company: "Skolae", location: "À distance",
+          contract_type: "CDI", seniority: "Débutant", source: "collée",
+          url: "https://skolae.example/f", created_at: "2026-01-01T00:00:00+00:00",
+          kind: "formation", score: null, action: null },
+      ],
+      page: 1, page_size: 20, total: 1, total_pages: 1,
+    });
+    renderOffers();
+
+    // Badge « Formation » explicite — pas de 0, pas de tiret ambigu.
+    expect(await screen.findByText("Formation")).toBeInTheDocument();
+    // Mais le titre reste cliquable : candidater à une formation a du sens → fiche ouvrable.
+    const title = screen.getByRole("button", { name: "Formation ISTQB" });
+    await userEvent.click(title);
+    await screen.findByText("FICHE RECO"); // rescore (get-or-create) puis navigation vers la fiche
+    expect(calls.some((u) => u.includes("/candidates/cand-1/offers/f/rescore"))).toBe(true);
   });
 
   // --- Ajout d'offre, déplacé de « Runs » vers « Offres » (OPP-161) ---

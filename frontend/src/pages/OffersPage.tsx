@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAddOffer, useEvaluateOffer, useOffers } from "../api/offers";
 import { useAuth } from "../auth/AuthContext";
 import { useIsReviewer } from "../auth/roles";
-import type { CatalogOffer, RecommendationAction } from "../api/types";
+import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
 
@@ -212,7 +212,7 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
           </a>
         )}
         <span className="text-slate-400">{offer.source}</span>
-        <ScoreBadge score={offer.score} action={offer.action} />
+        <ScoreBadge kind={offer.kind} score={offer.score} action={offer.action} />
       </div>
     </li>
   );
@@ -225,8 +225,30 @@ const SCORE_TONES: Record<RecommendationAction, string> = {
   ignorer: "bg-slate-100 text-slate-600",
 };
 
-/** Badge de score de match. `null` (non ciblé / non évaluable) → tiret neutre. */
-function ScoreBadge({ score, action }: { score: number | null; action: RecommendationAction | null }) {
+/**
+ * Badge de score de match. Une **formation** (OPP-166) n'est pas scorée : on affiche un badge
+ * « Formation » explicite (jamais 0 ni le tiret ambigu). Sinon : la bande de reco colore le
+ * score ; `null` (non ciblé / non évaluable pour un emploi) → tiret neutre.
+ */
+function ScoreBadge({
+  kind,
+  score,
+  action,
+}: {
+  kind: OfferKind;
+  score: number | null;
+  action: RecommendationAction | null;
+}) {
+  if (kind === "formation") {
+    return (
+      <span
+        className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"
+        title="Formation : non évaluée sur l'adéquation (son but est d'acquérir des compétences)"
+      >
+        Formation
+      </span>
+    );
+  }
   if (score === null || action === null) {
     return <span className="text-slate-400" title="Non évalué">—</span>;
   }

@@ -59,3 +59,40 @@ def test_list_for_candidate(store):
 def test_optional_comment_persists_as_null(store):
     store.save(_decision())  # pending, sans commentaire
     assert store.get("cand-1:off-1").comment is None
+
+
+def test_formation_decision_persists_null_score(store):
+    # OPP-166 : une décision de formation (score None) est persistée et relue sans contrainte.
+    decision = create_decision(
+        candidate_id="cand-1", offer_id="f", action="indeterminee",
+        score=None, justification="Formation : non évaluée.", now=lambda: "t0",
+    )
+    store.save(decision)
+    assert store.get("cand-1:f").score is None
+
+
+def test_migrates_legacy_not_null_score_to_nullable():
+    # Base antérieure à OPP-166 : colonne score NOT NULL. L'ouverture doit reconstruire la
+    # table en nullable (en préservant les lignes existantes), pour accepter une formation.
+    conn = connect(":memory:")
+    conn.execute(
+        "CREATE TABLE decisions ("
+        "id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL, offer_id TEXT NOT NULL, "
+        "action TEXT NOT NULL, score INTEGER NOT NULL, justification TEXT NOT NULL, "
+        "status TEXT NOT NULL, comment TEXT, history TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO decisions VALUES "
+        "('cand-1:a','cand-1','a','postuler',100,'j','pending',NULL,'[]')"
+    )
+    conn.commit()
+
+    store = DecisionStore(conn)  # déclenche la migration (reconstruction nullable)
+    assert store.get("cand-1:a").score == 100  # ligne préservée
+    # La contrainte est levée : une formation (score None) passe désormais.
+    store.save(create_decision(
+        candidate_id="cand-1", offer_id="f", action="indeterminee",
+        score=None, justification="Formation.", now=lambda: "t0",
+    ))
+    assert store.get("cand-1:f").score is None
+    conn.close()

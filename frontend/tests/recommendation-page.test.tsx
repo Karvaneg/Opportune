@@ -20,6 +20,7 @@ const DETAIL = {
   score: 100,
   title: "Développeur Full-Stack",
   company: "Holis",
+  kind: "emploi",
   justification: "Score 100/100 — forte adéquation.",
   status: "approved",
   comment: "Bonne adéquation",
@@ -100,6 +101,26 @@ describe("RecommendationPage", () => {
     // Les deux jalons apparaissent dans la frise, en plus des décisions.
     expect(await screen.findByText("Intention de candidater notée")).toBeInTheDocument();
     expect(screen.getByText("Candidature effectuée")).toBeInTheDocument();
+  });
+
+  it("fiche d'une formation : badge « Formation » au lieu du score (OPP-166)", async () => {
+    // L'API renvoie `score: null` pour une formation (pas 0) ; le front badge au lieu du chiffre.
+    stubFetch(200, { ...DETAIL, kind: "formation", score: null });
+    renderPage();
+
+    expect(await screen.findByText("Développeur Full-Stack")).toBeInTheDocument();
+    expect(screen.getByText("Formation")).toBeInTheDocument();
+  });
+
+  it("score null sans kind formation (offre disparue) → tiret, jamais un vide (OPP-166)", async () => {
+    // `kind: null` (offre supprimée) + `score: null` : on ne tombe pas dans la branche
+    // « Formation », il faut quand même un tiret neutre et non un emplacement vide.
+    stubFetch(200, { ...DETAIL, kind: null, score: null });
+    renderPage();
+
+    expect(await screen.findByText("Développeur Full-Stack")).toBeInTheDocument();
+    expect(screen.queryByText("Formation")).not.toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 
   it("404 → message neutre (anti-énumération)", async () => {
