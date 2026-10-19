@@ -1,6 +1,8 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useCandidateActivity } from "../api/activity";
 import { useCandidateStats } from "../api/stats";
 import type { FunnelStage } from "../api/funnel";
+import type { ActivityEvent } from "../api/types";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { AddOffer } from "../components/AddOffer";
 import { LaunchRun } from "../components/LaunchRun";
@@ -41,18 +43,8 @@ export function CockpitPage() {
         )}
       </div>
 
-      {target === "" ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-          Aucun candidat dans votre périmètre.
-        </p>
-      ) : (
-        <>
-          {isPending && <Loading label="Chargement de la synthèse…" />}
-          {isError && <ErrorNotice error={error} />}
-          {data && <StatCards candidateId={target} stats={data} />}
-        </>
-      )}
-
+      {/* Raccourcis d'action en haut, juste sous l'en-tête : « que puis-je faire maintenant ? »
+          doit rester visible sans scroller sous le flux d'activité (OPP-165, retour dogfood). */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -62,6 +54,19 @@ export function CockpitPage() {
         </div>
         <AddOffer />
       </div>
+
+      {target === "" ? (
+        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+          Aucun candidat dans votre périmètre.
+        </p>
+      ) : (
+        <>
+          {isPending && <Loading label="Chargement de la synthèse…" />}
+          {isError && <ErrorNotice error={error} />}
+          {data && <StatCards candidateId={target} stats={data} />}
+          <ActivityFeed candidateId={target} />
+        </>
+      )}
     </section>
   );
 }
@@ -84,24 +89,84 @@ function StatCards({
           stage="a_etudier"
           tone="bg-amber-50 text-amber-900 hover:border-amber-300"
         />
+        {/* Couleurs alignées sur le parcours de candidature de la fiche reco : « à postuler »
+            reprend l'indigo de « intention de candidater notée », « postulées » le vert de
+            « candidature effectuée » (c'est fait). */}
         <StatCard
           label="À postuler"
           value={stats.a_postuler}
           candidateId={candidateId}
           stage="a_postuler"
-          tone="bg-emerald-50 text-emerald-900 hover:border-emerald-300"
+          tone="bg-indigo-50 text-indigo-900 hover:border-indigo-300"
         />
         <StatCard
-          label="Postulé"
+          label="Postulées"
           value={stats.postule}
           candidateId={candidateId}
           stage="postule"
-          tone="bg-slate-50 text-slate-700 hover:border-slate-400"
+          tone="bg-emerald-50 text-emerald-900 hover:border-emerald-300"
         />
       </div>
       <p className="text-sm text-slate-400">{stats.offres_total} offre(s) au total</p>
     </div>
   );
+}
+
+/**
+ * Flux « Dernière activité » (OPP-165) : journal transversal horodaté sous les cartes. Chaque
+ * événement est un lien vers sa cible (fiche de recommandation, ou catalogue pour une offre).
+ */
+function ActivityFeed({ candidateId }: { candidateId: string }) {
+  const { data, isPending, isError, error } = useCandidateActivity(candidateId);
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Dernières activités
+      </h3>
+      {isPending && <Loading label="Chargement de l'activité…" />}
+      {isError && <ErrorNotice error={error} />}
+      {data &&
+        (data.items.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center text-sm text-slate-500">
+            Aucune activité récente.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+            {data.items.map((event, i) => (
+              <li key={`${event.target_id}-${event.at}-${i}`} className="px-4 py-2.5">
+                <ActivityRow event={event} />
+              </li>
+            ))}
+          </ul>
+        ))}
+    </div>
+  );
+}
+
+function ActivityRow({ event }: { event: ActivityEvent }) {
+  const to =
+    event.target_kind === "recommendation"
+      ? `/recommendations/${encodeURIComponent(event.target_id)}`
+      : "/offres";
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <Link
+        to={to}
+        state={{ from: "/" }}
+        className="min-w-0 flex-1 truncate text-slate-700 hover:text-slate-900 hover:underline"
+      >
+        {event.label}
+      </Link>
+      <span className="shrink-0 text-xs text-slate-400">{formatActivityDate(event.at)}</span>
+    </div>
+  );
+}
+
+/** Date lisible ; valeur brute si non parsable (robustesse). */
+function formatActivityDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR");
 }
 
 /** Carte-compteur, cliquable : ouvre Offres filtré sur l'étape d'entonnoir, pour ce candidat. */

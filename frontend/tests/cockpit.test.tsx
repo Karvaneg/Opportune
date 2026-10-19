@@ -14,8 +14,17 @@ function memoryStorage(initial: string | null): AuthStorage {
 
 const STATS = { a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12 };
 
-/** fetch factice : /me (reviewer, 1 candidat), /stats, POST /offers pour l'ajout. */
-function stubFetch(statsBody: unknown = STATS, role = "reviewer") {
+const ACTIVITY = {
+  items: [
+    { type: "decision", at: "2026-09-06T00:00:00+00:00", label: "Candidature approuvée — Dev Python",
+      target_kind: "recommendation", target_id: "cand-1:off-a" },
+    { type: "offer", at: "2026-09-01T00:00:00+00:00", label: "Offre ajoutée — Lead Java",
+      target_kind: "offer", target_id: "off-c" },
+  ],
+};
+
+/** fetch factice : /me (reviewer, 1 candidat), /stats, /activity, POST /offers pour l'ajout. */
+function stubFetch(statsBody: unknown = STATS, role = "reviewer", activityBody: unknown = ACTIVITY) {
   const calls: { url: string; body?: unknown }[] = [];
   const ok = (b: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -25,6 +34,7 @@ function stubFetch(statsBody: unknown = STATS, role = "reviewer") {
       const s = String(url);
       if (s.includes("/me"))
         return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+      if (s.includes("/activity")) return ok(activityBody);
       if (s.includes("/stats")) return ok(statsBody);
       if (s.includes("/offers") && init?.method === "POST") {
         calls.push({ url: s, body: JSON.parse(String(init?.body ?? "{}")) });
@@ -52,6 +62,7 @@ function renderCockpit() {
           <Routes>
             <Route path="/" element={<CockpitPage />} />
             <Route path="/offres" element={<OffersProbe />} />
+            <Route path="/recommendations/:id" element={<div>FICHE RECO</div>} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
@@ -74,7 +85,7 @@ describe("CockpitPage (OPP-164)", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("À postuler")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("Postulé")).toBeInTheDocument();
+    expect(screen.getByText("Postulées")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText(/12 offre\(s\) au total/)).toBeInTheDocument();
   });
@@ -126,5 +137,22 @@ describe("CockpitPage (OPP-164)", () => {
     // Les compteurs restent visibles, mais pas le formulaire d'ajout (reviewer-gated).
     await screen.findByText("À étudier");
     expect(screen.queryByLabelText("Texte de l'offre")).toBeNull();
+  });
+
+  it("affiche la « Dernière activité » et lie chaque événement à sa cible (OPP-165)", async () => {
+    stubFetch();
+    renderCockpit();
+
+    expect(await screen.findByText("Dernières activités")).toBeInTheDocument();
+    // Un événement de décision pointe vers la fiche de recommandation (attendre le chargement).
+    await userEvent.click(await screen.findByText("Candidature approuvée — Dev Python"));
+    expect(await screen.findByText("FICHE RECO")).toBeInTheDocument();
+  });
+
+  it("flux d'activité vide → message dédié", async () => {
+    stubFetch(STATS, "reviewer", { items: [] });
+    renderCockpit();
+
+    expect(await screen.findByText("Aucune activité récente.")).toBeInTheDocument();
   });
 });

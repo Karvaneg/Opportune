@@ -192,3 +192,7 @@ class ActionService:
         Lecture pure : la propriété est vérifiée en amont (l'endpoint stats est owner-gated).
         """
         return self.applications.applied_recommendation_ids(candidate_id)
+
+    def applied_at_for(self, recommendation_ids: list[str]) -> dict[str, str]:
+        """``{recommendation_id: applied_at}`` des candidatures déclarées (lecture en lot, cockpit)."""
+        return self.applications.applied_at_by_recommendation(recommendation_ids)

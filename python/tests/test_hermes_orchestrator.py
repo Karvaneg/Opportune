@@ -387,6 +387,71 @@ def test_candidate_stats_unknown_candidate_raises(env):
         orchestrator.candidate_stats("nope")
 
 
+# --- Flux d'activité (OPP-165) -----------------------------------------------
+
+
+def test_candidate_activity_aggregates_decisions_letters_applications_offers(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)  # 3 offres ajoutées (created_at 2026-01-01..03)
+    orchestrator.rescore_offer("cand-1", "a")
+    orchestrator.validate_decision("cand-1", "a", "approved")  # décision tranchée horodatée
+
+    rid_a = decision_id("cand-1", "a")
+    events = orchestrator.candidate_activity(
+        "cand-1",
+        letters_at=lambda rids: {rid_a: "2026-09-05T00:00:00+00:00"} if rid_a in rids else {},
+        applied_at=lambda rids: {rid_a: "2026-09-06T00:00:00+00:00"} if rid_a in rids else {},
+    )
+    types = [e.type for e in events]
+    assert "decision" in types and "letter" in types and "application" in types
+    assert types.count("offer") == 3  # les 3 offres du pool (sous le plafond offer_limit=5)
+    # Plus récent d'abord : la candidature (09-06) devance la lettre (09-05) puis la décision.
+    assert events[0].type == "application" and events[1].type == "letter"
+
+
+def test_candidate_activity_targets_are_clickable(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.rescore_offer("cand-1", "a")
+    orchestrator.validate_decision("cand-1", "a", "approved")
+    events = orchestrator.candidate_activity("cand-1")
+    decision_ev = next(e for e in events if e.type == "decision")
+    offer_ev = next(e for e in events if e.type == "offer")
+    assert decision_ev.target_kind == "recommendation" and decision_ev.target_id == decision_id("cand-1", "a")
+    assert offer_ev.target_kind == "offer"
+
+
+def test_candidate_activity_respects_limit(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    assert len(orchestrator.candidate_activity("cand-1", limit=2)) == 2
+
+
+def test_candidate_activity_caps_offers_so_they_dont_bury_candidate_events(env):
+    """Un catalogue fraîchement alimenté ne doit pas évincer la décision du candidat (OPP-165)."""
+    orchestrator, offers, _ = env
+    # Décision tranchée ancienne (now du service = 2026-09-03) sur une offre ciblée…
+    offers.save(_offer(id="a", title="A", url="http://a", created_at="2026-01-01T00:00:00+00:00"))
+    orchestrator.rescore_offer("cand-1", "a")
+    orchestrator.validate_decision("cand-1", "a", "approved")
+    # … puis 10 offres ajoutées bien plus tard (plus récentes que la décision).
+    for n in range(10):
+        offers.save(_offer(id=f"flood-{n}", title=f"F{n}", url=f"http://f{n}",
+                           created_at=f"2026-10-{n + 1:02d}T00:00:00+00:00"))
+
+    events = orchestrator.candidate_activity("cand-1", limit=6)
+    types = [e.type for e in events]
+    # Les offres sont plafonnées (offer_limit=5) → la décision survit dans la fenêtre.
+    assert types.count("offer") == 5
+    assert "decision" in types
+
+
+def test_candidate_activity_unknown_candidate_raises(env):
+    orchestrator, _, _ = env
+    with pytest.raises(UnknownCandidateError):
+        orchestrator.candidate_activity("nope")
+
+
 def test_rescore_offer_unknown_candidate_raises(env):
     orchestrator, offers, _ = env
     _seed_three(offers)

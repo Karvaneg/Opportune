@@ -91,6 +91,18 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
             {/* title/company peuvent être null (offre disparue) → repli sur offer_id. */}
             <p className="font-medium text-slate-900">{reco.title || reco.offer_id}</p>
             <p className="text-sm text-slate-500">{reco.company || "—"}</p>
+            {/* Lien vers l'annonce d'origine (OPP-112), si l'offre en porte une. */}
+            {reco.url && (
+              <a
+                href={reco.url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-block text-sm text-slate-400 hover:text-slate-600 hover:underline"
+                title="Voir l'offre sur le site"
+              >
+                voir sur le site ↗
+              </a>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {/* Une formation (OPP-166) n'a pas de score d'adéquation : badge explicite plutôt
@@ -115,10 +127,13 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
           </div>
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+        {/* Action · Candidat · Offre · Ajoutée le sur une seule ligne (4 colonnes dès sm). */}
+        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
           <Meta label="Action" value={ACTION_LABELS[reco.action]} />
           <Meta label="Candidat" value={reco.candidate_id} mono />
           <Meta label="Offre" value={reco.offer_id} mono />
+          {/* Date d'ingestion de l'offre dans Opportune (OPP-112), si connue. */}
+          {reco.created_at && <Meta label="Ajoutée le" value={formatDay(reco.created_at)} />}
         </dl>
 
         {reco.justification && (

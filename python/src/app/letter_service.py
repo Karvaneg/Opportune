@@ -68,6 +68,10 @@ class LetterService:
         """Retourne la lettre de la reco, ou ``None`` si aucune n'est encore générée."""
         return self.letters.get(recommendation_id)
 
+    def updated_at_for(self, recommendation_ids: list[str]) -> dict[str, str]:
+        """``{recommendation_id: updated_at}`` des lettres existantes (lecture en lot, cockpit)."""
+        return self.letters.updated_at_by_recommendation(recommendation_ids)
+
     def generate(
         self, recommendation_id: str, *, overwrite: bool = False
     ) -> tuple[Letter, bool]:

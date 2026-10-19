@@ -35,6 +35,8 @@ class LetterRepository(Protocol):
 
     def get(self, recommendation_id: str) -> Letter | None: ...
 
+    def updated_at_by_recommendation(self, recommendation_ids: list[str]) -> dict[str, str]: ...
+
     def delete(self, recommendation_id: str) -> bool: ...
 
 
@@ -84,6 +86,22 @@ class LetterStore:
             "SELECT * FROM letters WHERE recommendation_id = ?", (recommendation_id,)
         ).fetchone()
         return None if row is None else self._row_to_letter(row)
+
+    def updated_at_by_recommendation(self, recommendation_ids: list[str]) -> dict[str, str]:
+        """``{recommendation_id: updated_at}`` des lettres existantes parmi ``recommendation_ids``.
+
+        Lecture en lot (un seul ``SELECT ... IN (...)``) pour le flux d'activité du cockpit, afin
+        d'éviter un accès par recommandation (N+1). Les recos sans lettre sont absentes de la table.
+        """
+        if not recommendation_ids:
+            return {}
+        placeholders = ",".join("?" * len(recommendation_ids))
+        rows = self.conn.execute(
+            f"SELECT recommendation_id, updated_at FROM letters "
+            f"WHERE recommendation_id IN ({placeholders})",
+            recommendation_ids,
+        ).fetchall()
+        return {row["recommendation_id"]: row["updated_at"] for row in rows}
 
     def delete(self, recommendation_id: str) -> bool:
         """Supprime la lettre de la reco ; ``True`` si une ligne a été retirée."""

@@ -178,6 +178,9 @@ def test_rescore_offer_returns_live_decision(env):
     assert resp.body["score"] == 100
     assert resp.body["status"] == "pending"
     assert resp.body["title"] == "App"  # titre résolu depuis l'offre (sérialisation décision)
+    # Provenance + date d'ingestion exposées pour la fiche (OPP-112) : lien externe + « ajoutée le… ».
+    assert resp.body["url"] == "http://app"
+    assert resp.body["created_at"] != "" and resp.body["created_at"] is not None
     assert decisions.get(decision_id("cand-1", "off-app")) is not None  # persistée
 
 

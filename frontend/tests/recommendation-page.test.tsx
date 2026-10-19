@@ -21,6 +21,8 @@ const DETAIL = {
   title: "Développeur Full-Stack",
   company: "Holis",
   kind: "emploi",
+  url: "https://holis.example/jobs/42",
+  created_at: "2026-09-01T08:00:00+00:00",
   justification: "Score 100/100 — forte adéquation.",
   status: "approved",
   comment: "Bonne adéquation",
@@ -82,6 +84,15 @@ describe("RecommendationPage", () => {
     // Historique : deux événements (pending puis approved).
     expect(screen.getByText("À décider")).toBeInTheDocument();
     expect(screen.getAllByText("Approuvé").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("affiche le lien vers l'annonce et la date d'ajout de l'offre (OPP-112)", async () => {
+    stubFetch(200, DETAIL);
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /voir sur le site/ });
+    expect(link).toHaveAttribute("href", "https://holis.example/jobs/42");
+    expect(screen.getByText("Ajoutée le")).toBeInTheDocument();
   });
 
   it("l'historique agrège les jalons de candidature (intention + candidature)", async () => {
