@@ -231,6 +231,21 @@ export interface OffersCatalogPage {
   total_pages: number;
 }
 
+/**
+ * Bilan d'une passe de collecte réelle (`POST /collect`, OPP-167). `stored` = offres neuves
+ * persistées (« nouvelles »), `duplicates` = déjà connues, `failures` = analyses échouées
+ * (cardinal, détail côté serveur). `source_error` est non nul si la source elle-même a
+ * échoué (identifiants Adzuna manquants, quota, réseau) : la passe s'arrête, le reste est
+ * compté, et l'erreur est affichée telle quelle plutôt qu'un statut HTTP d'échec.
+ */
+export interface CollectionReport {
+  collected: number;
+  stored: number;
+  duplicates: number;
+  failures: number;
+  source_error: string | null;
+}
+
 /** Provenance d'une lettre : générée par le LLM (`ai`) ou éditée à la main (`human`). */
 export type LetterSource = "ai" | "human";
 

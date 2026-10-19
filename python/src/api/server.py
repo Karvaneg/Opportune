@@ -149,6 +149,25 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     def offer_url_intake(url: str, *, source: str) -> Offer:
         return intake_offer_from_url(url, source=source, client=llm_client, store=offers)
 
+    # Collecte d'offres réelles (OPP-167) : assemble la source Adzuna depuis l'environnement et
+    # lance une passe (même LLM + dépôt d'offres partagés). Les erreurs de la source — identifiants
+    # Adzuna manquants (``build_adzuna_source``), quota ou panne — sont rendues **dans le bilan**
+    # (``source_error``) plutôt que propagées : l'API répond 200 et le front affiche le détail.
+    from app.adzuna_client import AdzunaError
+    from app.adzuna_source import build_adzuna_source
+    from app.collection_runner import run_collection
+    from app.offer_collection import CollectionReport
+
+    def collector(*, what: str, where: str, max_offers: int) -> CollectionReport:
+        filters = {k: v for k, v in (("what", what), ("where", where)) if v}
+        try:
+            source = build_adzuna_source(
+                os.environ, filters=filters or None, max_offers=max_offers
+            )
+            return run_collection(source, llm_client=llm_client, store=offers)
+        except AdzunaError as exc:
+            return CollectionReport(0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}")
+
     # Lettre de motivation (OPP-147) : le MÊME client LLM sert l'analyse d'offre et la
     # rédaction (comme le runner push), et les dépôts décisions/profils/offres sont partagés
     # avec l'orchestrateur — une lettre se génère pour une reco déjà persistée.
@@ -167,6 +186,7 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
         offer_intake=offer_intake,
         letters=letters,
         offer_url_intake=offer_url_intake,
+        collector=collector,
     )
 
 

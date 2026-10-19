@@ -187,4 +187,98 @@ describe("OffersPage", () => {
     expect(await screen.findByText("Lead Java")).toBeInTheDocument();
     expect(urls.some((u) => u.includes("/offers") && !u.includes("stage="))).toBe(true);
   });
+
+  // --- Bouton « Récupérer de nouvelles offres » (POST /collect, OPP-167) ---
+
+  it("récupère de nouvelles offres (POST /collect) et affiche le bilan", async () => {
+    const posts: Array<{ url: string; body: unknown }> = [];
+    const ok = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/collect")) {
+          posts.push({ url: s, body: JSON.parse(String(options?.body ?? "{}")) });
+          return ok({ collected: 4, stored: 1, duplicates: 3, failures: 0, source_error: null });
+        }
+        return ok(CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await screen.findByText("Lead Java"); // catalogue chargé
+    // Le poste est prérempli (OPP-167) : on le remplace pour vérifier la transmission.
+    await userEvent.clear(screen.getByLabelText("Poste recherché"));
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
+    await userEvent.type(screen.getByLabelText("Lieu de recherche"), "Paris");
+    await userEvent.click(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    );
+
+    // Bilan lisible (nouvelles / collectées / doublons) et critères transmis au serveur.
+    expect(await screen.findByText(/1 nouvelle offre/)).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toEqual({ what: "python", where: "Paris" });
+  });
+
+  it("envoie le poste recherché prérempli quand le champ n'est pas modifié", async () => {
+    const posts: Array<{ body: { what?: string; where?: string } }> = [];
+    const ok = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/collect")) {
+          posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
+          return ok({ collected: 0, stored: 0, duplicates: 0, failures: 0, source_error: null });
+        }
+        return ok(CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await screen.findByText("Lead Java");
+    await userEvent.click(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    );
+
+    // Défaut métier large, lieu vide → collecte pertinente sans aucune saisie.
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body.what).toMatch(/développeur/);
+    expect(posts[0].body.where).toBe("");
+  });
+
+  it("affiche l'erreur de source quand la collecte échoue côté Adzuna", async () => {
+    const ok = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/collect"))
+          return ok({
+            collected: 0, stored: 0, duplicates: 0, failures: 0,
+            source_error: "AdzunaAuthError: identifiants manquants",
+          });
+        return ok(CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await screen.findByText("Lead Java");
+    await userEvent.click(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    );
+
+    // Une panne de source (HTTP 200 avec source_error) prime sur les compteurs : on le dit.
+    expect(await screen.findByText(/Collecte impossible/)).toBeInTheDocument();
+  });
 });
