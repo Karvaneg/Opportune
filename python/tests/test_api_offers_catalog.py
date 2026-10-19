@@ -114,6 +114,46 @@ def test_get_offers_rejects_bad_pagination(qs):
     assert api.dispatch("GET", f"/offers?{qs}").status == 400
 
 
+def test_get_offers_filters_by_funnel_stage():
+    # OPP-164 : ?stage= découpe tout le pool AVANT pagination (côté serveur), pour que total
+    # et pagination concordent avec les compteurs du cockpit. Piloté par la décision, pas le score.
+    api, offers = _build()
+    _seed_three(offers)
+    api.orchestrator.rescore_offer("cand-1", "c")  # c = score faible (algo : ignorer)
+    api.orchestrator.validate_decision("cand-1", "c", "approved")  # … mais approuvée → à postuler
+
+    postuler = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=a_postuler")
+    assert postuler.status == 200
+    assert [i["id"] for i in postuler.body["items"]] == ["c"]
+    assert postuler.body["total"] == 1
+
+    etudier = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=a_etudier")
+    assert [i["id"] for i in etudier.body["items"]] == ["b", "a"]  # non décidées, récentes d'abord
+    assert etudier.body["total"] == 2
+
+
+def test_get_offers_stage_filter_paginates_subset():
+    # Le filtre précède la pagination : page_size=1 sur les 3 offres « à étudier » → 3 pages.
+    api, offers = _build()
+    _seed_three(offers)
+    page1 = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=a_etudier&page_size=1")
+    assert [i["id"] for i in page1.body["items"]] == ["c"]
+    assert page1.body["total"] == 3 and page1.body["total_pages"] == 3
+    page2 = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=a_etudier&page_size=1&page=2")
+    assert [i["id"] for i in page2.body["items"]] == ["b"]
+
+
+def test_get_offers_unknown_or_candidateless_stage_is_ignored():
+    # Un stage inconnu, ou sans candidat ciblé, → catalogue complet (aligné sur le front, qui
+    # ignore un param d'étape invalide). On ne filtre jamais un pool sans état décisionnel.
+    api, offers = _build()
+    _seed_three(offers)
+    bogus = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=bogus")
+    assert [i["id"] for i in bogus.body["items"]] == ["c", "b", "a"] and bogus.body["total"] == 3
+    no_cand = api.dispatch("GET", "/offers?stage=a_postuler")
+    assert no_cand.body["total"] == 3  # pas de candidat → filtre ignoré
+
+
 def test_get_offers_requires_authentication():
     auth = AuthProvider({"tok": User("u", REVIEWER, frozenset({"cand-1"}))})
     api, _ = _build(auth=auth)

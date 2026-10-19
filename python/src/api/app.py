@@ -413,14 +413,14 @@ class HermesApi:
         service d'actions quand il est câblé, sinon 0 (candidatures non suivies dans ce mode).
         """
         self._guard_owner(user, candidate_id)
-        applied_count = (
-            self.actions.count_applied_for_candidate(candidate_id)
+        applied_ids = (
+            self.actions.applied_recommendation_ids(candidate_id)
             if self.actions is not None
-            else 0
+            else set()
         )
         try:
             stats = self.orchestrator.candidate_stats(
-                candidate_id, applied_count=applied_count
+                candidate_id, applied_recommendation_ids=applied_ids
             )
         except UnknownCandidateError:
             raise self._not_found(user, f"candidat inconnu : {candidate_id}")
@@ -532,10 +532,26 @@ class HermesApi:
         candidate_id = self._query_one(query, "candidate_id")
         if candidate_id is not None:
             self._guard_owner(user, candidate_id)
+        # Filtre par étape d'entonnoir (OPP-164), appliqué **côté serveur** sur tout le pool
+        # avant pagination : le total renvoyé concorde avec les compteurs du cockpit et la
+        # pagination reste correcte même au-delà d'une page. Pertinent seulement avec un candidat.
+        stage = self._query_one(query, "stage")
+
+        # Candidatures déclarées du candidat : distinguent « postulé » d'« à postuler » dans
+        # l'entonnoir (connaissance portée par ``ActionService``). Source unique côté orchestrateur.
+        applied_ids = (
+            self.actions.applied_recommendation_ids(candidate_id)
+            if self.actions is not None and candidate_id is not None
+            else set()
+        )
 
         try:
-            entries, total = self.orchestrator.list_offer_catalog(
-                limit=page_size, offset=(page - 1) * page_size, candidate_id=candidate_id
+            entries, total, funnel = self.orchestrator.list_offer_catalog(
+                limit=page_size,
+                offset=(page - 1) * page_size,
+                candidate_id=candidate_id,
+                stage=stage,
+                applied_recommendation_ids=applied_ids,
             )
         except UnknownCandidateError:
             # candidat possédé mais sans profil → même 404 neutre que « hors périmètre ».
@@ -545,7 +561,10 @@ class HermesApi:
         return Response(
             200,
             {
-                "items": [self._serialize_catalog_entry(e) for e in entries],
+                "items": [
+                    self._serialize_catalog_entry(e, *funnel.get(e.offer.id, (None, False)))
+                    for e in entries
+                ],
                 "page": page,
                 "page_size": page_size,
                 "total": total,
@@ -554,8 +573,13 @@ class HermesApi:
         )
 
     @staticmethod
-    def _serialize_catalog_entry(entry) -> dict:
-        """Ligne de catalogue : résumé de l'offre + son score et sa bande de reco (``None`` si non noté)."""
+    def _serialize_catalog_entry(entry, decision_status: str | None, applied: bool) -> dict:
+        """Ligne de catalogue : résumé de l'offre, son score/bande de reco, et son état d'entonnoir.
+
+        ``decision_status`` (``None`` si pas encore décidée ou aucun candidat ciblé) et
+        ``applied`` portent l'avancement **du candidat** (OPP-164) — c'est lui, et non le score
+        de l'algo, qui pilote les cartes du cockpit et le filtre par étape.
+        """
         offer = entry.offer
         return {
             "id": offer.id,
@@ -572,6 +596,9 @@ class HermesApi:
             "kind": offer.kind,
             "score": entry.score,
             "action": entry.action,
+            # Avancement du candidat (OPP-164) : décision humaine + candidature déclarée.
+            "decision_status": decision_status,
+            "applied": applied,
         }
 
     def _get_run(self, run_id: str, user: User | None) -> Response:

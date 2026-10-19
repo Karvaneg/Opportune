@@ -182,6 +182,26 @@ export interface CatalogOffer {
   kind: OfferKind; // OPP-166 : une `formation` est badgée, pas scorée
   score: number | null;
   action: RecommendationAction | null;
+  /**
+   * Avancement **du candidat** sur cette offre (OPP-164), pour l'entonnoir du cockpit —
+   * indépendant du score de l'algo. `decision_status` est `null` tant qu'aucune décision n'a
+   * été prise (ou sans candidat ciblé) ; `applied` = candidature déclarée.
+   */
+  decision_status: DecisionStatus | null;
+  applied: boolean;
+}
+
+/**
+ * Agrégats de décision d'un candidat (`GET /candidates/{id}/stats`, OPP-163) — alimente les
+ * cartes du cockpit. `a_etudier` / `a_postuler` : offres à l'action recommandée correspondante
+ * et non encore tranchées (piles « à traiter ») ; `postule` : candidatures déclarées ;
+ * `offres_total` : taille du pool évalué (formations comprises).
+ */
+export interface CandidateStats {
+  a_etudier: number;
+  a_postuler: number;
+  postule: number;
+  offres_total: number;
 }
 
 /** Réponse paginée de `GET /offers`. */

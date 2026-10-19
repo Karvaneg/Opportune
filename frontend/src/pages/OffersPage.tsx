@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAddOffer, useEvaluateOffer, useOffers } from "../api/offers";
-import { useAuth } from "../auth/AuthContext";
-import { useIsReviewer } from "../auth/roles";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEvaluateOffer, useOffers } from "../api/offers";
+import { FUNNEL_LABELS, isFunnelStage } from "../api/funnel";
+import { useTargetCandidate } from "../auth/useTargetCandidate";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
@@ -14,13 +14,36 @@ import { ErrorNotice, Loading } from "../components/States";
  * voit tout le stock, pas seulement les offres évaluées par un run.
  */
 export function OffersPage() {
-  const { identity } = useAuth();
-  const candidates = identity?.owned_candidate_ids ?? [];
-  // Candidat ciblé pour le score. Défaut : le 1er du périmètre → on voit un score d'emblée.
-  const [candidate, setCandidate] = useState(candidates[0] ?? "");
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Candidat ciblé pour le score. Défaut : le candidat passé par le cockpit (OPP-164) s'il est
+  // dans le périmètre, sinon le 1er → on voit un score d'emblée.
+  const { candidates, target, setCandidate } = useTargetCandidate((cands) => {
+    const fromUrl = searchParams.get("candidate");
+    return fromUrl && cands.includes(fromUrl) ? fromUrl : cands[0] ?? "";
+  });
   const [page, setPage] = useState(1);
-  const target = candidates.includes(candidate) ? candidate : candidates[0] ?? "";
-  const { data, isPending, isError, error, isFetching } = useOffers(page, target);
+  // Filtre par étape d'entonnoir, piloté par l'URL (clic sur une carte du cockpit, OPP-164).
+  const rawStage = searchParams.get("stage");
+  const stageFilter = isFunnelStage(rawStage) ? rawStage : null;
+  // Filtrage **côté serveur** : le pool entier est filtré avant pagination, donc `total` et le
+  // Pager concordent avec les compteurs du cockpit même au-delà d'une page.
+  const { data, isPending, isError, error, isFetching } = useOffers(
+    page,
+    target,
+    stageFilter ?? "",
+  );
+  const items = data?.items ?? [];
+
+  const clearFilter = () => {
+    setPage(1);
+    setSearchParams(
+      (prev) => {
+        prev.delete("stage");
+        return prev;
+      },
+      { replace: true },
+    );
+  };
 
   return (
     <section className="space-y-6">
@@ -48,7 +71,16 @@ export function OffersPage() {
         )}
       </div>
 
-      <AddOffer />
+      {stageFilter && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+            Filtré : {FUNNEL_LABELS[stageFilter]}
+          </span>
+          <button type="button" onClick={clearFilter} className="text-slate-500 hover:underline">
+            effacer le filtre
+          </button>
+        </div>
+      )}
 
       {isPending && <Loading label="Chargement des offres…" />}
       {isError && <ErrorNotice error={error} />}
@@ -57,12 +89,14 @@ export function OffersPage() {
         data &&
         (data.total === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-            Aucune offre dans le catalogue. Ajoute-en une ci-dessus.
+            {stageFilter
+              ? `Aucune offre « ${FUNNEL_LABELS[stageFilter]} » pour ce candidat.`
+              : "Aucune offre dans le catalogue. Ajoute-en une depuis l'accueil."}
           </p>
         ) : (
           <div className="space-y-3">
             <ul className="space-y-2">
-              {data.items.map((offer) => (
+              {items.map((offer) => (
                 <OfferRow key={offer.id} offer={offer} candidateId={target} />
               ))}
             </ul>
@@ -77,77 +111,6 @@ export function OffersPage() {
           </div>
         ))}
     </section>
-  );
-}
-
-/**
- * Ajoute une offre au catalogue, par texte collé (OPP-145) ou par URL (OPP-148) — reviewer
- * uniquement (curation du pool partagé). Le back l'analyse via LLM (latence → « Ajout en
- * cours… »). Au succès, le catalogue est invalidé (cf. `useAddOffer`) : la nouvelle offre
- * apparaît dans la liste ci-dessous. Déplacé ici depuis « Runs » (OPP-161).
- */
-function AddOffer() {
-  const isReviewer = useIsReviewer();
-  const [text, setText] = useState("");
-  const [url, setUrl] = useState("");
-  const add = useAddOffer();
-
-  if (!isReviewer) return null;
-
-  // Le texte prime (comme côté back) ; sinon on envoie l'URL. Un seul des deux suffit.
-  const canSubmit = text.trim() !== "" || url.trim() !== "";
-  const submit = () => {
-    const variables = text.trim() !== "" ? { text } : { url };
-    add.mutate(variables, {
-      onSuccess: () => {
-        setText("");
-        setUrl("");
-      },
-    });
-  };
-
-  return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Ajouter une offre
-      </h3>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Colle ici le texte d'une offre d'emploi…"
-        rows={5}
-        aria-label="Texte de l'offre"
-        className="w-full rounded-md border border-slate-300 p-2 text-sm"
-      />
-      <div className="flex items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-slate-400">ou</span>
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://… (URL d'une offre)"
-          aria-label="URL de l'offre"
-          className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={add.isPending || !canSubmit}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
-        >
-          {add.isPending ? "Ajout en cours…" : "Ajouter l'offre"}
-        </button>
-        {add.data && (
-          <span className="text-sm text-emerald-700">
-            Offre ajoutée : {add.data.title} — {add.data.company}. Elle apparaît dans le
-            catalogue ci-dessous.
-          </span>
-        )}
-      </div>
-      {add.isError && <ErrorNotice error={add.error} />}
-    </div>
   );
 }
 

@@ -4,27 +4,31 @@ import { apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
 import type { OffersCatalogPage, OfferSummary, RecommendationDetail } from "./types";
 
-// Clé de cache du catalogue : page + candidat ciblé (chaque combinaison a son cache).
-// `all` est le préfixe commun (invalidation de toutes les pages/candidats, cf. `useAddOffer`).
+// Clé de cache du catalogue : page + candidat ciblé + étape d'entonnoir (chaque combinaison a
+// son cache). `all` est le préfixe commun (invalidation de toutes les variantes, cf. `useAddOffer`).
 export const offerKeys = {
   all: ["offers"] as const,
-  catalog: (page: number, candidateId: string) => ["offers", page, candidateId] as const,
+  catalog: (page: number, candidateId: string, stage: string) =>
+    ["offers", page, candidateId, stage] as const,
 };
 
 /**
  * Catalogue paginé des offres : `GET /offers` (OPP-146). `candidateId` (optionnel) annote
  * chaque offre de son score de match pour ce candidat ; vide = catalogue brut (scores
- * `null`). Plus récentes d'abord (tri serveur, OPP-152).
+ * `null`). `stage` (optionnel, OPP-164) filtre **côté serveur** par étape d'entonnoir, sur
+ * tout le pool avant pagination — le `total` et les cartes du cockpit concordent alors même
+ * au-delà d'une page. Plus récentes d'abord (tri serveur, OPP-152).
  */
-export function useOffers(page: number, candidateId: string) {
+export function useOffers(page: number, candidateId: string, stage = "") {
   const { token } = useAuth();
   const params = new URLSearchParams({ page: String(page) });
   if (candidateId) params.set("candidate_id", candidateId);
+  if (stage) params.set("stage", stage);
   return useQuery({
-    queryKey: offerKeys.catalog(page, candidateId),
+    queryKey: offerKeys.catalog(page, candidateId, stage),
     queryFn: () => apiFetch<OffersCatalogPage>(`/offers?${params}`, token!),
     enabled: Boolean(token),
-    placeholderData: keepPreviousData, // évite le clignotement entre pages/candidats
+    placeholderData: keepPreviousData, // évite le clignotement entre pages/candidats/étapes
   });
 }
 

@@ -4,8 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OffersPage } from "../src/pages/OffersPage";
+import { funnelStage } from "../src/api/funnel";
 import { AuthProvider } from "../src/auth/AuthContext";
 import type { AuthStorage } from "../src/auth/authStorage";
+import type { DecisionStatus } from "../src/api/types";
 
 function memoryStorage(initial: string | null): AuthStorage {
   let value = initial;
@@ -17,11 +19,13 @@ const CATALOG = {
     { id: "c", title: "Lead Java", company: "Initech", location: "Lyon",
       contract_type: "Freelance", seniority: "Lead", source: "indeed",
       url: "https://initech.example/c", created_at: "2026-03-01T00:00:00+00:00",
-      kind: "emploi", score: 0, action: "ignorer" },
+      kind: "emploi", score: 0, action: "ignorer",
+      decision_status: "pending", applied: false },        // → à étudier
     { id: "b", title: "Full-stack", company: "Globex", location: "Paris",
       contract_type: "CDI", seniority: "Senior", source: "indeed",
       url: "", created_at: "2026-02-01T00:00:00+00:00", kind: "emploi",
-      score: 78, action: "a_etudier" },
+      score: 78, action: "a_etudier",
+      decision_status: "approved", applied: false },        // → à postuler
   ],
   page: 1,
   page_size: 20,
@@ -47,12 +51,12 @@ function stubFetch(catalogBody: unknown) {
   return calls;
 }
 
-function renderOffers() {
+function renderOffers(initialPath = "/") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <AuthProvider storage={memoryStorage("good")}>
       <QueryClientProvider client={qc}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[initialPath]}>
           <Routes>
             <Route path="/" element={<OffersPage />} />
             <Route path="/recommendations/:id" element={<div>FICHE RECO</div>} />
@@ -114,7 +118,7 @@ describe("OffersPage", () => {
         { id: "x", title: "Sans score", company: "Acme", location: "Paris",
           contract_type: "CDI", seniority: "Senior", source: "collée",
           url: "", created_at: "2026-01-01T00:00:00+00:00", kind: "emploi",
-          score: null, action: null },
+          score: null, action: null, decision_status: null, applied: false },
       ],
       page: 1, page_size: 20, total: 1, total_pages: 1,
     });
@@ -130,7 +134,8 @@ describe("OffersPage", () => {
         { id: "f", title: "Formation ISTQB", company: "Skolae", location: "À distance",
           contract_type: "CDI", seniority: "Débutant", source: "collée",
           url: "https://skolae.example/f", created_at: "2026-01-01T00:00:00+00:00",
-          kind: "formation", score: null, action: null },
+          kind: "formation", score: null, action: null,
+          decision_status: null, applied: false },
       ],
       page: 1, page_size: 20, total: 1, total_pages: 1,
     });
@@ -145,83 +150,41 @@ describe("OffersPage", () => {
     expect(calls.some((u) => u.includes("/candidates/cand-1/offers/f/rescore"))).toBe(true);
   });
 
-  // --- Ajout d'offre, déplacé de « Runs » vers « Offres » (OPP-161) ---
+  // --- Filtre par étape d'entonnoir, piloté par l'URL (clic sur une carte du cockpit, OPP-164) ---
 
-  it("ajoute une offre en collant son texte (POST /offers) et affiche le résultat", async () => {
-    const calls: { body: { text?: string; url?: string } }[] = [];
-    const okJson = (b: unknown) =>
+  it("filtre le catalogue par étape via ?stage= (filtrage serveur) et efface le filtre", async () => {
+    // Le serveur filtre tout le pool par étape AVANT pagination : le stub renvoie le
+    // sous-ensemble correspondant au param ?stage=, et on vérifie que la requête le porte.
+    const urls: string[] = [];
+    const ok = (b: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string, init?: RequestInit) => {
+      vi.fn((url: string) => {
         const s = String(url);
         if (s.includes("/me"))
-          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
-        if (s.includes("/offers") && init?.method === "POST") {
-          calls.push({ body: JSON.parse(String(init?.body ?? "{}")) });
-          return okJson({ id: "o1", title: "Data Engineer", company: "Holis" });
-        }
-        return okJson(CATALOG); // GET /offers
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        urls.push(s);
+        const stage = new URL(s, "http://x").searchParams.get("stage");
+        const items = stage
+          ? CATALOG.items.filter(
+              (o) => funnelStage(o.decision_status as DecisionStatus | null, o.applied) === stage,
+            )
+          : CATALOG.items;
+        return ok({ ...CATALOG, items, total: items.length, total_pages: 1 });
       }),
     );
-    renderOffers();
-    await screen.findByText("Full-stack"); // catalogue chargé
+    // b est « approuvée » → à postuler ; c « pending » → à étudier (indépendant du score algo).
+    renderOffers("/?stage=a_postuler");
 
-    await userEvent.type(screen.getByLabelText("Texte de l'offre"), "Nous recrutons un Data Engineer");
-    await userEvent.click(screen.getByRole("button", { name: "Ajouter l'offre" }));
-
-    expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
-    expect(calls).toHaveLength(1);
-    expect(calls[0].body.text).toContain("Data Engineer");
-  });
-
-  it("ajoute une offre par URL (POST /offers avec url) quand le texte est vide", async () => {
-    const calls: { body: { text?: string; url?: string } }[] = [];
-    const okJson = (b: unknown) =>
-      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string, init?: RequestInit) => {
-        const s = String(url);
-        if (s.includes("/me"))
-          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
-        if (s.includes("/offers") && init?.method === "POST") {
-          calls.push({ body: JSON.parse(String(init?.body ?? "{}")) });
-          return okJson({ id: "o1", title: "Data Engineer", company: "Holis" });
-        }
-        return okJson(CATALOG);
-      }),
-    );
-    renderOffers();
-    await screen.findByText("Full-stack");
-
-    await userEvent.type(screen.getByLabelText("URL de l'offre"), "https://example.com/jobs/42");
-    await userEvent.click(screen.getByRole("button", { name: "Ajouter l'offre" }));
-
-    expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
-    expect(calls).toHaveLength(1);
-    expect(calls[0].body.url).toBe("https://example.com/jobs/42");
-    expect(calls[0].body.text).toBeUndefined();
-  });
-
-  it("ne montre pas « Ajouter une offre » à un non-reviewer", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string) =>
-        Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () =>
-            Promise.resolve(
-              String(url).includes("/me")
-                ? { id: "u", role: "candidate", owned_count: 1, owned_candidate_ids: ["cand-1"] }
-                : CATALOG,
-            ),
-        } as Response),
-      ),
-    );
-    renderOffers();
-    await screen.findByText("Full-stack");
-    expect(screen.queryByLabelText("Texte de l'offre")).toBeNull();
+    expect(await screen.findByText("Full-stack")).toBeInTheDocument(); // b (approuvée)
+    expect(screen.queryByText("Lead Java")).not.toBeInTheDocument();   // c absente du sous-ensemble
+    expect(urls.some((u) => u.includes("stage=a_postuler"))).toBe(true); // filtre envoyé au serveur
+    // Un chip annonce le filtre actif et offre de l'effacer.
+    expect(screen.getByText("Filtré : À postuler")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /effacer le filtre/ }));
+    // Filtre levé : la requête repart sans stage, les deux offres réapparaissent.
+    expect(await screen.findByText("Lead Java")).toBeInTheDocument();
+    expect(urls.some((u) => u.includes("/offers") && !u.includes("stage="))).toBe(true);
   });
 });

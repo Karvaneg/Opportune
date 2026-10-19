@@ -31,14 +31,22 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
-from app.candidate_stats import CandidateStats, build_candidate_stats
-from app.decision import PENDING, Decision
+from app.candidate_stats import (
+    A_ETUDIER,
+    A_POSTULER,
+    POSTULE,
+    CandidateStats,
+    build_candidate_stats,
+    funnel_stage,
+)
+from app.decision import Decision
 from app.decision_service import DecisionService
 from app.offer import Offer
 from app.recommendation_service import (
     OfferCatalogEntry,
     OfferRecommendation,
     RecommendationService,
+    UnknownCandidateError,
 )
 
 from hermes.models import (
@@ -48,6 +56,10 @@ from hermes.models import (
     OfferEvaluation,
 )
 from hermes.run_store import RunRepository
+
+# Étapes d'entonnoir filtrables du catalogue (OPP-164) ; un ``stage`` hors de cet ensemble
+# est ignoré (catalogue complet), aligné sur ``isFunnelStage`` côté front.
+_FUNNEL_STAGES = frozenset({A_ETUDIER, A_POSTULER, POSTULE})
 
 
 def _utcnow_iso() -> str:
@@ -235,33 +247,46 @@ class HermesOrchestrator:
             return None
         return self.decisions.decide(recommendation, candidate_id)
 
-    def candidate_stats(self, candidate_id: str, *, applied_count: int = 0) -> CandidateStats:
-        """Agrégats de décision du candidat pour le cockpit (OPP-163).
+    def candidate_stats(
+        self, candidate_id: str, *, applied_recommendation_ids: Collection[str] = ()
+    ) -> CandidateStats:
+        """Entonnoir d'avancement du candidat pour le cockpit (OPP-163 / révisé OPP-164).
 
-        Évalue **toutes** les offres du pool en une passe (``recommend(limit=None)`` : actions
-        live, mêmes seuils que le catalogue, sans troncature), croise avec les décisions déjà
-        tranchées (exclues des piles « à traiter »), et replie le nombre de candidatures
-        déclarées fourni par l'appelant (``applied_count`` — la connaissance des candidatures
-        vit dans la couche qui câble ``ActionService``).
+        Classe **chaque** offre du pool selon la **décision humaine** et l'état de candidature
+        (à étudier / à postuler / postulé), et non selon le score de l'algo — voir
+        ``candidate_stats.funnel_stage``. ``applied_recommendation_ids`` (les offres candidatées,
+        connues de la couche qui câble ``ActionService``) distingue « postulé » d'« à postuler ».
 
-        Coût : un scoring complet du pool par appel (comme le catalogue). Acceptable au volume
-        actuel ; à précalculer/mettre en cache si l'endpoint devient chaud sur un gros pool.
-
-        Propage ``UnknownCandidateError`` si le candidat est introuvable (comme ``recommend``).
+        Déterministe, sans scoring : une simple lecture des décisions + du pool. Propage
+        ``UnknownCandidateError`` si le candidat est introuvable.
         """
-        offres_total = self.recommendations.pool_size()
-        recommendations = self.recommendations.recommend(candidate_id, limit=None)
-        tranchee_offer_ids = {
-            d.offer_id
-            for d in self.decisions.list_for_candidate(candidate_id)
-            if d.status != PENDING
+        if self.recommendations.profiles.get(candidate_id) is None:
+            raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
+        state = self.funnel_state_by_offer(candidate_id, applied_recommendation_ids)
+        stages = (funnel_stage(status, applied) for status, applied in state.values())
+        return build_candidate_stats(stages)
+
+    def funnel_state_by_offer(
+        self, candidate_id: str, applied_recommendation_ids: Collection[str] = ()
+    ) -> dict[str, tuple[str | None, bool]]:
+        """``(statut de décision, candidaté ?)`` par offre du pool — **source unique** de l'entonnoir.
+
+        Alimente à la fois les compteurs (``candidate_stats``) et l'annotation/le filtre par
+        étape du catalogue (OPP-164), pour que cartes du cockpit et liste concordent toujours.
+        Lecture seule (décisions + pool), sans scoring. L'ordre des clés suit celui du pool
+        (plus récentes d'abord), exploité pour paginer un catalogue filtré par étape.
+
+        Ne vérifie pas l'existence du candidat (les décisions d'un candidat inconnu sont
+        simplement vides) : le scoring en aval lève ``UnknownCandidateError`` le cas échéant.
+        """
+        applied = set(applied_recommendation_ids)
+        decisions = self.decisions.list_for_candidate(candidate_id)
+        status_by_offer = {d.offer_id: d.status for d in decisions}
+        applied_offer_ids = {d.offer_id for d in decisions if d.id in applied}
+        return {
+            offer_id: (status_by_offer.get(offer_id), offer_id in applied_offer_ids)
+            for offer_id in self.recommendations.offer_ids()
         }
-        return build_candidate_stats(
-            recommendations=recommendations,
-            tranchee_offer_ids=tranchee_offer_ids,
-            applied_count=applied_count,
-            offres_total=offres_total,
-        )
 
     def _execute(
         self,
@@ -440,16 +465,40 @@ class HermesOrchestrator:
         limit: int = 20,
         offset: int = 0,
         candidate_id: str | None = None,
-    ) -> tuple[list[OfferCatalogEntry], int]:
-        """Catalogue paginé des offres + score de match pour ``candidate_id`` (OPP-146).
+        stage: str | None = None,
+        applied_recommendation_ids: Collection[str] = (),
+    ) -> tuple[list[OfferCatalogEntry], int, dict[str, tuple[str | None, bool]]]:
+        """Catalogue paginé des offres + score de match + état d'entonnoir pour ``candidate_id``.
 
-        Délègue à ``RecommendationService.list_catalog`` (aucune logique neuve ici) : offres
-        plus récentes d'abord, chacune annotée de son score pour le candidat demandé.
-        Propage ``UnknownCandidateError`` (candidat fourni introuvable) et ``ValueError``.
+        Retourne ``(entrées, total, état d'entonnoir par offre)``. ``total`` est le cardinal
+        **du périmètre demandé avant découpe en page** : celui du pool entier sans filtre, ou
+        celui du sous-ensemble filtré quand ``stage`` est fourni.
+
+        Filtrage par étape (OPP-164) : quand ``stage`` est une étape d'entonnoir connue et qu'un
+        candidat est ciblé, on ne retient que les offres classées à cette étape, **puis** on
+        pagine — de sorte que le total (et donc la pagination) concordent avec les compteurs du
+        cockpit, même si le pool dépasse une page. Un ``stage`` inconnu (ou sans candidat) est
+        ignoré (catalogue complet). Propage ``UnknownCandidateError`` et ``ValueError``.
         """
-        return self.recommendations.list_catalog(
-            limit=limit, offset=offset, candidate_id=candidate_id
-        )
+        if candidate_id is None:
+            entries, total = self.recommendations.list_catalog(limit=limit, offset=offset)
+            return entries, total, {}
+
+        state = self.funnel_state_by_offer(candidate_id, applied_recommendation_ids)
+        if stage not in _FUNNEL_STAGES:
+            entries, total = self.recommendations.list_catalog(
+                limit=limit, offset=offset, candidate_id=candidate_id
+            )
+            return entries, total, state
+
+        matching = [
+            offer_id
+            for offer_id, (status, applied) in state.items()
+            if funnel_stage(status, applied) == stage
+        ]
+        page_ids = matching[offset : offset + limit]
+        entries = self.recommendations.catalog_entries_for(page_ids, candidate_id=candidate_id)
+        return entries, len(matching), state
 
     def record_human_decision(
         self, recommendation_id: str, status: str, *, comment: str | None = None
