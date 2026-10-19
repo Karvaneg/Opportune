@@ -326,6 +326,45 @@ def test_rescore_offer_none_when_offer_absent(env):
     assert orchestrator.rescore_offer("cand-1", "nope") is None
 
 
+def test_candidate_stats_counts_actionable_and_pool(env):
+    # OPP-163 : a→postuler (100), b→a_etudier (78), c→ignorer. Aucune décision tranchée.
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    stats = orchestrator.candidate_stats("cand-1", applied_count=2)
+    assert stats.a_postuler == 1   # a
+    assert stats.a_etudier == 1    # b
+    assert stats.postule == 2      # replié depuis l'appelant
+    assert stats.offres_total == 3
+
+
+def test_candidate_stats_excludes_tranchees_from_piles(env):
+    # Une décision humaine déjà prise sort l'offre des piles « à traiter ».
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.rescore_offer("cand-1", "a")  # crée la décision pending de a (postuler)
+    orchestrator.validate_decision("cand-1", "a", "approved", comment="go")
+    stats = orchestrator.candidate_stats("cand-1")
+    assert stats.a_postuler == 0   # a est tranchée → plus « à postuler »
+    assert stats.a_etudier == 1    # b reste pending
+    assert stats.offres_total == 3
+
+
+def test_candidate_stats_formation_counts_in_pool_only(env):
+    # OPP-166 × OPP-163 : une formation gonfle offres_total mais pas les piles d'action.
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    offers.save(_offer(id="f", title="Formation", url="http://f", kind="formation"))
+    stats = orchestrator.candidate_stats("cand-1")
+    assert stats.offres_total == 4
+    assert stats.a_postuler == 1 and stats.a_etudier == 1  # inchangé par la formation
+
+
+def test_candidate_stats_unknown_candidate_raises(env):
+    orchestrator, _, _ = env
+    with pytest.raises(UnknownCandidateError):
+        orchestrator.candidate_stats("nope")
+
+
 def test_rescore_offer_unknown_candidate_raises(env):
     orchestrator, offers, _ = env
     _seed_three(offers)

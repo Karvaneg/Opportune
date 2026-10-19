@@ -168,11 +168,19 @@ class RecommendationService:
         self.profiles = profiles
         self.offers = offers
 
+    def pool_size(self) -> int:
+        """Nombre total d'offres du pool partagé (toutes offres, formations comprises).
+
+        Sert au ``offres_total`` des agrégats du cockpit (OPP-163) — à distinguer du nombre
+        d'offres *scorées* (``recommend`` exclut formations et offres non évaluables).
+        """
+        return self.offers.count()
+
     def recommend(
         self,
         candidate_id: str,
         *,
-        limit: int = 10,
+        limit: int | None = 10,
         min_score: int | None = None,
         high: int = DEFAULT_HIGH,
         medium: int = DEFAULT_MEDIUM,
@@ -191,12 +199,13 @@ class RecommendationService:
           que celles sans décision déjà posée pour le candidat).
         - Les offres **non évaluables** (score ``None``, aucune dimension mesurable)
           sont exclues du classement.
-        - ``limit`` : nombre maximal de recommandations retournées.
+        - ``limit`` : nombre maximal de recommandations retournées ; ``None`` = **toutes**
+          (sans troncature — utile pour des agrégats globaux, cf. ``HermesOrchestrator``).
 
         Lève ``UnknownCandidateError`` si le candidat est introuvable, et ``ValueError``
         si ``limit`` est négatif ou les seuils incohérents.
         """
-        if limit < 0:
+        if limit is not None and limit < 0:
             raise ValueError("limit doit être ≥ 0")
         validate_thresholds(high, medium)
 

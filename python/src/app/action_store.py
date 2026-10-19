@@ -55,6 +55,8 @@ class ApplicationActionRepository(Protocol):
 
     def get_by_recommendation(self, recommendation_id: str) -> ApplicationAction | None: ...
 
+    def count_applied(self, candidate_id: str) -> int: ...
+
 
 @runtime_checkable
 class OutboundMessageActionRepository(Protocol):
@@ -143,6 +145,18 @@ class ApplicationActionStore:
 
     def count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM application_actions").fetchone()[0]
+
+    def count_applied(self, candidate_id: str) -> int:
+        """Candidatures **réellement déclarées** (``applied_at`` renseigné) pour un candidat.
+
+        Compteur ``postule`` du cockpit (OPP-163) : une simple intention confirmée (sans
+        ``applied_at``) ne compte pas — seule une candidature déclarée est retenue.
+        """
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM application_actions "
+            "WHERE candidate_id = ? AND applied_at IS NOT NULL",
+            (candidate_id,),
+        ).fetchone()[0]
 
 
 class OutboundMessageActionStore:

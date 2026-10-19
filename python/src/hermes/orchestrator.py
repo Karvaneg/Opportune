@@ -31,7 +31,8 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
-from app.decision import Decision
+from app.candidate_stats import CandidateStats, build_candidate_stats
+from app.decision import PENDING, Decision
 from app.decision_service import DecisionService
 from app.offer import Offer
 from app.recommendation_service import (
@@ -233,6 +234,34 @@ class HermesOrchestrator:
         if recommendation is None:
             return None
         return self.decisions.decide(recommendation, candidate_id)
+
+    def candidate_stats(self, candidate_id: str, *, applied_count: int = 0) -> CandidateStats:
+        """Agrégats de décision du candidat pour le cockpit (OPP-163).
+
+        Évalue **toutes** les offres du pool en une passe (``recommend(limit=None)`` : actions
+        live, mêmes seuils que le catalogue, sans troncature), croise avec les décisions déjà
+        tranchées (exclues des piles « à traiter »), et replie le nombre de candidatures
+        déclarées fourni par l'appelant (``applied_count`` — la connaissance des candidatures
+        vit dans la couche qui câble ``ActionService``).
+
+        Coût : un scoring complet du pool par appel (comme le catalogue). Acceptable au volume
+        actuel ; à précalculer/mettre en cache si l'endpoint devient chaud sur un gros pool.
+
+        Propage ``UnknownCandidateError`` si le candidat est introuvable (comme ``recommend``).
+        """
+        offres_total = self.recommendations.pool_size()
+        recommendations = self.recommendations.recommend(candidate_id, limit=None)
+        tranchee_offer_ids = {
+            d.offer_id
+            for d in self.decisions.list_for_candidate(candidate_id)
+            if d.status != PENDING
+        }
+        return build_candidate_stats(
+            recommendations=recommendations,
+            tranchee_offer_ids=tranchee_offer_ids,
+            applied_count=applied_count,
+            offres_total=offres_total,
+        )
 
     def _execute(
         self,

@@ -81,6 +81,13 @@ def test_recommend_respects_limit(env):
     assert [r.offer.id for r in service.recommend("cand-1", limit=1)] == ["c"]  # la plus récente
 
 
+def test_recommend_limit_none_returns_all(env):
+    # limit=None : aucune troncature (agrégats cockpit OPP-163, cf. candidate_stats).
+    service, offers = env
+    _seed_three(offers)
+    assert len(service.recommend("cand-1", limit=None)) == 3
+
+
 def test_recommend_excludes_non_evaluable_offers(env):
     service, offers = env
     offers.save(_offer(id="a", title="A", url="http://a"))  # évaluable → 100

@@ -115,6 +115,7 @@ class ApiError(Exception):
 _ME = re.compile(r"^/me$")
 _RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
+_STATS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/stats$")
 _RESCORE = re.compile(
     r"^/candidates/(?P<candidate_id>[^/]+)/offers/(?P<offer_id>[^/]+)/rescore$"
 )
@@ -219,6 +220,11 @@ class HermesApi:
         if match:
             self._require(method, "POST", path)
             return self._post_recommendations(unquote(match["candidate_id"]), body, user)
+
+        match = _STATS.match(path)
+        if match:
+            self._require(method, "GET", path)
+            return self._get_stats(unquote(match["candidate_id"]), user)
 
         match = _RESCORE.match(path)
         if match:
@@ -396,6 +402,35 @@ class HermesApi:
                 # GET /runs/{id}/recommendations, où ``total`` a la même sémantique).
                 "total": len(items),
                 "errors": list(run.errors),
+            },
+        )
+
+    def _get_stats(self, candidate_id: str, user: User | None) -> Response:
+        """Agrégats de décision du candidat pour le cockpit (OPP-163).
+
+        Owner-gated (``_guard_owner`` : 404 hors périmètre, cohérent avec l'anti-énumération
+        OPP-106 ; le GET sans jeton est déjà rejeté 401 en amont). ``postule`` provient du
+        service d'actions quand il est câblé, sinon 0 (candidatures non suivies dans ce mode).
+        """
+        self._guard_owner(user, candidate_id)
+        applied_count = (
+            self.actions.count_applied_for_candidate(candidate_id)
+            if self.actions is not None
+            else 0
+        )
+        try:
+            stats = self.orchestrator.candidate_stats(
+                candidate_id, applied_count=applied_count
+            )
+        except UnknownCandidateError:
+            raise self._not_found(user, f"candidat inconnu : {candidate_id}")
+        return Response(
+            200,
+            {
+                "a_etudier": stats.a_etudier,
+                "a_postuler": stats.a_postuler,
+                "postule": stats.postule,
+                "offres_total": stats.offres_total,
             },
         )
 

@@ -185,3 +185,10 @@ class ActionService:
         owner-gated).
         """
         return self.applications.get_by_recommendation(recommendation_id)
+
+    def count_applied_for_candidate(self, candidate_id: str) -> int:
+        """Nombre de candidatures **déclarées** (``applied``) pour un candidat (cockpit OPP-163).
+
+        Lecture pure : la propriété est vérifiée en amont (l'endpoint stats est owner-gated).
+        """
+        return self.applications.count_applied(candidate_id)
