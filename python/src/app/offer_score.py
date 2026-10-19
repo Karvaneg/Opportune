@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from app.candidate_profile import CandidateProfile
 from app.offer import Offer
+from app.offer_kind import FORMATION
 from app.offer_profile_match import (
     ContractMatch,
     LocationMatch,
@@ -233,10 +234,23 @@ def explain_score(match: OfferProfileMatch) -> ScoreExplanation:
 
 
 def score_offer_to_profile(offer: Offer, profile: CandidateProfile) -> ScoreResult:
-    """Compare l'offre au profil puis calcule le score."""
+    """Compare l'offre au profil puis calcule le score.
+
+    Une **formation** (OPP-166) n'est pas scorée sur l'adéquation des compétences : son but
+    est de les acquérir, pas d'en exiger. Score ``None`` (« non évaluable », jamais ``0``),
+    sans même dérouler le matching.
+    """
+    if offer.kind == FORMATION:
+        return ScoreResult(score=None, breakdown={})
     return score_match(match_offer_to_profile(offer, profile))
 
 
 def explain_offer_to_profile(offer: Offer, profile: CandidateProfile) -> ScoreExplanation:
-    """Compare l'offre au profil puis explique le score."""
+    """Compare l'offre au profil puis explique le score.
+
+    Comme ``score_offer_to_profile``, une **formation** (OPP-166) n'est pas évaluable : score
+    ``None`` et aucune raison (on n'explique pas une adéquation qui n'a pas de sens).
+    """
+    if offer.kind == FORMATION:
+        return ScoreExplanation(score=None, breakdown={})
     return explain_score(match_offer_to_profile(offer, profile))

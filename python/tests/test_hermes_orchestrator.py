@@ -294,6 +294,20 @@ def test_rescore_offer_creates_pending_decision(env):
     assert decisions.get(decision_id("cand-1", "b")).score == 78
 
 
+def test_rescore_offer_creates_decidable_fiche_for_formation(env):
+    # OPP-166 : ouvrir une formation crée bien une décision (fiche décidable : validation,
+    # candidature, lettre), mais sans score d'adéquation — se former peut être une candidature.
+    orchestrator, offers, decisions = env
+    offers.save(_offer(id="f", title="Bootcamp Data", url="http://f", kind="formation"))
+    decision = orchestrator.rescore_offer("cand-1", "f")
+    assert decision is not None
+    assert decision.offer_id == "f"
+    assert decision.score is None
+    assert decision.action == "indeterminee"
+    assert decision.status == PENDING
+    assert decisions.get(decision_id("cand-1", "f")).score is None
+
+
 def test_rescore_offer_preserves_human_decision(env):
     orchestrator, offers, decisions = env
     _seed_three(offers)

@@ -33,6 +33,7 @@ const ACTION_LABELS: Record<OfferAction, string> = {
   postuler: "Postuler",
   a_etudier: "À étudier",
   ignorer: "Ignorer",
+  indeterminee: "À évaluer", // formation (OPP-166) ou données insuffisantes : aucune pré-reco auto
   "": "—",
 };
 
@@ -92,7 +93,24 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
             <p className="text-sm text-slate-500">{reco.company || "—"}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">{reco.score}</span>
+            {/* Une formation (OPP-166) n'a pas de score d'adéquation : badge explicite plutôt
+                qu'un chiffre (fiche historique antérieure à la distinction emploi/formation).
+                `score` peut aussi être `null` sans que `kind` soit « formation » (offre disparue
+                → `kind === null`) : on retombe alors sur un tiret neutre, jamais un vide. */}
+            {reco.kind === "formation" ? (
+              <span
+                className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"
+                title="Formation : non évaluée sur l'adéquation (son but est d'acquérir des compétences)"
+              >
+                Formation
+              </span>
+            ) : reco.score === null ? (
+              <span className="text-sm font-semibold text-slate-400" title="Non évalué">
+                —
+              </span>
+            ) : (
+              <span className="text-sm font-semibold text-slate-700">{reco.score}</span>
+            )}
             <StatusBadge kind="decision" value={reco.status} />
           </div>
         </div>

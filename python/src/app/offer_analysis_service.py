@@ -31,7 +31,10 @@ _INSTRUCTIONS = (
     "ni les tâches ou missions (\"Optimisation de calculs\", \"Gestion des droits "
     "utilisateurs\" — ce ne sont pas des compétences).\n"
     "Chaque champ texte doit être renseigné (\"Non précisé\" s'il est absent de "
-    "l'offre).\n\n"
+    "l'offre).\n"
+    "Ajoute aussi \"kind\" : \"formation\" si l'annonce propose un programme de "
+    "formation, un cursus, une certification ou une POE (préparation à l'emploi) — "
+    "sinon \"emploi\" (cas par défaut d'une offre de poste).\n\n"
     "Offre :\n"
 )
 

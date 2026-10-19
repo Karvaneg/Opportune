@@ -75,6 +75,31 @@ def test_from_analysis_normalizes_and_keeps_provenance():
     assert offer.id == compute_offer_id("indeed", "http://x", "texte brut")
 
 
+def test_from_analysis_defaults_kind_to_emploi():
+    # OPP-166 : une offre d'emploi ordinaire (aucun marqueur de formation) → kind emploi.
+    offer = Offer.from_analysis(ANALYSIS, source="indeed", raw_text="CDI backend Python")
+    assert offer.kind == "emploi"
+
+
+def test_from_analysis_heuristic_overrides_llm_for_formation():
+    # Le LLM propose « emploi » mais le texte est explicitement une formation (POE) : le filet
+    # heuristique prime → kind formation (le cas ISTQB qui motive le ticket).
+    analysis = OfferAnalysis(
+        title="Ingénieur Test certifié ISTQB",
+        company="Skolae Formation",
+        location="À distance",
+        skills=["Test logiciel"],
+        seniority="Débutant",
+        contract_type="CDI",
+        summary="POE de 3 mois.",
+        attention_points=[],
+        kind="emploi",
+    )
+    raw = "Programme de formation éligible au financement. Dispositif POE, 448 heures."
+    offer = Offer.from_analysis(analysis, source="collée", raw_text=raw)
+    assert offer.kind == "formation"
+
+
 def test_from_analysis_requires_source():
     with pytest.raises(ValueError):
         Offer.from_analysis(ANALYSIS, source="  ", raw_text="texte")

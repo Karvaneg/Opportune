@@ -16,13 +16,15 @@ from typing import Protocol, runtime_checkable
 
 from app.decision import Decision, DecisionEvent
 
+# ``score`` est **nullable** (OPP-166) : une formation n'a pas de score d'adéquation, mais sa
+# décision reste persistée (fiche décidable). Les autres colonnes restent obligatoires.
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS decisions (
     id TEXT PRIMARY KEY,
     candidate_id TEXT NOT NULL,
     offer_id TEXT NOT NULL,
     action TEXT NOT NULL,
-    score INTEGER NOT NULL,
+    score INTEGER,
     justification TEXT NOT NULL,
     status TEXT NOT NULL,
     comment TEXT,
@@ -49,7 +51,44 @@ class DecisionStore:
         self.conn = conn
         self.conn.row_factory = sqlite3.Row
         self.conn.execute(_CREATE_TABLE)
+        self._migrate_score_nullable()
         self.conn.commit()
+
+    def _migrate_score_nullable(self) -> None:
+        """Rend ``score`` nullable sur les bases antérieures à OPP-166.
+
+        Avant OPP-166 la colonne était ``NOT NULL`` ; une formation (score ``None``) ne
+        pourrait pas y être enregistrée. SQLite ne sait pas retirer une contrainte via
+        ``ALTER``, on reconstruit donc la table (create/copy/drop/rename). Idempotent : si la
+        colonne est déjà nullable, on ne touche à rien.
+        """
+        score_col = next(
+            (row for row in self.conn.execute("PRAGMA table_info(decisions)")
+             if row["name"] == "score"),
+            None,
+        )
+        if score_col is None or score_col["notnull"] == 0:
+            return  # déjà nullable (schéma courant) → rien à faire
+        self.conn.executescript(
+            """
+            CREATE TABLE decisions_new (
+                id TEXT PRIMARY KEY,
+                candidate_id TEXT NOT NULL,
+                offer_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                score INTEGER,
+                justification TEXT NOT NULL,
+                status TEXT NOT NULL,
+                comment TEXT,
+                history TEXT NOT NULL
+            );
+            INSERT INTO decisions_new SELECT
+                id, candidate_id, offer_id, action, score, justification, status, comment, history
+                FROM decisions;
+            DROP TABLE decisions;
+            ALTER TABLE decisions_new RENAME TO decisions;
+            """
+        )
 
     @staticmethod
     def _row_to_decision(row: sqlite3.Row) -> Decision:

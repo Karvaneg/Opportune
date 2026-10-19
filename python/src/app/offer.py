@@ -18,6 +18,7 @@ import hashlib
 from dataclasses import dataclass
 
 from app.offer_analysis import OfferAnalysis
+from app.offer_kind import DEFAULT_KIND, resolve_kind
 from app.offer_normalization import (
     drop_non_skills,
     normalize_contract,
@@ -64,6 +65,10 @@ class Offer:
     source: str
     url: str
     raw_text: str
+    # Type d'offre (OPP-166) : ``emploi`` (défaut) ou ``formation``. Une formation n'est pas
+    # scorée sur l'adéquation des compétences (cf. ``offer_score``) — mesurer « compétences
+    # requises ↔ détenues » n'a pas de sens pour un cursus dont le but est de les acquérir.
+    kind: str = DEFAULT_KIND
     # Date d'ingestion (ISO 8601 UTC), renseignée par la **persistance** au premier
     # enregistrement (OPP-152) — pas une donnée métier dérivée du LLM, donc défaut vide
     # ici et absente de ``from_analysis`` : c'est ``OfferStore`` qui l'attribue et la relit.
@@ -101,4 +106,7 @@ class Offer:
             source=source.strip(),
             url=url.strip(),
             raw_text=raw_text,
+            # Type arbitré à l'intake : proposition du LLM (``analysis.kind``) corrigée par
+            # l'heuristique sur le titre/texte (prioritaire sur un signal de formation).
+            kind=resolve_kind(analysis.kind, analysis.title, raw_text),
         )

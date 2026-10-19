@@ -18,6 +18,7 @@ from typing import Protocol
 
 from app.candidate_profile import CandidateProfile
 from app.offer import Offer
+from app.offer_kind import FORMATION
 from app.offer_profile_match import match_offer_to_profile
 from app.offer_score import Reason, explain_score
 from app.offer_recommendation import (
@@ -83,18 +84,34 @@ class OfferCatalogEntry:
 
 @dataclass(frozen=True)
 class OfferRecommendation:
-    """Une offre recommandée à un candidat, avec sa justification."""
+    """Une offre recommandée à un candidat, avec sa justification.
+
+    ``score`` vaut ``None`` pour une **formation** (OPP-166) : on ne mesure pas l'adéquation
+    d'un cursus (son but est d'acquérir les compétences). Elle reste néanmoins une
+    recommandation à part entière — ouvrable en fiche, décidable, avec lettre — car se
+    former peut être une candidature. ``action`` est alors ``indeterminee`` (aucune
+    pré-reco automatique).
+    """
 
     offer: Offer
-    score: int
-    action: str  # postuler | a_etudier | ignorer
+    score: int | None
+    action: str  # postuler | a_etudier | ignorer | indeterminee
     matched: list[Reason]  # critères correspondants (points favorables)
     gaps: list[Reason]  # écarts (points défavorables)
     justification: str
 
 
-def _justify(offer: Offer, score: int, action_label: str, matched: list[Reason], gaps: list[Reason]) -> str:
-    """Compose une justification lisible et déterministe."""
+def _justify(offer: Offer, score: int | None, action_label: str, matched: list[Reason], gaps: list[Reason]) -> str:
+    """Compose une justification lisible et déterministe.
+
+    Pour une formation (``score`` ``None``), on n'affiche pas de score d'adéquation : la
+    justification explique que le score ne s'applique pas à un cursus.
+    """
+    if score is None:
+        return (
+            f"Formation ({offer.title}) : l'adéquation n'est pas évaluée — un cursus vise à "
+            "acquérir des compétences, pas à en exiger. À toi de décider de candidater."
+        )
     parts = [f"Score {score}/100 — {action_label} ({offer.title})."]
     if matched:
         parts.append("Atouts : " + " ; ".join(r.message for r in matched) + ".")
@@ -109,9 +126,26 @@ def _evaluate_offer(
     """Score **une** offre pour un profil → ``OfferRecommendation``, ou ``None`` si non évaluable.
 
     Source unique du scoring + construction de la recommandation, partagée par la reco de
-    masse (``recommend``) et la reco ciblée (``recommend_one``). ``None`` quand le score est
-    ``None`` (aucune dimension mesurable) : l'offre n'est alors pas classable.
+    masse (``recommend``) et la reco ciblée (``recommend_one``).
+
+    Deux cas de non-scoring, traités différemment :
+    - une **formation** (OPP-166) : on ne la score pas comme un emploi (ses compétences sont
+      le but, pas un prérequis), mais elle reste une recommandation à part entière (score
+      ``None``, action ``indeterminee``) — se former peut être une candidature, donc sa fiche
+      s'ouvre et se décide. Elle est seulement écartée du **classement** (``recommend``) ;
+    - un **emploi non évaluable** (aucune dimension mesurable, score ``None``) : ``None`` pur,
+      non classable et sans fiche.
     """
+    if offer.kind == FORMATION:
+        action = recommend_action(None, high=high, medium=medium)  # -> indeterminee
+        return OfferRecommendation(
+            offer=offer,
+            score=None,
+            action=action.action,
+            matched=[],
+            gaps=[],
+            justification=_justify(offer, None, action.label, [], []),
+        )
     explanation = explain_score(match_offer_to_profile(offer, profile))
     score = explanation.score
     if score is None:
@@ -180,7 +214,10 @@ class RecommendationService:
             if not _matches_filters(offer, contract_type, skills):
                 continue
             recommendation = _evaluate_offer(offer, profile, high=high, medium=medium)
-            if recommendation is None:  # non évaluable → non classable
+            # Non classable : emploi non évaluable (``None``) ou formation (score ``None``, non
+            # scorée). Les formations restent ouvrables en fiche via ``recommend_one``, mais
+            # n'ont pas leur place dans un classement de masse (rien à ranger).
+            if recommendation is None or recommendation.score is None:
                 continue
             if min_score is not None and recommendation.score < min_score:
                 continue
@@ -253,7 +290,9 @@ class RecommendationService:
             action: str | None = None
             if profile is not None:
                 recommendation = _evaluate_offer(offer, profile, high=high, medium=medium)
-                if recommendation is not None:
+                # On n'annote que sur un score mesuré : une formation (score ``None``) reste
+                # sans score ni bande au catalogue (le front la badge via ``offer.kind``).
+                if recommendation is not None and recommendation.score is not None:
                     score = recommendation.score
                     action = recommendation.action
             entries.append(OfferCatalogEntry(offer=offer, score=score, action=action))

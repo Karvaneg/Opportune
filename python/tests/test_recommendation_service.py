@@ -92,6 +92,15 @@ def test_recommend_excludes_non_evaluable_offers(env):
     assert [r.offer.id for r in recos] == ["a"]
 
 
+def test_recommend_excludes_formations(env):
+    # OPP-166 : une formation n'est pas scorée comme un emploi → non classable, hors reco.
+    service, offers = env
+    offers.save(_offer(id="a", title="A", url="http://a"))  # emploi évaluable → 100
+    offers.save(_offer(id="f", title="Formation Python", url="http://f", kind="formation"))
+    recos = service.recommend("cand-1")
+    assert [r.offer.id for r in recos] == ["a"]
+
+
 def test_recommendation_content(env):
     service, offers = env
     offers.save(_offer(id="a", title="A", url="http://a"))
@@ -155,6 +164,19 @@ def test_recommend_one_none_when_offer_not_evaluable(env):
     assert service.recommend_one("cand-1", "d") is None
 
 
+def test_recommend_one_returns_unscored_recommendation_for_formation(env):
+    # OPP-166 : ouvrir une formation produit bien une recommandation (donc une fiche décidable),
+    # mais SANS score d'adéquation (action indéterminée) — candidater à une formation a du sens.
+    service, offers = env
+    offers.save(_offer(id="f", title="Bootcamp Data", url="http://f", kind="formation"))
+    reco = service.recommend_one("cand-1", "f")
+    assert reco is not None
+    assert reco.score is None
+    assert reco.action == "indeterminee"
+    assert reco.matched == [] and reco.gaps == []
+    assert "Formation" in reco.justification
+
+
 def test_recommend_one_unknown_candidate_raises(env):
     service, offers = env
     _seed_three(offers)
@@ -194,6 +216,18 @@ def test_list_catalog_non_evaluable_offer_scored_none(env):
     entries, total = service.list_catalog(candidate_id="cand-1")
     assert total == 1
     assert entries[0].offer.id == "d" and entries[0].score is None and entries[0].action is None
+
+
+def test_list_catalog_lists_formation_without_score(env):
+    # OPP-166 : une formation reste visible au catalogue, mais sans score ni bande de reco
+    # (le front s'appuie sur ``offer.kind`` pour afficher le badge « Formation »).
+    service, offers = env
+    offers.save(_offer(id="f", title="Formation ISTQB", url="http://f", kind="formation",
+                       created_at="2026-01-01T00:00:00+00:00"))
+    entries, total = service.list_catalog(candidate_id="cand-1")
+    assert total == 1
+    assert entries[0].offer.kind == "formation"
+    assert entries[0].score is None and entries[0].action is None
 
 
 def test_list_catalog_paginates(env):

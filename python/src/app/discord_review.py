@@ -162,7 +162,7 @@ def build_review_message(
     cover_letter: CoverLetter,
     recommendation_id: str,
     *,
-    score: int,
+    score: int | None,
     action: str,
     justification: str,
 ) -> dict:
@@ -178,7 +178,8 @@ def build_review_message(
     emoji, color = _ACTION_STYLE.get(action, _DEFAULT_ACTION_STYLE)
     title = _truncate(f"{emoji} {offer.title} — {offer.company}", _TITLE_MAX) or _PLACEHOLDER
     fields = [
-        _field("Score", str(score), inline=True),
+        # Une formation (OPP-166) n'a pas de score d'adéquation : tiret, jamais « None » ni 0.
+        _field("Score", str(score) if score is not None else "—", inline=True),
         _field("Action auto", ACTION_LABELS.get(action, action), inline=True),
         _field("Justification", justification, inline=False),
     ]
@@ -213,7 +214,7 @@ class DiscordReviewer:
         cover_letter: CoverLetter,
         recommendation_id: str,
         *,
-        score: int,
+        score: int | None,
         action: str,
         justification: str,
     ) -> ReviewSubmission:

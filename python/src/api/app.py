@@ -532,6 +532,9 @@ class HermesApi:
             "source": offer.source,
             "url": offer.url,
             "created_at": offer.created_at,
+            # Type d'offre (OPP-166) : le front affiche un badge « Formation » et masque le
+            # score (``None`` pour une formation) plutôt qu'un 0 ou un tiret ambigu.
+            "kind": offer.kind,
             "score": entry.score,
             "action": entry.action,
         }
@@ -635,6 +638,7 @@ class HermesApi:
             "source": offer.source,
             "url": offer.url,
             "created_at": offer.created_at,
+            "kind": offer.kind,  # emploi | formation (OPP-166)
         }
 
     def _delete_run(self, run_id: str, user: User | None) -> Response:
@@ -1055,6 +1059,9 @@ class HermesApi:
             "score": decision.score,
             "title": offer.title if offer is not None else None,
             "company": offer.company if offer is not None else None,
+            # Type d'offre (OPP-166) : permet au front de badger « Formation » une fiche
+            # historique (décision posée avant la distinction). ``None`` si l'offre a disparu.
+            "kind": offer.kind if offer is not None else None,
             "justification": decision.justification,
             "status": decision.status,
             "comment": decision.comment,

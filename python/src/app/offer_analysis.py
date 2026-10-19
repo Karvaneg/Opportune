@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from app.offer_kind import DEFAULT_KIND, OFFER_KINDS
+
 # Champs texte obligatoires (chaîne non vide) et champs liste (liste de chaînes).
 _TEXT_FIELDS = ("title", "company", "location", "seniority", "contract_type", "summary")
 _LIST_FIELDS = ("skills", "attention_points")
@@ -22,11 +24,17 @@ _LIST_FIELDS = ("skills", "attention_points")
 # Source unique de vérité avec la validation ci-dessous : le schéma qui force le modèle et
 # les contrôles qui le vérifient ne peuvent pas diverger. Contraindre les clés et les types
 # à la génération épargne au petit modèle local le JSON malformé qui faisait échouer l'intake.
+#
+# ``kind`` (OPP-166) est une **proposition** de type d'offre (``emploi``/``formation``) : on
+# l'offre au modèle via un enum contraint mais on ne la rend **pas** obligatoire — l'intake ne
+# doit pas échouer si le petit modèle l'omet, et l'heuristique (``offer_kind.resolve_kind``)
+# tranche de toute façon en aval. D'où sa présence en ``properties`` mais pas en ``required``.
 OFFER_ANALYSIS_SCHEMA = {
     "type": "object",
     "properties": {
         **{name: {"type": "string"} for name in _TEXT_FIELDS},
         **{name: {"type": "array", "items": {"type": "string"}} for name in _LIST_FIELDS},
+        "kind": {"type": "string", "enum": list(OFFER_KINDS)},
     },
     "required": [*_TEXT_FIELDS, *_LIST_FIELDS],
 }
@@ -53,6 +61,11 @@ class OfferAnalysis:
     contract_type: str
     summary: str
     attention_points: list[str]
+    # Type d'offre proposé par le LLM (OPP-166) : ``emploi`` (défaut) ou ``formation``. Champ
+    # **optionnel** et lu avec tolérance — une valeur absente ou hors enum retombe sur le défaut
+    # sans faire échouer l'analyse. Le type réellement retenu est arbitré à l'intake par
+    # ``offer_kind.resolve_kind`` (heuristique sur le titre/texte prioritaire).
+    kind: str = DEFAULT_KIND
 
     @classmethod
     def from_json(cls, text: str) -> "OfferAnalysis":
@@ -93,5 +106,13 @@ class OfferAnalysis:
                     f"Champ liste requis manquant ou invalide : {name!r}"
                 )
             values[name] = [item.strip() for item in value if item.strip()]
+
+        # ``kind`` (OPP-166) : optionnel et tolérant — une valeur hors enum ou absente retombe
+        # sur le défaut plutôt que de rejeter l'analyse (le type est de toute façon rejugé à
+        # l'intake). On ne le place dans ``values`` que s'il est exploitable, pour laisser jouer
+        # le défaut de la dataclass sinon.
+        kind = data.get("kind")
+        if isinstance(kind, str) and kind.strip() in OFFER_KINDS:
+            values["kind"] = kind.strip()
 
         return cls(**values)  # type: ignore[arg-type]

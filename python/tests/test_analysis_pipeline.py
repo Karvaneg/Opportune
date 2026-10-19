@@ -81,6 +81,23 @@ def test_pipeline_weak_match_recommends_ignorer(store):
     assert dossier.recommendation.action == "ignorer"
 
 
+def test_pipeline_does_not_score_a_formation(store):
+    # OPP-166 : une formation ne doit pas être scorée comme un emploi (0 à tort). Le pipeline
+    # passe par ``explain_offer_to_profile`` (qui connaît ``offer.kind``) → score None, action
+    # ``indeterminee`` — même avec un profil par ailleurs parfait. Le texte porte des marqueurs
+    # explicites (POE, programme de formation…) donc l'heuristique prime sur l'analyse LLM.
+    client = MockLLMClient([_analysis()])
+    raw = (
+        "Programme de formation éligible au financement. Dispositif POE "
+        "(Préparation Opérationnelle à l'Emploi), 448 heures de formation."
+    )
+    dossier = run_pipeline(raw, source="collée", profile=_strong_profile(), client=client, store=store)
+    assert dossier.offer.kind == "formation"
+    assert dossier.explanation.score is None
+    assert dossier.explanation.positives == [] and dossier.explanation.negatives == []
+    assert dossier.recommendation.action == "indeterminee"
+
+
 def test_pipeline_invalid_analysis_persists_nothing(store):
     client = MockLLMClient(["pas du json"])
     with pytest.raises(OfferAnalysisError):

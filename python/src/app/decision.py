@@ -58,8 +58,8 @@ class Decision:
     id: str
     candidate_id: str
     offer_id: str
-    action: str  # auto (immuable) : postuler | a_etudier | ignorer
-    score: int  # immuable
+    action: str  # auto (immuable) : postuler | a_etudier | ignorer | indeterminee
+    score: int | None  # immuable ; ``None`` pour une formation (non scorée, OPP-166)
     justification: str  # immuable — recommandation d'origine préservée
     status: str = PENDING
     comment: str | None = None
@@ -85,11 +85,15 @@ def create_decision(
     candidate_id: str,
     offer_id: str,
     action: str,
-    score: int,
+    score: int | None,
     justification: str,
     now: Clock = _utcnow,
 ) -> Decision:
-    """Crée une décision au statut ``pending``, avec un premier événement d'historique."""
+    """Crée une décision au statut ``pending``, avec un premier événement d'historique.
+
+    ``score`` peut être ``None`` : une formation (OPP-166) n'a pas de score d'adéquation,
+    mais reste décidable (candidater à une formation a du sens).
+    """
     at = now()
     return Decision(
         id=decision_id(candidate_id, offer_id),
