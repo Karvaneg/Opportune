@@ -116,6 +116,7 @@ _ME = re.compile(r"^/me$")
 _RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
 _STATS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/stats$")
+_ACTIVITY = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/activity$")
 _RESCORE = re.compile(
     r"^/candidates/(?P<candidate_id>[^/]+)/offers/(?P<offer_id>[^/]+)/rescore$"
 )
@@ -225,6 +226,11 @@ class HermesApi:
         if match:
             self._require(method, "GET", path)
             return self._get_stats(unquote(match["candidate_id"]), user)
+
+        match = _ACTIVITY.match(path)
+        if match:
+            self._require(method, "GET", path)
+            return self._get_activity(unquote(match["candidate_id"]), user)
 
         match = _RESCORE.match(path)
         if match:
@@ -433,6 +439,40 @@ class HermesApi:
                 "offres_total": stats.offres_total,
             },
         )
+
+    def _get_activity(self, candidate_id: str, user: User | None) -> Response:
+        """Flux d'activité récente du candidat pour le cockpit (OPP-165).
+
+        Owner-gated comme ``/stats`` (404 neutre hors périmètre ; 401 sans jeton en amont). Les
+        horodatages de lettre / candidature sont résolus **en lot** via les services câblés
+        (``letters`` / ``actions``) et passés à l'orchestrateur en résolveurs, qui agrège le journal
+        transversal. Le lot évite un accès par recommandation (N+1).
+        """
+        self._guard_owner(user, candidate_id)
+        letters_at = (
+            (lambda rids: self.letters.updated_at_for(rids)) if self.letters is not None else None
+        )
+        applied_at = (
+            (lambda rids: self.actions.applied_at_for(rids)) if self.actions is not None else None
+        )
+        try:
+            events = self.orchestrator.candidate_activity(
+                candidate_id, letters_at=letters_at, applied_at=applied_at
+            )
+        except UnknownCandidateError:
+            raise self._not_found(user, f"candidat inconnu : {candidate_id}")
+        return Response(200, {"items": [self._serialize_activity_event(e) for e in events]})
+
+    @staticmethod
+    def _serialize_activity_event(event) -> dict:
+        """Événement d'activité : type, horodatage, libellé FR et cible cliquable (OPP-165)."""
+        return {
+            "type": event.type,
+            "at": event.at,
+            "label": event.label,
+            "target_kind": event.target_kind,
+            "target_id": event.target_id,
+        }
 
     def _post_rescore(
         self, candidate_id: str, offer_id: str, user: User | None
@@ -1124,6 +1164,10 @@ class HermesApi:
             # Type d'offre (OPP-166) : permet au front de badger « Formation » une fiche
             # historique (décision posée avant la distinction). ``None`` si l'offre a disparu.
             "kind": offer.kind if offer is not None else None,
+            # Provenance + date d'ingestion de l'offre (OPP-112) : lien vers l'annonce d'origine
+            # et « ajoutée le… » sur la fiche. ``None``/vide si l'offre a disparu.
+            "url": offer.url if offer is not None else None,
+            "created_at": offer.created_at if offer is not None else None,
             "justification": decision.justification,
             "status": decision.status,
             "comment": decision.comment,

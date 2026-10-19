@@ -31,6 +31,14 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
+from app.candidate_activity import (
+    ActivityEvent,
+    application_event,
+    decision_event,
+    letter_event,
+    most_recent,
+    offer_event,
+)
 from app.candidate_stats import (
     A_ETUDIER,
     A_POSTULER,
@@ -39,7 +47,7 @@ from app.candidate_stats import (
     build_candidate_stats,
     funnel_stage,
 )
-from app.decision import Decision
+from app.decision import HUMAN_STATUSES, Decision
 from app.decision_service import DecisionService
 from app.offer import Offer
 from app.recommendation_service import (
@@ -287,6 +295,58 @@ class HermesOrchestrator:
             offer_id: (status_by_offer.get(offer_id), offer_id in applied_offer_ids)
             for offer_id in self.recommendations.offer_ids()
         }
+
+    def candidate_activity(
+        self,
+        candidate_id: str,
+        *,
+        limit: int = 20,
+        offer_limit: int = 5,
+        letters_at: Callable[[list[str]], dict[str, str]] | None = None,
+        applied_at: Callable[[list[str]], dict[str, str]] | None = None,
+    ) -> list[ActivityEvent]:
+        """Flux d'activité récente du candidat pour le cockpit (OPP-165).
+
+        Agrège un journal **transversal** horodaté : décisions tranchées (chaque validation
+        humaine de l'historique), lettres de motivation et candidatures déclarées (via les
+        résolveurs ``letters_at`` / ``applied_at`` — l'orchestrateur ignore ces services, câblés
+        par la couche API), et offres ajoutées au catalogue (pool partagé).
+
+        Les offres du pool sont **plafonnées** à ``offer_limit`` (les plus récentes) *avant* la
+        fusion : sinon un catalogue fraîchement alimenté (collecte réelle) noierait les événements
+        propres au candidat et les évincerait de la fenêtre ``limit``. Le tout est reclassé du plus
+        récent au plus ancien et tronqué à ``limit``.
+
+        Les résolveurs prennent la **liste des ``recommendation_id``** du candidat et rendent une
+        table ``{recommendation_id: horodatage}`` (un seul accès par dépôt, pas de N+1). Propage
+        ``UnknownCandidateError`` si le candidat est introuvable.
+        """
+        if self.recommendations.profiles.get(candidate_id) is None:
+            raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
+
+        offers = self.recommendations.offers.list_all()
+        title_of = {offer.id: offer.title for offer in offers}
+
+        decisions = self.decisions.list_for_candidate(candidate_id)
+        decision_ids = [decision.id for decision in decisions]
+        letter_ts = (letters_at or (lambda _ids: {}))(decision_ids)
+        applied_ts = (applied_at or (lambda _ids: {}))(decision_ids)
+
+        events: list[ActivityEvent] = []
+        for decision in decisions:
+            title = title_of.get(decision.offer_id, decision.offer_id)
+            for event in decision.history:
+                if event.status in HUMAN_STATUSES:
+                    events.append(decision_event(event.status, event.at, title, decision.id))
+            if letter_ts.get(decision.id):
+                events.append(letter_event(letter_ts[decision.id], title, decision.id))
+            if applied_ts.get(decision.id):
+                events.append(application_event(applied_ts[decision.id], title, decision.id))
+
+        offer_events = [offer_event(offer.created_at, offer.title, offer.id) for offer in offers]
+        events.extend(most_recent(offer_events, limit=offer_limit))
+
+        return most_recent(events, limit=limit)
 
     def _execute(
         self,

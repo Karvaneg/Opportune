@@ -73,6 +73,10 @@ export interface RecommendationDetail {
   company: string | null;
   /** Type de l'offre d'origine (OPP-166), ou `null` si l'offre a disparu. */
   kind: OfferKind | null;
+  /** Lien vers l'annonce d'origine (OPP-112), `null`/vide si absent ou offre disparue. */
+  url: string | null;
+  /** Date d'ingestion de l'offre dans Opportune (ISO 8601), `null` si l'offre a disparu. */
+  created_at: string | null;
   justification: string;
   status: DecisionStatus;
   comment: string | null;
@@ -202,6 +206,20 @@ export interface CandidateStats {
   a_postuler: number;
   postule: number;
   offres_total: number;
+}
+
+/**
+ * Événement du flux d'activité du cockpit (`GET /candidates/{id}/activity`, OPP-165) :
+ * décision tranchée, lettre, candidature déclarée ou offre ajoutée. `label` est prêt à
+ * afficher (FR) ; `target_kind` indique vers quoi pointe le clic (`recommendation` → fiche,
+ * `offer` → catalogue).
+ */
+export interface ActivityEvent {
+  type: "letter" | "decision" | "application" | "offer";
+  at: string; // ISO 8601
+  label: string;
+  target_kind: "recommendation" | "offer";
+  target_id: string;
 }
 
 /** Réponse paginée de `GET /offers`. */

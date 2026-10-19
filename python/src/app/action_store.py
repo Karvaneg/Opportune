@@ -57,6 +57,8 @@ class ApplicationActionRepository(Protocol):
 
     def applied_recommendation_ids(self, candidate_id: str) -> set[str]: ...
 
+    def applied_at_by_recommendation(self, recommendation_ids: list[str]) -> dict[str, str]: ...
+
 
 @runtime_checkable
 class OutboundMessageActionRepository(Protocol):
@@ -158,6 +160,22 @@ class ApplicationActionStore:
             (candidate_id,),
         ).fetchall()
         return {row["recommendation_id"] for row in rows}
+
+    def applied_at_by_recommendation(self, recommendation_ids: list[str]) -> dict[str, str]:
+        """``{recommendation_id: applied_at}`` des candidatures **déclarées** parmi les ids donnés.
+
+        Lecture en lot (un seul ``SELECT ... IN (...)``) pour le flux d'activité du cockpit : évite
+        un accès par recommandation (N+1). Les intentions sans ``applied_at`` sont exclues.
+        """
+        if not recommendation_ids:
+            return {}
+        placeholders = ",".join("?" * len(recommendation_ids))
+        rows = self.conn.execute(
+            f"SELECT recommendation_id, applied_at FROM application_actions "
+            f"WHERE recommendation_id IN ({placeholders}) AND applied_at IS NOT NULL",
+            recommendation_ids,
+        ).fetchall()
+        return {row["recommendation_id"]: row["applied_at"] for row in rows}
 
 
 class OutboundMessageActionStore:
