@@ -17,12 +17,12 @@ function memoryStorage(initial: string | null = null): AuthStorage {
   };
 }
 
-const ME = { id: "u", role: "reviewer", owned_count: 1 };
+const ME = { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] };
 
 /**
  * fetch factice simulant une **expiration en cours de session** : la revérification du
  * jeton au démarrage (`GET /me`) réussit (200, on entre authentifié), mais toute autre
- * requête — ici le chargement des runs — répond 401 (jeton expiré entre-temps).
+ * requête — ici le chargement de la synthèse du cockpit — répond 401 (jeton expiré entre-temps).
  */
 function meOkThenExpired() {
   return vi.fn((url: string) => {
@@ -50,7 +50,7 @@ describe("expiration de session en cours d'usage", () => {
       </AuthProvider>,
     );
 
-    // Le 401 du chargement des runs déclenche l'auto-logout : retour à la barrière de
+    // Le 401 du chargement de la synthèse déclenche l'auto-logout : retour à la barrière de
     // login, avec le message expliquant l'expiration (pas un largage silencieux).
     expect(await screen.findByText(SESSION_EXPIRED_MESSAGE)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continuer/i })).toBeInTheDocument();

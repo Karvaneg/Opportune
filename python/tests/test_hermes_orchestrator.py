@@ -326,37 +326,59 @@ def test_rescore_offer_none_when_offer_absent(env):
     assert orchestrator.rescore_offer("cand-1", "nope") is None
 
 
-def test_candidate_stats_counts_actionable_and_pool(env):
-    # OPP-163 : a→postuler (100), b→a_etudier (78), c→ignorer. Aucune décision tranchée.
+def test_candidate_stats_funnel_is_decision_driven(env):
+    # OPP-164 : l'entonnoir suit MES décisions, pas le score de l'algo. Trois offres non
+    # décidées → toutes « à étudier » (quel que soit leur score).
     orchestrator, offers, _ = env
     _seed_three(offers)
-    stats = orchestrator.candidate_stats("cand-1", applied_count=2)
-    assert stats.a_postuler == 1   # a
-    assert stats.a_etudier == 1    # b
-    assert stats.postule == 2      # replié depuis l'appelant
-    assert stats.offres_total == 3
-
-
-def test_candidate_stats_excludes_tranchees_from_piles(env):
-    # Une décision humaine déjà prise sort l'offre des piles « à traiter ».
-    orchestrator, offers, _ = env
-    _seed_three(offers)
-    orchestrator.rescore_offer("cand-1", "a")  # crée la décision pending de a (postuler)
-    orchestrator.validate_decision("cand-1", "a", "approved", comment="go")
     stats = orchestrator.candidate_stats("cand-1")
-    assert stats.a_postuler == 0   # a est tranchée → plus « à postuler »
-    assert stats.a_etudier == 1    # b reste pending
-    assert stats.offres_total == 3
+    assert (stats.a_etudier, stats.a_postuler, stats.postule, stats.offres_total) == (3, 0, 0, 3)
 
 
-def test_candidate_stats_formation_counts_in_pool_only(env):
-    # OPP-166 × OPP-163 : une formation gonfle offres_total mais pas les piles d'action.
+def test_candidate_stats_approved_moves_to_a_postuler(env):
+    # Approuver une offre (même notée « ignorer » par l'algo) la place dans « à postuler ».
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.rescore_offer("cand-1", "c")  # c = score faible (algo : ignorer)
+    orchestrator.validate_decision("cand-1", "c", "approved")
+    stats = orchestrator.candidate_stats("cand-1")
+    assert stats.a_postuler == 1   # c, approuvée → à postuler malgré le score
+    assert stats.a_etudier == 2    # a, b restent à décider
+    assert stats.postule == 0
+
+
+def test_candidate_stats_applied_moves_to_postule(env):
+    # Une offre candidatée (recommendation_id dans applied) passe en « postulé ».
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.rescore_offer("cand-1", "a")
+    orchestrator.validate_decision("cand-1", "a", "approved")
+    applied = {decision_id("cand-1", "a")}
+    stats = orchestrator.candidate_stats("cand-1", applied_recommendation_ids=applied)
+    assert stats.postule == 1      # a candidatée
+    assert stats.a_postuler == 0   # ... donc plus « à postuler »
+    assert stats.a_etudier == 2
+
+
+def test_candidate_stats_rejected_leaves_funnel_but_counts_in_total(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.rescore_offer("cand-1", "b")
+    orchestrator.validate_decision("cand-1", "b", "rejected")
+    stats = orchestrator.candidate_stats("cand-1")
+    assert stats.a_etudier == 2    # a, c ; b rejetée est écartée
+    assert stats.a_postuler == 0 and stats.postule == 0
+    assert stats.offres_total == 3  # mais b compte toujours dans le total
+
+
+def test_candidate_stats_formation_counts_in_pool_and_funnel(env):
+    # OPP-166 × OPP-164 : une formation non décidée est « à étudier » comme toute offre.
     orchestrator, offers, _ = env
     _seed_three(offers)
     offers.save(_offer(id="f", title="Formation", url="http://f", kind="formation"))
     stats = orchestrator.candidate_stats("cand-1")
     assert stats.offres_total == 4
-    assert stats.a_postuler == 1 and stats.a_etudier == 1  # inchangé par la formation
+    assert stats.a_etudier == 4    # les 3 emplois + la formation, toutes à décider
 
 
 def test_candidate_stats_unknown_candidate_raises(env):

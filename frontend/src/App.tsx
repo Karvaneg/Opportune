@@ -4,6 +4,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from "react-rou
 import { createAuthAwareQueryClient } from "./api/queryClient";
 import { useAuth } from "./auth/AuthContext";
 import type { Me } from "./api/types";
+import { CockpitPage } from "./pages/CockpitPage";
 import { LoginGate } from "./pages/LoginGate";
 import { OffersPage } from "./pages/OffersPage";
 import { RecommendationPage } from "./pages/RecommendationPage";
@@ -64,10 +65,13 @@ function AuthenticatedApp({
                 </Link>
                 <nav className="flex items-center gap-4 text-sm">
                   <NavLink to="/" end className={navClass}>
-                    Runs
+                    Accueil
                   </NavLink>
                   <NavLink to="/offres" className={navClass}>
                     Offres
+                  </NavLink>
+                  <NavLink to="/historique" className={navClass}>
+                    Historique
                   </NavLink>
                 </nav>
               </div>
@@ -86,8 +90,9 @@ function AuthenticatedApp({
           </header>
           <main className="mx-auto max-w-4xl px-4 py-6">
             <Routes>
-              <Route path="/" element={<RunsListPage />} />
+              <Route path="/" element={<CockpitPage />} />
               <Route path="/offres" element={<OffersPage />} />
+              <Route path="/historique" element={<RunsListPage />} />
               <Route path="/runs/:runId" element={<RunDetailPage />} />
               <Route path="/recommendations/:id" element={<RecommendationPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

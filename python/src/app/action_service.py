@@ -186,9 +186,9 @@ class ActionService:
         """
         return self.applications.get_by_recommendation(recommendation_id)
 
-    def count_applied_for_candidate(self, candidate_id: str) -> int:
-        """Nombre de candidatures **déclarées** (``applied``) pour un candidat (cockpit OPP-163).
+    def applied_recommendation_ids(self, candidate_id: str) -> set[str]:
+        """``recommendation_id`` des offres **candidatées** par un candidat (cockpit OPP-163/164).
 
         Lecture pure : la propriété est vérifiée en amont (l'endpoint stats est owner-gated).
         """
-        return self.applications.count_applied(candidate_id)
+        return self.applications.applied_recommendation_ids(candidate_id)

@@ -176,6 +176,14 @@ class RecommendationService:
         """
         return self.offers.count()
 
+    def offer_ids(self) -> list[str]:
+        """Identifiants de **toutes** les offres du pool partagé (ordre du dépôt).
+
+        Sert à l'entonnoir du cockpit (OPP-163/164), qui classe chaque offre du pool selon la
+        décision/candidature du candidat — indépendamment du score de l'algo.
+        """
+        return [offer.id for offer in self.offers.list_all()]
+
     def recommend(
         self,
         candidate_id: str,
@@ -287,22 +295,61 @@ class RecommendationService:
             raise ValueError("limit et offset doivent être ≥ 0")
         validate_thresholds(high, medium)
 
-        profile = None
-        if candidate_id is not None:
-            profile = self.profiles.get(candidate_id)
-            if profile is None:
-                raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
-
-        entries: list[OfferCatalogEntry] = []
-        for offer in self.offers.list(limit=limit, offset=offset):
-            score: int | None = None
-            action: str | None = None
-            if profile is not None:
-                recommendation = _evaluate_offer(offer, profile, high=high, medium=medium)
-                # On n'annote que sur un score mesuré : une formation (score ``None``) reste
-                # sans score ni bande au catalogue (le front la badge via ``offer.kind``).
-                if recommendation is not None and recommendation.score is not None:
-                    score = recommendation.score
-                    action = recommendation.action
-            entries.append(OfferCatalogEntry(offer=offer, score=score, action=action))
+        profile = self._resolve_profile(candidate_id)
+        entries = [
+            self._catalog_entry(offer, profile, high=high, medium=medium)
+            for offer in self.offers.list(limit=limit, offset=offset)
+        ]
         return entries, self.offers.count()
+
+    def catalog_entries_for(
+        self,
+        offer_ids: list[str],
+        *,
+        candidate_id: str | None = None,
+        high: int = DEFAULT_HIGH,
+        medium: int = DEFAULT_MEDIUM,
+    ) -> list[OfferCatalogEntry]:
+        """Entrées de catalogue pour une **liste d'offres déjà sélectionnée**, dans l'ordre fourni.
+
+        Variante de ``list_catalog`` quand le filtrage et la pagination sont faits en amont
+        (p. ex. filtre par étape d'entonnoir côté serveur, OPP-164) : même annotation de score,
+        mais sans re-trancher ni re-paginer. Les ``offer_ids`` introuvables sont ignorés.
+
+        Lève ``UnknownCandidateError`` si un ``candidate_id`` est fourni mais introuvable.
+        """
+        validate_thresholds(high, medium)
+        profile = self._resolve_profile(candidate_id)
+        entries: list[OfferCatalogEntry] = []
+        for offer_id in offer_ids:
+            offer = self.offers.get(offer_id)
+            if offer is None:
+                continue
+            entries.append(self._catalog_entry(offer, profile, high=high, medium=medium))
+        return entries
+
+    def _resolve_profile(self, candidate_id: str | None):
+        """Profil du candidat ciblé, ou ``None`` si aucun candidat. Lève si l'id est inconnu."""
+        if candidate_id is None:
+            return None
+        profile = self.profiles.get(candidate_id)
+        if profile is None:
+            raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
+        return profile
+
+    def _catalog_entry(
+        self, offer: Offer, profile, *, high: int, medium: int
+    ) -> OfferCatalogEntry:
+        """Annote une offre de son score/bande pour ``profile`` (ou ``None`` sans candidat).
+
+        On n'annote que sur un score mesuré : une formation (score ``None``) reste sans score
+        ni bande au catalogue (le front la badge via ``offer.kind``).
+        """
+        score: int | None = None
+        action: str | None = None
+        if profile is not None:
+            recommendation = _evaluate_offer(offer, profile, high=high, medium=medium)
+            if recommendation is not None and recommendation.score is not None:
+                score = recommendation.score
+                action = recommendation.action
+        return OfferCatalogEntry(offer=offer, score=score, action=action)

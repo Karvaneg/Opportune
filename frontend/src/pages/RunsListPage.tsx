@@ -1,13 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useDeleteRun, useLaunchRun, useRuns } from "../api/runs";
-import { useAuth } from "../auth/AuthContext";
+import { useDeleteRun, useRuns } from "../api/runs";
 import { useIsReviewer } from "../auth/roles";
 import type { RunSummary } from "../api/types";
+import { LaunchRun } from "../components/LaunchRun";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
 
-/** Accueil : liste paginée des runs du périmètre (GET /runs), + accès direct par ID. */
+/**
+ * Historique : liste paginée des runs du périmètre (GET /runs), + accès direct par ID.
+ * Anciennement l'accueil (« Runs ») ; devenu l'onglet « Historique » quand l'accueil est
+ * passé au cockpit (OPP-164). Le lanceur d'analyse reste disponible ici, en plus du cockpit.
+ */
 export function RunsListPage() {
   const [page, setPage] = useState(1);
   const { data, isPending, isError, error, isFetching } = useRuns(page);
@@ -15,7 +19,7 @@ export function RunsListPage() {
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold text-slate-900">Runs</h2>
+        <h2 className="text-xl font-semibold text-slate-900">Historique</h2>
         <DirectAccess />
       </div>
 
@@ -131,70 +135,6 @@ function DeleteRunButton({ runId }: { runId: string }) {
         </button>
       )}
     </span>
-  );
-}
-
-/**
- * Lance un run d'analyse pour un candidat du périmètre (OPP-143). Un seul candidat →
- * bouton direct ; plusieurs → sélecteur. Au succès, on navigue vers le run créé (et la
- * liste est invalidée pour l'afficher en tête). Rien à lancer si le périmètre est vide.
- */
-function LaunchRun() {
-  const { identity } = useAuth();
-  const navigate = useNavigate();
-  const candidates = identity?.owned_candidate_ids ?? [];
-  const [candidate, setCandidate] = useState(candidates[0] ?? "");
-  const launch = useLaunchRun();
-
-  if (candidates.length === 0) return null;
-  // `candidate` est un state figé au montage : si le périmètre change ensuite (identity
-  // re-fetchée), la sélection peut sortir de la liste. On retombe alors sur le 1er candidat
-  // pour que la valeur du <select> corresponde toujours à une <option> et que le POST cible
-  // un candidat réellement du périmètre.
-  const target = candidates.includes(candidate) ? candidate : candidates[0];
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {candidates.length > 1 && (
-          <select
-            aria-label="Candidat à analyser"
-            value={target}
-            onChange={(e) => setCandidate(e.target.value)}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            {candidates.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        )}
-        <button
-          type="button"
-          onClick={() =>
-            launch.mutate(target, {
-              // Un run n'évalue que les offres nouvelles (OPP-150). Vraiment vide (aucune
-              // évaluation ET aucune erreur) → run non persisté côté back, inutile d'y
-              // naviguer : on affiche le message ci-dessous. Mais des erreurs par offre
-              // vivent dans un run bien persisté → on y navigue pour les montrer.
-              onSuccess: (data) => {
-                if (data.total > 0 || data.errors.length > 0)
-                  navigate(`/runs/${encodeURIComponent(data.run_id)}`);
-              },
-            })
-          }
-          disabled={launch.isPending}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
-        >
-          {launch.isPending ? "Analyse en cours…" : "Lancer une analyse"}
-        </button>
-      </div>
-      {launch.data?.total === 0 && launch.data.errors.length === 0 && (
-        <p className="text-sm text-slate-500">Aucune nouvelle offre à évaluer.</p>
-      )}
-      {launch.isError && <ErrorNotice error={launch.error} />}
-    </div>
   );
 }
 

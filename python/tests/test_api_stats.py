@@ -75,35 +75,51 @@ def env():
     conn.close()
 
 
-def test_stats_payload_counts_actionable_and_pool(env):
+def test_stats_all_undecided_are_a_etudier(env):
+    # Entonnoir piloté par les décisions : sans décision, les 3 offres sont « à étudier ».
     resp = env.dispatch("GET", "/candidates/cand-1/stats", None, _hdr("tok-rev"))
     assert resp.status == 200
-    assert resp.body == {"a_etudier": 1, "a_postuler": 1, "postule": 0, "offres_total": 3}
+    assert resp.body == {"a_etudier": 3, "a_postuler": 0, "postule": 0, "offres_total": 3}
 
 
-def test_stats_coherent_with_catalog(env):
-    # Cohérence : a_postuler + a_etudier correspondent aux offres du catalogue dont la bande
-    # d'action vaut postuler / a_etudier (toutes pending, aucune tranchée ici).
-    catalog = env.dispatch("GET", "/offers?candidate_id=cand-1", None, _hdr("tok-rev")).body
-    actions = [i["action"] for i in catalog["items"]]
+def test_stats_funnel_follows_my_decisions(env):
+    # Approuver a → à postuler ; approuver + candidater b → postulé ; c reste à étudier.
+    for oid in ("a", "b"):
+        rid = decision_id("cand-1", oid)
+        env.dispatch("POST", f"/candidates/cand-1/offers/{oid}/rescore", {}, _hdr("tok-rev"))
+        env.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, _hdr("tok-rev"))
+    rid_b = decision_id("cand-1", "b")
+    env.dispatch("POST", f"/applications/{rid_b}/confirm", {"confirm": True}, _hdr("tok-rev"))
+    env.dispatch("POST", f"/applications/{rid_b}/applied", {}, _hdr("tok-rev"))
+
     stats = env.dispatch("GET", "/candidates/cand-1/stats", None, _hdr("tok-rev")).body
-    assert stats["a_postuler"] == actions.count("postuler")
-    assert stats["a_etudier"] == actions.count("a_etudier")
-    assert stats["offres_total"] == catalog["total"]
+    assert stats == {"a_etudier": 1, "a_postuler": 1, "postule": 1, "offres_total": 3}
 
 
-def test_stats_applied_counts_and_decided_leaves_pile(env):
-    # Candidature déclarée sur a : postule passe à 1, et a (tranchée) sort de « à postuler ».
+def test_stats_coherent_with_catalog_funnel(env):
+    # Cohérence cartes ↔ catalogue : les compteurs égalent l'entonnoir dérivé de l'état
+    # (décision + candidature) que le catalogue expose par offre. Approuve a pour un cas non trivial.
     rid = decision_id("cand-1", "a")
     env.dispatch("POST", "/candidates/cand-1/offers/a/rescore", {}, _hdr("tok-rev"))
     env.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, _hdr("tok-rev"))
-    env.dispatch("POST", f"/applications/{rid}/confirm", {"confirm": True}, _hdr("tok-rev"))
-    env.dispatch("POST", f"/applications/{rid}/applied", {}, _hdr("tok-rev"))
 
+    catalog = env.dispatch("GET", "/offers?candidate_id=cand-1", None, _hdr("tok-rev")).body
     stats = env.dispatch("GET", "/candidates/cand-1/stats", None, _hdr("tok-rev")).body
-    assert stats["postule"] == 1
-    assert stats["a_postuler"] == 0  # a est tranchée (approved)
-    assert stats["a_etudier"] == 1   # b reste pending
+
+    def stage(i):
+        if i["applied"]:
+            return "postule"
+        if i["decision_status"] == "approved":
+            return "a_postuler"
+        if i["decision_status"] in (None, "pending"):
+            return "a_etudier"
+        return None
+
+    stages = [stage(i) for i in catalog["items"]]
+    assert stats["a_etudier"] == stages.count("a_etudier")
+    assert stats["a_postuler"] == stages.count("a_postuler")
+    assert stats["postule"] == stages.count("postule")
+    assert stats["offres_total"] == catalog["total"]
 
 
 def test_stats_owner_gated_returns_404_out_of_scope(env):
