@@ -58,7 +58,22 @@ Chaque brique V2 a son propre README détaillé :
 
 ### Back — API Python
 
-L'API **refuse de démarrer sans jeton** (`OPPORTUNE_API_TOKEN`). Depuis `python/` :
+L'API **refuse de démarrer sans jeton** (`OPPORTUNE_API_TOKEN`) : elle n'est jamais exposée
+sans authentification.
+
+**Démarrage simplifié (recommandé, OPP-153)** — depuis la racine du dépôt :
+
+```bash
+bash scripts/serve-api.sh                      # écoute sur http://127.0.0.1:8000
+```
+
+Le script lit toute la configuration depuis `python/.env` (**source unique** — plus de
+variables à retaper), **auto-détecte `OLLAMA_HOST`** sous WSL et utilise le venv s'il existe.
+Renseigner au minimum `OPPORTUNE_API_TOKEN` et `OPPORTUNE_API_CANDIDATES` dans `python/.env`
+(modèle sans secret : [`python/.env.example`](python/.env.example)). Détails :
+[`python/README.md`](python/README.md#lancer-lapi).
+
+**Démarrage manuel** (variables à l'ancienne) — depuis `python/` :
 
 ```bash
 export OPPORTUNE_API_TOKEN=mon-jeton          # requis
