@@ -131,6 +131,11 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     actions = ActionService(
         decisions, ApplicationActionStore(conn), OutboundMessageActionStore(conn)
     )
+    # Consultation / édition du profil candidat (OPP-158) : même dépôt de profils que le scoring,
+    # pour qu'une compétence ajoutée soit immédiatement prise en compte au prochain re-score.
+    from app.profile_service import ProfileService
+
+    profile_service = ProfileService(profiles)
 
     # Intake d'offre collée (OPP-145) : le LLM local analyse le texte avant persistance.
     # POST /offers exige donc Ollama joignable (cf. mémoire ollama-wsl2).
@@ -212,6 +217,7 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
         letters=letters,
         offer_url_intake=offer_url_intake,
         collections=collections,
+        profiles=profile_service,
     )
 
 

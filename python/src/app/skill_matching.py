@@ -71,17 +71,30 @@ _ALIASES: dict[str, str] = {
 }
 
 # Compétence canonique → compétences qu'elle **implique** (spécifique ⇒ général). La
-# fermeture transitive est calculée dans ``expand_skills`` (next.js ⇒ react ⇒ javascript).
+# fermeture transitive est calculée dans ``expand_skills`` (next.js ⇒ react ⇒ javascript ⇒ …).
+#
+# Les frameworks front impliquent HTML/CSS (OPP-158) : on ne construit pas d'interface React /
+# Vue / Angular / Svelte sans écrire de HTML et de CSS — ce sont des basiques réellement maîtrisés
+# qui manquent souvent aux `skills` d'un profil (ex. cand-marie full-stack sans « HTML5/CSS3 »
+# déclarés sous-scorait l'offre Capgemini). Reste conservateur : Node (JS serveur) n'implique PAS
+# HTML/CSS, et aucune techno n'implique Agile/Scrum (méthodo, non déductible d'un framework —
+# cela relève d'une déclaration dans le profil, cf. édition des compétences OPP-158).
 _IMPLIES: dict[str, set[str]] = {
     "typescript": {"javascript"},
-    "react": {"javascript"},
-    "vue": {"javascript"},
-    "angular": {"javascript"},
-    "svelte": {"javascript"},
+    "react": {"javascript", "html", "css"},
+    "vue": {"javascript", "html", "css"},
+    "angular": {"javascript", "html", "css"},
+    "svelte": {"javascript", "html", "css"},
     "node.js": {"javascript"},
     "next.js": {"react"},
     "nuxt.js": {"vue"},
     "redux": {"react"},
+    # Préprocesseurs / frameworks CSS ⇒ CSS : on produit du CSS en les utilisant.
+    "sass": {"css"},
+    "scss": {"css"},
+    "less": {"css"},
+    "tailwind": {"css"},
+    "bootstrap": {"css"},
     "github actions": {"github", "git", "ci/cd"},
     "gitlab ci": {"git", "ci/cd"},
     "jenkins": {"ci/cd"},

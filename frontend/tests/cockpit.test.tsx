@@ -14,6 +14,11 @@ function memoryStorage(initial: string | null): AuthStorage {
 
 const STATS = { a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12 };
 
+const PROFILE = {
+  id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+  location: null, languages: [], total_experience_years: null,
+};
+
 const ACTIVITY = {
   items: [
     { type: "decision", at: "2026-09-06T00:00:00+00:00", label: "Candidature approuvée — Dev Python",
@@ -35,6 +40,7 @@ function stubFetch(statsBody: unknown = STATS, role = "reviewer", activityBody: 
       if (s.includes("/me"))
         return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/activity")) return ok(activityBody);
+      if (s.includes("/profile")) return ok(PROFILE);
       if (s.includes("/stats")) return ok(statsBody);
       if (s.includes("/offers") && init?.method === "POST") {
         calls.push({ url: s, body: JSON.parse(String(init?.body ?? "{}")) });
