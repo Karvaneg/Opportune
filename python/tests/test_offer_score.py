@@ -14,6 +14,7 @@ from app.offer_profile_match import (
     SkillMatch,
 )
 from app.offer_score import (
+    SKILL_UNKNOWN_SCORE_CAP,
     explain_offer_to_profile,
     explain_score,
     score_match,
@@ -102,11 +103,43 @@ def test_low_skill_coverage_adds_a_reason():
     assert any("hors de ton métier" in r.message for r in negatives)
 
 
-def test_skill_gate_not_applied_when_skills_unevaluable():
-    # Compétences non listées (total 0) → pas de garde-fou, on n'écrase pas ce qu'on ignore.
+def test_unevaluable_skills_cap_the_score():
+    # OPP-168 : compétences non listées (total 0) → la dimension déterminante (0.45) est un angle
+    # mort. Contrat/séniorité/lieu tous à 1 donneraient 100 ; le plafond de confiance borne à 40.
     match = _match(skills=SkillMatch(matched=[], missing=[]))
-    # Seuls contrat/séniorité/lieu évaluables, tous à 1 → 100, inchangé.
-    assert score_match(match).score == 100
+    assert score_match(match).score == SKILL_UNKNOWN_SCORE_CAP
+
+
+def test_unevaluable_skills_cap_from_handoff_case():
+    # Cas réel du handoff OPP-167 : offre Adzuna sans compétences, CDI compatible, lieu différent,
+    # séniorité non exigée → base 0.75 (flottait à 75). Plafonnée à 40.
+    match = _match(
+        skills=SkillMatch(matched=[], missing=[]),
+        contract_type=ContractMatch(offer="CDI", profile="CDI", compatible=True),
+        location=LocationMatch(offer="Lyon", profile="Paris", status="mismatch"),
+        seniority=SeniorityMatch(offer_label=None, required_years=None, profile_years=6, status="not_required"),
+    )
+    assert score_match(match).score == SKILL_UNKNOWN_SCORE_CAP
+
+
+def test_unevaluable_skills_cap_adds_a_reason():
+    match = _match(skills=SkillMatch(matched=[], missing=[]))
+    negatives = explain_score(match).negatives
+    assert any("plafonné par prudence" in r.message for r in negatives)
+
+
+def test_unevaluable_skills_below_cap_left_untouched():
+    # Score déjà sous le plafond → le plafond ne mord pas, et aucune raison « plafonné » n'est
+    # ajoutée (OPP-168 : on ne prétend pas plafonner ce qui ne l'a pas été).
+    match = _match(
+        skills=SkillMatch(matched=[], missing=[]),
+        contract_type=ContractMatch(offer="Freelance", profile="CDI", compatible=False),
+        location=LocationMatch(offer="Lyon", profile="Paris", status="mismatch"),
+        seniority=SeniorityMatch(offer_label=None, required_years=None, profile_years=6, status="not_required"),
+    )
+    # Seuls contrat (0) et lieu (0) évaluables → base 0 → score 0, inchangé.
+    assert score_match(match).score == 0
+    assert not any("plafonné par prudence" in r.message for r in explain_score(match).negatives)
 
 
 def test_good_skill_coverage_is_not_penalized():

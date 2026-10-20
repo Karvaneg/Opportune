@@ -50,6 +50,16 @@ WEIGHTS = {
 # sont pas évaluables (offre qui n'en liste aucune) — on n'écrase pas ce qu'on ignore.
 SKILL_GATE_KNEE = 0.5
 
+# Plafond de confiance (OPP-168). Quand l'offre ne liste **aucune** compétence, la dimension la
+# plus déterminante (poids 0.45) est un angle mort : le score ne doit alors pas pouvoir présenter
+# l'offre comme un match fort, même si contrat / lieu / séniorité sont favorables. On **borne**
+# donc le score final à ce plafond. C'est un problème de *confiance* (absence totale d'info),
+# **complémentaire** du garde-fou métier ``_skill_gate`` : la garde traite une *couverture
+# partielle* (compétences évaluées), le plafond l'*absence totale* (compétences non évaluables) —
+# les deux sont donc mutuellement exclusifs sur une même offre, jamais cumulés. L'offre reste
+# visible et candidatable (score bas, jamais ``None``).
+SKILL_UNKNOWN_SCORE_CAP = 40
+
 
 def _skill_gate(skills: SkillMatch) -> tuple[float, str | None]:
     """Facteur multiplicatif [0,1] sur le score global + une raison si le facteur mord.
@@ -204,6 +214,26 @@ def _compute(match: OfferProfileMatch) -> tuple[int | None, dict[str, DimensionS
         )
     # Arrondi au plus proche, moitié vers le haut (``round`` builtin ferait un arrondi au pair).
     score = int(base * factor * 100 + 0.5)
+
+    # Plafond de confiance (OPP-168) : compétences non évaluables → score borné (cf. constante).
+    # Sans cela, contrat / lieu / séniorité à eux seuls font flotter l'offre jusqu'à 75–100 alors
+    # que la dimension déterminante n'a pas pu être lue. On ne borne que si le plafond mord
+    # réellement (score trop haut) — une offre déjà basse n'est pas concernée, et la raison n'est
+    # ajoutée que dans ce cas pour ne pas prétendre plafonner ce qui ne l'a pas été.
+    if not breakdown["skills"].evaluated and score > SKILL_UNKNOWN_SCORE_CAP:
+        reasons.append(
+            Reason(
+                dimension="skills",
+                weight=WEIGHTS["skills"],
+                impact="negative",
+                message=(
+                    "Compétences de l'offre non détectées : score plafonné par prudence "
+                    "(adéquation métier non vérifiable)"
+                ),
+            )
+        )
+        score = SKILL_UNKNOWN_SCORE_CAP
+
     return score, breakdown, reasons
 
 
