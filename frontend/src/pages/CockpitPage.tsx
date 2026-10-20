@@ -6,6 +6,7 @@ import type { ActivityEvent } from "../api/types";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { AddOffer } from "../components/AddOffer";
 import { LaunchRun } from "../components/LaunchRun";
+import { ProfilePanel } from "../components/ProfilePanel";
 import { ErrorNotice, Loading } from "../components/States";
 
 /**
@@ -65,6 +66,7 @@ export function CockpitPage() {
           {isError && <ErrorNotice error={error} />}
           {data && <StatCards candidateId={target} stats={data} />}
           <ActivityFeed candidateId={target} />
+          <ProfilePanel candidateId={target} />
         </>
       )}
     </section>

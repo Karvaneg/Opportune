@@ -250,6 +250,21 @@ export interface CollectionReport {
   enriched_recovered: number;
 }
 
+/**
+ * Profil candidat exposé pour consultation / édition (`GET/PUT /candidates/{id}/profile`,
+ * OPP-158). Seuls les champs utiles à l'affichage et à l'édition des compétences sont exposés ;
+ * `skills` est la liste éditable (le PUT en envoie le remplacement complet).
+ */
+export interface CandidateProfile {
+  id: string;
+  name: string;
+  skills: string[];
+  contract_type: string;
+  location: string | null;
+  languages: string[];
+  total_experience_years: number | null;
+}
+
 /** Statut d'un job de collecte asynchrone (OPP-170). */
 export type CollectionJobStatus = "running" | "done" | "failed";
 

@@ -54,10 +54,13 @@ from typing import TYPE_CHECKING, Protocol
 from urllib.parse import parse_qs, unquote
 
 if TYPE_CHECKING:
+    from app.candidate_profile import CandidateProfile
     from app.collection_jobs import CollectionJob, CollectionJobRegistry
     from app.offer_collection import CollectionReport
+    from app.profile_service import ProfileService
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
+from app.candidate_profile import ProfileValidationError
 from app.collection_jobs import CollectionAlreadyRunning
 from app.auth import AuthProvider, User
 from app.cover_letter import CoverLetterError
@@ -123,6 +126,7 @@ _RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
 _STATS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/stats$")
 _ACTIVITY = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/activity$")
+_PROFILE = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/profile$")
 _RESCORE = re.compile(
     r"^/candidates/(?P<candidate_id>[^/]+)/offers/(?P<offer_id>[^/]+)/rescore$"
 )
@@ -170,6 +174,7 @@ class HermesApi:
         letters: LetterService | None = None,
         offer_url_intake: OfferUrlIntake | None = None,
         collections: "CollectionJobRegistry | None" = None,
+        profiles: "ProfileService | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -190,6 +195,9 @@ class HermesApi:
         # lance une passe en tâche de fond (POST /collect → job_id) et la suit par sondage
         # (GET /collect/{job_id}). Injecté en prod (Adzuna), faux en test.
         self.collections = collections
+        # Service du profil candidat (OPP-158). Optionnel : si absent, les routes
+        # /candidates/{id}/profile ne sont pas montées (404). Injecté en prod, faux en test.
+        self.profiles = profiles
         # Fournisseur d'authentification. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune vérification. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur
         # ``None`` en production. Avec un fournisseur, toute route métier exige un jeton
@@ -254,6 +262,18 @@ class HermesApi:
         if match:
             self._require(method, "GET", path)
             return self._get_activity(unquote(match["candidate_id"]), user)
+
+        match = _PROFILE.match(path)
+        if match:
+            # Montée uniquement si le service profil est câblé (sinon 404 neutre).
+            if self.profiles is None:
+                raise self._not_found(user, "profil non disponible")
+            candidate_id = unquote(match["candidate_id"])
+            if method == "GET":
+                return self._get_profile(candidate_id, user)
+            if method == "PUT":
+                return self._put_profile(candidate_id, body, user)
+            raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
         match = _RESCORE.match(path)
         if match:
@@ -509,6 +529,58 @@ class HermesApi:
             "label": event.label,
             "target_kind": event.target_kind,
             "target_id": event.target_id,
+        }
+
+    def _get_profile(self, candidate_id: str, user: User | None) -> Response:
+        """Profil du candidat (OPP-158) : lecture owner-gated pour consultation/édition côté UI.
+
+        Owner-gated (``_guard_owner`` : 404 neutre hors périmètre ; 401 sans jeton en amont),
+        cohérent avec /stats et /activity. 404 si le candidat n'a pas de profil.
+        """
+        self._guard_owner(user, candidate_id)
+        assert self.profiles is not None  # garanti par le dispatch (404 sinon)
+        profile = self.profiles.get(candidate_id)
+        if profile is None:
+            raise self._not_found(user, f"profil introuvable : {candidate_id}")
+        return Response(200, self._serialize_profile(profile))
+
+    def _put_profile(self, candidate_id: str, body: dict, user: User | None) -> Response:
+        """Édite les compétences du profil (OPP-158) : remplacement de la liste ``skills``.
+
+        Curation du profil → **reviewer** (comme l'ajout/collecte d'offres), en plus de la
+        propriété. ``skills`` doit être une liste de chaînes (400 sinon) ; le service la
+        normalise et revalide (liste vide → 400). 404 si le candidat n'a pas de profil.
+        """
+        self._guard_owner(user, candidate_id)
+        self._guard_reviewer(user)
+        skills = body.get("skills")
+        if not isinstance(skills, list) or not all(isinstance(s, str) for s in skills):
+            raise ApiError(400, "skills doit être une liste de chaînes")
+        assert self.profiles is not None  # garanti par le dispatch (404 sinon)
+        try:
+            profile = self.profiles.update_skills(candidate_id, skills)
+        except ProfileValidationError as exc:
+            raise ApiError(400, str(exc)) from exc
+        if profile is None:
+            raise self._not_found(user, f"profil introuvable : {candidate_id}")
+        return Response(200, self._serialize_profile(profile))
+
+    @staticmethod
+    def _serialize_profile(profile: "CandidateProfile") -> dict:
+        """Profil exposé au front (OPP-158) : identité + compétences + faits utiles à l'affichage.
+
+        On expose ce qui éclaire l'édition des compétences et le contexte de scoring (nom,
+        skills, type de contrat, localisation, langues, expérience). Les champs internes
+        (``structured_skills``, ``locked_fields``, préférences financières) restent côté serveur.
+        """
+        return {
+            "id": profile.id,
+            "name": profile.name,
+            "skills": list(profile.skills),
+            "contract_type": profile.contract_type,
+            "location": profile.location,
+            "languages": list(profile.languages),
+            "total_experience_years": profile.total_experience_years,
         }
 
     def _post_rescore(

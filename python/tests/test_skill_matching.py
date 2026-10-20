@@ -45,6 +45,34 @@ def test_family_is_transitive():
     assert {"next.js", "react", "javascript"} <= owned
 
 
+def test_front_frameworks_imply_html_and_css():
+    # OPP-158 : un framework front implique HTML/CSS (basiques réellement maîtrisés).
+    for framework in ("React", "Vue", "Angular", "Svelte"):
+        owned = expand_skills([framework])
+        assert {"html", "css"} <= owned, framework
+    # Transitif : Next.js ⇒ React ⇒ html/css.
+    assert {"html", "css"} <= expand_skills(["Next.js"])
+
+
+def test_css_tooling_implies_css():
+    # Préprocesseurs / frameworks CSS ⇒ CSS.
+    for tool in ("Sass", "SCSS", "Less", "Tailwind CSS", "Bootstrap"):
+        assert "css" in expand_skills([tool]), tool
+
+
+def test_node_does_not_imply_html_or_css():
+    # Conservateur : Node (JS serveur) n'implique PAS HTML/CSS.
+    owned = expand_skills(["Node.js"])
+    assert "javascript" in owned
+    assert "html" not in owned and "css" not in owned
+
+
+def test_methodology_not_invented_by_tech():
+    # Agile/Scrum ne se déduisent d'aucune techno : ils ne doivent PAS apparaître par implication.
+    owned = expand_skills(["React", "Node.js", "TypeScript"])
+    assert "agile" not in owned and "scrum" not in owned
+
+
 def test_family_is_unidirectional():
     # JavaScript n'implique PAS TypeScript (spécifique ⇒ général, jamais l'inverse).
     owned = expand_skills(["JavaScript"])
