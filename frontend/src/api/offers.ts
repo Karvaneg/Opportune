@@ -3,7 +3,8 @@ import { useAuth } from "../auth/AuthContext";
 import { apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
 import type {
-  CollectionReport,
+  CollectionJob,
+  CollectionJobStart,
   OffersCatalogPage,
   OfferSummary,
   RecommendationDetail,
@@ -68,23 +69,44 @@ export interface CollectOffersVariables {
   where?: string;
 }
 
+// Cadence de sondage d'un job de collecte en cours (ms). Une passe dure des minutes
+// (~40 s/offre neuve) : un sondage à la seconde et demie suffit à suivre l'avancement sans
+// marteler le serveur.
+const COLLECT_POLL_INTERVAL_MS = 1500;
+
+export const collectJobKeys = {
+  job: (jobId: string) => ["collect-job", jobId] as const,
+};
+
 /**
- * Déclenche une passe de collecte réelle (Adzuna) : `POST /collect` (OPP-167). Reviewer
- * uniquement (curation du pool partagé, comme `useAddOffer`). **Synchrone** et coûteuse (un
- * passage LLM par offre neuve) → le back plafonne le nombre d'offres ; l'appelant gère
- * l'attente (« Récupération en cours… »). Au succès, invalide le catalogue (préfixe
- * `["offers"]`, toutes pages/candidats) pour que les nouvelles offres y apparaissent sans
- * rechargement. Le bilan retourné porte `source_error` (non nul = panne de la source, ex.
- * identifiants Adzuna manquants) : succès HTTP malgré tout, l'appelant l'affiche.
- *
- * L'invalidation n'est déclenchée que si des offres ont réellement été persistées
- * (`stored > 0`) : une passe sans nouveauté (que des doublons) ou en échec de source
- * (`stored === 0`) ne change rien au catalogue → inutile de forcer un rechargement.
+ * Démarre une passe de collecte réelle (Adzuna) : `POST /collect` → `202 { job_id }` (OPP-170).
+ * Reviewer uniquement (curation du pool partagé, comme `useAddOffer`). La collecte est
+ * **asynchrone** : cette mutation rend la main aussitôt avec un `job_id` ; l'avancement et le
+ * bilan se suivent ensuite via `useCollectJob`. Un `409` (via `ApiHttpError`) signale qu'une
+ * collecte est déjà en cours — un seul job à la fois côté serveur.
  */
-export function useCollectOffers() {
-  return useApiMutation<CollectionReport, CollectOffersVariables>({
-    mutationFn: (variables, token) => apiPost<CollectionReport>("/collect", token, variables),
-    invalidateKeys: (_variables, report) => (report.stored > 0 ? [offerKeys.all] : []),
+export function useStartCollect() {
+  return useApiMutation<CollectionJobStart, CollectOffersVariables>({
+    mutationFn: (variables, token) =>
+      apiPost<CollectionJobStart>("/collect", token, variables),
+  });
+}
+
+/**
+ * Sonde l'état d'un job de collecte : `GET /collect/{job_id}` (OPP-170). Tant que le job est
+ * `running`, la requête se rafraîchit à `COLLECT_POLL_INTERVAL_MS` ; dès qu'il est `done` ou
+ * `failed`, le sondage s'arrête (`refetchInterval` → `false`). Désactivée tant qu'aucun job
+ * n'est lancé (`jobId` nul). L'invalidation du catalogue à la complétion est laissée à
+ * l'appelant (il connaît le `stored` final et évite de recharger pour rien).
+ */
+export function useCollectJob(jobId: string | null) {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: collectJobKeys.job(jobId ?? ""),
+    queryFn: () => apiFetch<CollectionJob>(`/collect/${jobId}`, token!),
+    enabled: Boolean(token && jobId),
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? COLLECT_POLL_INTERVAL_MS : false,
   });
 }
 

@@ -70,6 +70,27 @@ def test_collects_normalizes_and_persists_new_offers():
     assert len(store.offers) == 2
 
 
+def test_on_progress_emitted_once_per_offer_with_running_counts():
+    # OPP-170 : le callback de progression est appelé après CHAQUE offre (neuve ou doublon),
+    # avec les compteurs courants ; le dernier instantané reflète le bilan final.
+    store = FakeOfferStore()
+    client = MockLLMClient([_response("A")])  # 1 neuve puis 1 doublon
+    raw = RawOffer(source="indeed", raw_text="même offre", url="https://x.com/j")
+    source = ListSource([raw, raw])
+
+    snapshots = []
+    report = collect_offers(
+        source, client=client, store=store, on_progress=snapshots.append
+    )
+
+    assert len(snapshots) == 2  # une émission par offre collectée
+    # 1re offre neuve : collectée + persistée ; pas encore de doublon.
+    assert (snapshots[0].collected, snapshots[0].stored, snapshots[0].duplicates) == (1, 1, 0)
+    last = snapshots[-1]
+    assert (last.collected, last.stored, last.duplicates) == (2, 1, 1)
+    assert (report.collected, report.stored, report.duplicates) == (2, 1, 1)
+
+
 def test_dedups_same_offer_within_one_pass_without_second_llm_call():
     store = FakeOfferStore()
     # Une seule réponse scriptée : si la 2e offre (doublon) appelait le LLM, ça lèverait.

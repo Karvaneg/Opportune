@@ -250,6 +250,37 @@ export interface CollectionReport {
   enriched_recovered: number;
 }
 
+/** Statut d'un job de collecte asynchrone (OPP-170). */
+export type CollectionJobStatus = "running" | "done" | "failed";
+
+/** Compteurs d'avancement d'une passe en cours (mêmes champs que le bilan, `failures` en cardinal). */
+export interface CollectionProgress {
+  collected: number;
+  stored: number;
+  duplicates: number;
+  failures: number;
+  enriched: number;
+  enriched_recovered: number;
+}
+
+/**
+ * État d'un job de collecte asynchrone (`GET /collect/{job_id}`, OPP-170). `report` est le
+ * bilan complet une fois `status === "done"`, sinon `null` ; `error` porte le message en cas
+ * de `failed`. `progress` suit l'avancement pendant que le job tourne (`running`).
+ */
+export interface CollectionJob {
+  job_id: string;
+  status: CollectionJobStatus;
+  progress: CollectionProgress;
+  report: CollectionReport | null;
+  error: string | null;
+}
+
+/** Réponse du démarrage d'une collecte (`POST /collect` → 202, OPP-170). */
+export interface CollectionJobStart {
+  job_id: string;
+}
+
 /** Provenance d'une lettre : générée par le LLM (`ai`) ou éditée à la main (`human`). */
 export type LetterSource = "ai" | "human";
 

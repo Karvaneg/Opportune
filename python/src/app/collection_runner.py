@@ -9,8 +9,14 @@ propre : lire sa configuration et assembler sa source.
 
 from __future__ import annotations
 
+from typing import Callable
+
 from app.llm_client import LLMClient
-from app.offer_collection import CollectionReport, collect_offers
+from app.offer_collection import (
+    CollectionProgress,
+    CollectionReport,
+    collect_offers,
+)
 from app.offer_source import SourceOffres
 from app.offer_store import OfferRepository
 
@@ -20,13 +26,17 @@ def run_collection(
     *,
     llm_client: LLMClient,
     store: OfferRepository,
+    on_progress: Callable[[CollectionProgress], None] | None = None,
 ) -> CollectionReport:
     """Lance une passe de collecte sur une source assemblée ; retourne le bilan.
 
     Fine enveloppe autour de ``collect_offers`` : présente pour offrir un point d'injection
-    testable (source/LLM/dépôt factices) partagé par tous les runners concrets.
+    testable (source/LLM/dépôt factices) partagé par tous les runners concrets. ``on_progress``
+    (OPP-170) est transmis tel quel pour la publication d'avancement d'un job de fond.
     """
-    return collect_offers(source, client=llm_client, store=store)
+    return collect_offers(
+        source, client=llm_client, store=store, on_progress=on_progress
+    )
 
 
 def format_report(report: CollectionReport) -> str:

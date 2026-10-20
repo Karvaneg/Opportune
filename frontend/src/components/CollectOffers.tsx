@@ -1,17 +1,20 @@
-import { useState } from "react";
-import { useCollectOffers } from "../api/offers";
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { offerKeys, useCollectJob, useStartCollect } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
-import type { CollectionReport } from "../api/types";
+import type { CollectionProgress, CollectionReport } from "../api/types";
 import { ErrorNotice } from "./States";
 
 /**
- * Récupère de nouvelles offres réelles depuis Adzuna (`POST /collect`, OPP-167) — reviewer
+ * Récupère de nouvelles offres réelles depuis Adzuna (`POST /collect`, OPP-170) — reviewer
  * uniquement (curation du pool partagé). Un champ de recherche (mots-clés + lieu) cible la
- * passe ; le back l'exécute **de façon synchrone** et renvoie un bilan (collectées / nouvelles
- * / doublons). La passe fait un passage LLM par offre neuve → latence (« Récupération en
- * cours… »). Au succès, le catalogue est invalidé (cf. `useCollectOffers`) : les nouvelles
- * offres apparaissent dans la liste. Une panne de la source (identifiants manquants, quota)
- * revient dans `source_error` du bilan, pas en erreur HTTP — on l'affiche distinctement.
+ * passe ; le back l'exécute **de façon asynchrone** : le démarrage rend la main aussitôt avec
+ * un `job_id`, puis on **sonde** l'avancement (`GET /collect/{job_id}`) jusqu'au bilan. La passe
+ * fait un passage LLM par offre neuve → plusieurs minutes, suivies en direct (compteurs de
+ * progression). À la complétion, si des offres ont été persistées, le catalogue est invalidé :
+ * les nouvelles offres apparaissent sans rechargement. Une panne de la source (identifiants
+ * manquants, quota) revient dans `source_error` du bilan, pas en erreur HTTP — on l'affiche
+ * distinctement ; un `409` au démarrage signale qu'une collecte est déjà en cours.
  */
 // Poste recherché par défaut (OPP-167). Le profil décrit les compétences du candidat mais
 // pas l'intitulé de poste visé, et les skills bruts font de mauvais mots-clés Adzuna : on
@@ -23,11 +26,38 @@ export function CollectOffers() {
   const isReviewer = useIsReviewer();
   const [what, setWhat] = useState(DEFAULT_WHAT);
   const [where, setWhere] = useState("");
-  const collect = useCollectOffers();
+  const [jobId, setJobId] = useState<string | null>(null);
+  const start = useStartCollect();
+  const job = useCollectJob(jobId);
+  const queryClient = useQueryClient();
+  // Mémorise le job déjà pris en compte pour n'invalider le catalogue qu'une fois à sa fin.
+  const invalidatedFor = useRef<string | null>(null);
+
+  const status = job.data?.status;
+  // Un job lancé mais pas encore terminé compte comme « en cours », même avant le premier
+  // sondage (où `status` est encore `undefined`) : sinon le bouton se réactiverait dans cette
+  // fenêtre et un second clic déclencherait un `POST /collect` → 409 (unicité) affiché à côté
+  // du job légitime qui progresse.
+  const running =
+    start.isPending || (jobId !== null && status !== "done" && status !== "failed");
+
+  // À la complétion d'un job ayant persisté des offres, rafraîchir le catalogue — une seule
+  // fois par job (une passe de doublons ou en échec de source ne change rien au catalogue).
+  useEffect(() => {
+    if (!jobId || status !== "done" || invalidatedFor.current === jobId) return;
+    invalidatedFor.current = jobId;
+    if ((job.data?.report?.stored ?? 0) > 0) {
+      queryClient.invalidateQueries({ queryKey: offerKeys.all });
+    }
+  }, [jobId, status, job.data, queryClient]);
 
   if (!isReviewer) return null;
 
-  const submit = () => collect.mutate({ what: what.trim(), where: where.trim() });
+  const submit = () =>
+    start.mutate(
+      { what: what.trim(), where: where.trim() },
+      { onSuccess: (data) => setJobId(data.job_id) },
+    );
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
@@ -60,15 +90,36 @@ export function CollectOffers() {
         <button
           type="button"
           onClick={submit}
-          disabled={collect.isPending}
+          disabled={running}
           className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
         >
-          {collect.isPending ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
+          {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
         </button>
-        {collect.data && <CollectSummary report={collect.data} />}
+        {status === "running" && job.data && <CollectProgress progress={job.data.progress} />}
+        {status === "done" && job.data?.report && <CollectSummary report={job.data.report} />}
+        {status === "failed" && (
+          <span className="text-sm text-rose-700">
+            Collecte échouée : {job.data?.error ?? "erreur inconnue"}
+          </span>
+        )}
       </div>
-      {collect.isError && <ErrorNotice error={collect.error} />}
+      {start.isError && <ErrorNotice error={start.error} />}
+      {job.isError && <ErrorNotice error={job.error} />}
     </div>
+  );
+}
+
+/**
+ * Avancement d'une passe en cours, affiché à côté du bouton pendant le sondage. Donne le
+ * ressenti de progression sur une collecte longue (plusieurs minutes), avant le bilan final.
+ */
+function CollectProgress({ progress }: { progress: CollectionProgress }) {
+  return (
+    <span className="text-sm text-slate-500">
+      Récupération… {progress.collected} collectée{progress.collected > 1 ? "s" : ""} ·{" "}
+      {progress.stored} nouvelle{progress.stored > 1 ? "s" : ""} · {progress.duplicates} doublon
+      {progress.duplicates > 1 ? "s" : ""}
+    </span>
   );
 }
 
