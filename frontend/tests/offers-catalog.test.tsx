@@ -188,26 +188,39 @@ describe("OffersPage", () => {
     expect(urls.some((u) => u.includes("/offers") && !u.includes("stage="))).toBe(true);
   });
 
-  // --- Bouton « Récupérer de nouvelles offres » (POST /collect, OPP-167) ---
+  // --- Bouton « Récupérer de nouvelles offres » (collecte asynchrone, OPP-170) ---
 
-  it("récupère de nouvelles offres (POST /collect) et affiche le bilan", async () => {
+  // Réponse factice avec statut explicite (202 au démarrage, 200 au sondage).
+  const res = (status: number, b: unknown) =>
+    Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(b) } as Response);
+  const ME = { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] };
+  const noProgress = {
+    collected: 0, stored: 0, duplicates: 0, failures: 0, enriched: 0, enriched_recovered: 0,
+  };
+
+  it("démarre une collecte (POST /collect → 202) puis sonde et affiche le bilan", async () => {
     const posts: Array<{ url: string; body: unknown }> = [];
-    const ok = (b: unknown) =>
-      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    const job = {
+      job_id: "job-1", status: "done", error: null,
+      progress: { collected: 4, stored: 1, duplicates: 3, failures: 0, enriched: 2, enriched_recovered: 1 },
+      report: {
+        collected: 4, stored: 1, duplicates: 3, failures: 0, source_error: null,
+        enriched: 2, enriched_recovered: 1,
+      },
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
-        if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/me")) return res(200, ME);
         if (s.includes("/collect")) {
-          posts.push({ url: s, body: JSON.parse(String(options?.body ?? "{}")) });
-          return ok({
-            collected: 4, stored: 1, duplicates: 3, failures: 0, source_error: null,
-            enriched: 2, enriched_recovered: 1,
-          });
+          if (options?.method === "POST") {
+            posts.push({ url: s, body: JSON.parse(String(options?.body ?? "{}")) });
+            return res(202, { job_id: "job-1" }); // démarrage asynchrone
+          }
+          return res(200, job); // GET /collect/job-1 : sondage, déjà terminé
         }
-        return ok(CATALOG);
+        return res(200, CATALOG);
       }),
     );
     renderOffers();
@@ -229,21 +242,66 @@ describe("OffersPage", () => {
     expect(posts[0].body).toEqual({ what: "python", where: "Paris" });
   });
 
-  it("envoie le poste recherché prérempli quand le champ n'est pas modifié", async () => {
-    const posts: Array<{ body: { what?: string; where?: string } }> = [];
-    const ok = (b: unknown) =>
-      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+  it("sonde jusqu'à la fin : progression en cours puis bilan final", async () => {
+    let getCalls = 0;
+    const running = {
+      job_id: "job-2", status: "running", error: null, report: null,
+      progress: { collected: 2, stored: 1, duplicates: 1, failures: 0, enriched: 0, enriched_recovered: 0 },
+    };
+    const done = {
+      job_id: "job-2", status: "done", error: null,
+      progress: { collected: 5, stored: 3, duplicates: 2, failures: 0, enriched: 0, enriched_recovered: 0 },
+      report: {
+        collected: 5, stored: 3, duplicates: 2, failures: 0, source_error: null,
+        enriched: 0, enriched_recovered: 0,
+      },
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
-        if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/me")) return res(200, ME);
         if (s.includes("/collect")) {
-          posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
-          return ok({ collected: 0, stored: 0, duplicates: 0, failures: 0, source_error: null });
+          if (options?.method === "POST") return res(202, { job_id: "job-2" });
+          getCalls += 1;
+          return res(200, getCalls === 1 ? running : done); // 1er sondage en cours, puis terminé
         }
-        return ok(CATALOG);
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await screen.findByText("Lead Java");
+    await userEvent.click(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    );
+
+    // Avancement visible pendant que le job tourne…
+    expect(await screen.findByText(/Récupération…/)).toBeInTheDocument();
+    // …puis le bilan final après re-sondage (refetchInterval ~1,5 s).
+    expect(
+      await screen.findByText(/3 nouvelles offres/, undefined, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
+
+  it("envoie le poste recherché prérempli quand le champ n'est pas modifié", async () => {
+    const posts: Array<{ body: { what?: string; where?: string } }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/collect")) {
+          if (options?.method === "POST") {
+            posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
+            return res(202, { job_id: "job-3" });
+          }
+          return res(200, {
+            job_id: "job-3", status: "done", error: null, progress: noProgress,
+            report: { ...noProgress, source_error: null },
+          });
+        }
+        return res(200, CATALOG);
       }),
     );
     renderOffers();
@@ -254,26 +312,29 @@ describe("OffersPage", () => {
     );
 
     // Défaut métier large, lieu vide → collecte pertinente sans aucune saisie.
+    await screen.findByText(/0 nouvelle offre/);
     expect(posts).toHaveLength(1);
     expect(posts[0].body.what).toMatch(/développeur/);
     expect(posts[0].body.where).toBe("");
   });
 
   it("affiche l'erreur de source quand la collecte échoue côté Adzuna", async () => {
-    const ok = (b: unknown) =>
-      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) => {
+      vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
-        if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
-        if (s.includes("/collect"))
-          return ok({
-            collected: 0, stored: 0, duplicates: 0, failures: 0,
-            source_error: "AdzunaAuthError: identifiants manquants",
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/collect")) {
+          if (options?.method === "POST") return res(202, { job_id: "job-4" });
+          return res(200, {
+            job_id: "job-4", status: "done", error: null, progress: noProgress,
+            report: {
+              ...noProgress,
+              source_error: "AdzunaAuthError: identifiants manquants",
+            },
           });
-        return ok(CATALOG);
+        }
+        return res(200, CATALOG);
       }),
     );
     renderOffers();
@@ -283,7 +344,7 @@ describe("OffersPage", () => {
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
 
-    // Une panne de source (HTTP 200 avec source_error) prime sur les compteurs : on le dit.
+    // Une panne de source (job done avec source_error) prime sur les compteurs : on le dit.
     expect(await screen.findByText(/Collecte impossible/)).toBeInTheDocument();
   });
 });

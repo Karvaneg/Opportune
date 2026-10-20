@@ -149,24 +149,49 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     def offer_url_intake(url: str, *, source: str) -> Offer:
         return intake_offer_from_url(url, source=source, client=llm_client, store=offers)
 
-    # Collecte d'offres réelles (OPP-167) : assemble la source Adzuna depuis l'environnement et
-    # lance une passe (même LLM + dépôt d'offres partagés). Les erreurs de la source — identifiants
-    # Adzuna manquants (``build_adzuna_source``), quota ou panne — sont rendues **dans le bilan**
-    # (``source_error``) plutôt que propagées : l'API répond 200 et le front affiche le détail.
+    # Collecte d'offres réelles **asynchrone** (OPP-170) : un registre lance la passe Adzuna dans
+    # un thread de fond et la suit par sondage. Le runner ouvre sa **propre** connexion SQLite —
+    # il tourne hors du thread HTTP, et la connexion partagée (``check_same_thread``) ne peut pas
+    # servir deux threads ; WAL + ``busy_timeout`` (cf. ``app.db``) autorisent l'écriture du job à
+    # coexister avec les lectures de l'API. Cette connexion vise la **même base** que ``conn``
+    # (chemin dérivé de la connexion injectée, pas le défaut d'``OPPORTUNE_DB_PATH``) : sinon un
+    # ``conn`` sur un autre fichier ferait écrire le job dans une base distincte et les offres
+    # collectées n'apparaîtraient jamais au catalogue. Les erreurs de la source (identifiants
+    # Adzuna manquants, quota, panne) restent rendues **dans le bilan** (``source_error``).
     from app.adzuna_client import AdzunaError
     from app.adzuna_source import build_adzuna_source
+    from app.collection_jobs import CollectionJobRegistry, ProgressCallback
     from app.collection_runner import run_collection
+    from app.db import connect, database_path
     from app.offer_collection import CollectionReport
 
-    def collector(*, what: str, where: str, max_offers: int) -> CollectionReport:
+    job_db_path = database_path(conn)
+
+    def collection_runner(
+        *, what: str, where: str, max_offers: int, on_progress: ProgressCallback
+    ) -> CollectionReport:
         filters = {k: v for k, v in (("what", what), ("where", where)) if v}
+        job_conn = connect(job_db_path)
         try:
-            source = build_adzuna_source(
-                os.environ, filters=filters or None, max_offers=max_offers
+            job_offers = OfferStore(job_conn)
+            try:
+                source = build_adzuna_source(
+                    os.environ, filters=filters or None, max_offers=max_offers
+                )
+            except AdzunaError as exc:
+                return CollectionReport(
+                    0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}"
+                )
+            return run_collection(
+                source,
+                llm_client=llm_client,
+                store=job_offers,
+                on_progress=on_progress,
             )
-            return run_collection(source, llm_client=llm_client, store=offers)
-        except AdzunaError as exc:
-            return CollectionReport(0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}")
+        finally:
+            job_conn.close()
+
+    collections = CollectionJobRegistry(collection_runner)
 
     # Lettre de motivation (OPP-147) : le MÊME client LLM sert l'analyse d'offre et la
     # rédaction (comme le runner push), et les dépôts décisions/profils/offres sont partagés
@@ -186,7 +211,7 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
         offer_intake=offer_intake,
         letters=letters,
         offer_url_intake=offer_url_intake,
-        collector=collector,
+        collections=collections,
     )
 
 

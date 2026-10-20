@@ -45,6 +45,24 @@ class CollectionFailure:
 
 
 @dataclass(frozen=True)
+class CollectionProgress:
+    """Instantané des compteurs d'une passe en cours (OPP-170).
+
+    Émis après le traitement de **chaque** offre via le callback ``on_progress`` de
+    ``collect_offers`` : il permet à un job de fond de publier son avancement pendant que
+    la passe tourne (sondage côté front). Mêmes compteurs que ``CollectionReport``, mais
+    photographiés en cours de route — ``failures`` est ici le **cardinal** courant.
+    """
+
+    collected: int
+    stored: int
+    duplicates: int
+    failures: int
+    enriched: int
+    enriched_recovered: int
+
+
+@dataclass(frozen=True)
 class CollectionReport:
     """Bilan d'une passe de collecte.
 
@@ -82,6 +100,7 @@ def collect_offers(
     store: OfferRepository,
     fetch: Callable[[str], HtmlDocument] = fetch_html,
     extract: Callable[[str], str] = extract_offer_text,
+    on_progress: Callable[[CollectionProgress], None] | None = None,
 ) -> CollectionReport:
     """Collecte, dédoublonne, analyse et persiste les offres d'une ``source``.
 
@@ -95,6 +114,11 @@ def collect_offers(
     ``intake_offer_enriched`` : si l'analyse du texte de la source ne produit aucune
     compétence et qu'une URL est disponible, la page complète est récupérée et ré-analysée
     (cf. ``offer_intake_service``). ``fetch``/``extract`` sont injectables pour les tests.
+
+    **Progression (OPP-170).** Si ``on_progress`` est fourni, il est appelé avec un
+    ``CollectionProgress`` après le traitement de chaque offre (neuve, doublon ou échec) —
+    de quoi publier l'avancement d'un job de fond pendant la passe. Les exceptions levées
+    par le callback ne sont pas interceptées (c'est au job de les contenir).
     """
     collected = 0
     stored = 0
@@ -104,6 +128,19 @@ def collect_offers(
     failures: list[CollectionFailure] = []
     seen: set[str] = set()
     source_error: str | None = None
+
+    def _emit() -> None:
+        if on_progress is not None:
+            on_progress(
+                CollectionProgress(
+                    collected=collected,
+                    stored=stored,
+                    duplicates=duplicates,
+                    failures=len(failures),
+                    enriched=enriched,
+                    enriched_recovered=enriched_recovered,
+                )
+            )
 
     # Itération manuelle : on isole les erreurs de la source (``fetch``/``next``) des
     # échecs d'intake par offre. Une source réelle (réseau, flux) peut échouer au départ
@@ -128,6 +165,7 @@ def collect_offers(
         # Déjà vue dans cette passe, ou déjà persistée : on évite l'appel LLM.
         if offer_id in seen or store.get(offer_id) is not None:
             duplicates += 1
+            _emit()
             continue
         seen.add(offer_id)
         try:
@@ -142,12 +180,14 @@ def collect_offers(
             )
         except (ValueError, OfferAnalysisError, LLMError) as exc:
             failures.append(CollectionFailure(raw=raw, error=str(exc)))
+            _emit()
             continue
         stored += 1
         if result.enrichment_attempted:
             enriched += 1
         if result.enrichment_recovered:
             enriched_recovered += 1
+        _emit()
 
     return CollectionReport(
         collected=collected,
