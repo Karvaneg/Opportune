@@ -202,7 +202,10 @@ describe("OffersPage", () => {
           return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/collect")) {
           posts.push({ url: s, body: JSON.parse(String(options?.body ?? "{}")) });
-          return ok({ collected: 4, stored: 1, duplicates: 3, failures: 0, source_error: null });
+          return ok({
+            collected: 4, stored: 1, duplicates: 3, failures: 0, source_error: null,
+            enriched: 2, enriched_recovered: 1,
+          });
         }
         return ok(CATALOG);
       }),
@@ -220,6 +223,8 @@ describe("OffersPage", () => {
 
     // Bilan lisible (nouvelles / collectées / doublons) et critères transmis au serveur.
     expect(await screen.findByText(/1 nouvelle offre/)).toBeInTheDocument();
+    // Compteurs d'enrichissement visibles quand une offre a été enrichie (OPP-169).
+    expect(screen.getByText(/2 enrichies \(1 récupérée\)/)).toBeInTheDocument();
     expect(posts).toHaveLength(1);
     expect(posts[0].body).toEqual({ what: "python", where: "Paris" });
   });

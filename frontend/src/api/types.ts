@@ -244,6 +244,10 @@ export interface CollectionReport {
   duplicates: number;
   failures: number;
   source_error: string | null;
+  /** Offres neuves sans compétences qui ont déclenché une récupération de la page complète (OPP-169). */
+  enriched: number;
+  /** Parmi `enriched`, combien ont effectivement gagné des compétences après ré-analyse. */
+  enriched_recovered: number;
 }
 
 /** Provenance d'une lettre : générée par le LLM (`ai`) ou éditée à la main (`human`). */

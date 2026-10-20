@@ -829,13 +829,16 @@ class HermesApi:
 
         ``failures`` est réduit à son **cardinal** (le détail par offre reste côté serveur) ;
         ``source_error`` est ``None`` en cas de passe saine, sinon le message rendant visible
-        une panne de la source (identifiants manquants, quota, réseau)."""
+        une panne de la source (identifiants manquants, quota, réseau). ``enriched`` /
+        ``enriched_recovered`` (OPP-169) rendent l'enrichissement visible côté front."""
         return {
             "collected": report.collected,
             "stored": report.stored,
             "duplicates": report.duplicates,
             "failures": len(report.failures),
             "source_error": report.source_error,
+            "enriched": report.enriched,
+            "enriched_recovered": report.enriched_recovered,
         }
 
     def _delete_run(self, run_id: str, user: User | None) -> Response:

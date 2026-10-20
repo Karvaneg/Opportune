@@ -92,6 +92,8 @@ function CollectSummary({ report }: { report: CollectionReport }) {
       {report.collected > 1 ? "s" : ""} · {report.duplicates} doublon
       {report.duplicates > 1 ? "s" : ""}
       {report.failures > 0 && ` · ${report.failures} échec${report.failures > 1 ? "s" : ""}`}
+      {report.enriched > 0 &&
+        ` · ${report.enriched} enrichie${report.enriched > 1 ? "s" : ""} (${report.enriched_recovered} récupérée${report.enriched_recovered > 1 ? "s" : ""})`}
     </span>
   );
 }

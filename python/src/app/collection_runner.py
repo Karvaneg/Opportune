@@ -37,6 +37,11 @@ def format_report(report: CollectionReport) -> str:
         f"Doublons   : {report.duplicates}",
         f"Échecs     : {len(report.failures)}",
     ]
+    if report.enriched:
+        lines.append(
+            f"Enrichies  : {report.enriched} "
+            f"(dont {report.enriched_recovered} avec compétences récupérées)"
+        )
     if report.source_error:
         lines.append(f"Erreur source : {report.source_error}")
     for failure in report.failures:

@@ -232,3 +232,44 @@ def test_source_error_is_none_on_clean_pass():
     report = collect_offers(source, client=client, store=store)
 
     assert report.source_error is None
+
+
+def test_collect_enriches_offer_without_skills_via_url():
+    # OPP-169 : le snippet de la source ne produit aucune compétence ; la collecte récupère
+    # la page complète (fetch/extract injectés) et ré-analyse → l'offre persistée porte les
+    # compétences du texte enrichi. Vérifie que collect_offers câble bien l'enrichissement.
+    from app.url_fetch import HtmlDocument as Doc
+
+    store = FakeOfferStore()
+    no_skills = json.dumps(
+        {
+            "title": "Développeur Web",
+            "company": "WebCorp",
+            "location": "Bordeaux",
+            "seniority": "Non précisé",
+            "contract_type": "cdi",
+            "summary": "Poste.",
+            "skills": [],
+            "attention_points": [],
+        }
+    )
+    client = MockLLMClient([no_skills, _response()])  # snippet vide, puis page complète
+    source = ListSource([RawOffer(source="adzuna", raw_text="snippet", url="https://x.com/full")])
+
+    fetched = []
+
+    def fetch(url):
+        fetched.append(url)
+        return Doc(url=url, html="<html>offre complète</html>")
+
+    report = collect_offers(
+        source, client=client, store=store,
+        fetch=fetch, extract=lambda html: "texte complet et riche",
+    )
+
+    assert report.stored == 1
+    assert report.enriched == 1  # une offre a déclenché l'enrichissement
+    assert report.enriched_recovered == 1  # et a récupéré des compétences
+    assert fetched == ["https://x.com/full"]
+    stored = next(iter(store.offers.values()))
+    assert stored.skills == ["Python"]  # issu de la ré-analyse du texte enrichi
