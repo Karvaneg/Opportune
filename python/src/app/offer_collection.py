@@ -24,13 +24,16 @@ lot. Les échecs sont rendus visibles (``CollectionReport.failures``), jamais av
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
+from app.html_extract import extract_offer_text
 from app.llm_client import LLMClient, LLMError
 from app.offer import compute_offer_id
 from app.offer_analysis import OfferAnalysisError
-from app.offer_intake_service import intake_offer
+from app.offer_intake_service import intake_offer_enriched
 from app.offer_source import RawOffer, SourceOffres
 from app.offer_store import OfferRepository
+from app.url_fetch import HtmlDocument, fetch_html
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,13 @@ class CollectionReport:
     itération : réseau, parsing du flux…) : la passe s'arrête alors, mais les offres
     déjà traitées restent persistées et comptées, et l'erreur est rendue visible plutôt
     qu'avalée.
+
+    ``enriched`` / ``enriched_recovered`` (OPP-169) rendent l'enrichissement visible :
+    ``enriched`` = offres neuves dont l'analyse du texte de la source n'a produit aucune
+    compétence et qui ont donc déclenché une récupération de la page complète ;
+    ``enriched_recovered`` = parmi elles, combien ont **effectivement** gagné des compétences
+    après ré-analyse. Ce sont des sous-comptes de ``stored`` (``enriched_recovered`` ≤
+    ``enriched`` ≤ ``stored``).
     """
 
     collected: int
@@ -61,6 +71,8 @@ class CollectionReport:
     duplicates: int
     failures: tuple[CollectionFailure, ...]
     source_error: str | None = None
+    enriched: int = 0
+    enriched_recovered: int = 0
 
 
 def collect_offers(
@@ -68,6 +80,8 @@ def collect_offers(
     *,
     client: LLMClient,
     store: OfferRepository,
+    fetch: Callable[[str], HtmlDocument] = fetch_html,
+    extract: Callable[[str], str] = extract_offer_text,
 ) -> CollectionReport:
     """Collecte, dédoublonne, analyse et persiste les offres d'une ``source``.
 
@@ -76,10 +90,17 @@ def collect_offers(
     ``failures`` sans interrompre la passe. Un échec de la **source** (``fetch`` ou
     itération) arrête la passe mais est consigné dans ``source_error`` : les offres déjà
     traitées restent persistées et comptées.
+
+    **Enrichissement en secours (OPP-169).** Chaque offre neuve passe par
+    ``intake_offer_enriched`` : si l'analyse du texte de la source ne produit aucune
+    compétence et qu'une URL est disponible, la page complète est récupérée et ré-analysée
+    (cf. ``offer_intake_service``). ``fetch``/``extract`` sont injectables pour les tests.
     """
     collected = 0
     stored = 0
     duplicates = 0
+    enriched = 0
+    enriched_recovered = 0
     failures: list[CollectionFailure] = []
     seen: set[str] = set()
     source_error: str | None = None
@@ -110,17 +131,23 @@ def collect_offers(
             continue
         seen.add(offer_id)
         try:
-            intake_offer(
+            result = intake_offer_enriched(
                 raw.raw_text,
                 source=raw.source,
                 url=raw.url,
                 client=client,
                 store=store,
+                fetch=fetch,
+                extract=extract,
             )
         except (ValueError, OfferAnalysisError, LLMError) as exc:
             failures.append(CollectionFailure(raw=raw, error=str(exc)))
             continue
         stored += 1
+        if result.enrichment_attempted:
+            enriched += 1
+        if result.enrichment_recovered:
+            enriched_recovered += 1
 
     return CollectionReport(
         collected=collected,
@@ -128,4 +155,6 @@ def collect_offers(
         duplicates=duplicates,
         failures=tuple(failures),
         source_error=source_error,
+        enriched=enriched,
+        enriched_recovered=enriched_recovered,
     )

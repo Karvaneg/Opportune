@@ -41,6 +41,17 @@ def _hdr(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_post_collect_serializes_enrichment_counts():
+    # OPP-169 : les compteurs d'enrichissement non nuls remontent bien dans le bilan JSON.
+    def collector(*, what, where, max_offers):
+        return _report(collected=4, stored=4, duplicates=0, enriched=2, enriched_recovered=1)
+
+    resp = _api(collector).dispatch("POST", "/collect", {"what": "dev"}, None)
+    assert resp.status == 200
+    assert resp.body["enriched"] == 2
+    assert resp.body["enriched_recovered"] == 1
+
+
 def test_post_collect_runs_and_serializes_report():
     captured = {}
 
@@ -58,7 +69,12 @@ def test_post_collect_runs_and_serializes_report():
         "duplicates": 2,
         "failures": 0,
         "source_error": None,
+        "enriched": 0,
+        "enriched_recovered": 0,
     }
+    # enriched / enriched_recovered présents (OPP-169), à 0 ici.
+    assert resp.body["enriched"] == 0 and resp.body["enriched_recovered"] == 0
+
     # Critères transmis tels quels ; ``max`` prend le défaut quand il est absent.
     assert captured == {"what": "python", "where": "Paris", "max_offers": _COLLECT_MAX_DEFAULT}
 
