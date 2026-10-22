@@ -47,6 +47,8 @@ mode de **compatibilité/test uniquement**, à ne pas utiliser en production.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -77,10 +79,12 @@ from app.llm_client import LLMError
 from app.offer import Offer
 from app.offer_analysis import OfferAnalysisError
 from app.offer_normalization import normalize_contract, normalize_skills
+from app.profile_analysis import ProfileAnalysisError
 from app.recommendation_service import UnknownCandidateError
 from app.url_fetch import UnsupportedUrlError, UrlFetchError
 from hermes.models import HermesRun, HermesRunSummary, OfferEvaluation
 from hermes.orchestrator import HermesOrchestrator
+from hermes.pdf_extract import PdfExtractionError
 
 
 class OfferIntake(Protocol):
@@ -101,6 +105,23 @@ class OfferUrlIntake(Protocol):
     """
 
     def __call__(self, url: str, *, source: str) -> Offer: ...
+
+
+class CvIntake(Protocol):
+    """Extrait le texte d'un CV PDF puis crée/met à jour le profil, et le retourne (OPP-174).
+
+    Encapsule ``extract_text_from_pdf_bytes`` + ``intake_profile`` liés à un ``LLMClient`` et
+    un dépôt de profils : l'API reste transport-only et testable (faux intake, sans PDF ni Ollama).
+    """
+
+    def __call__(
+        self,
+        candidate_id: str,
+        pdf_bytes: bytes,
+        *,
+        contract_type: str,
+        **preferences: object,
+    ) -> "CandidateProfile": ...
 
 
 @dataclass(frozen=True)
@@ -126,6 +147,7 @@ _RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
 _STATS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/stats$")
 _ACTIVITY = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/activity$")
+_PROFILE_CV = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/profile/cv$")
 _PROFILE = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/profile$")
 _RESCORE = re.compile(
     r"^/candidates/(?P<candidate_id>[^/]+)/offers/(?P<offer_id>[^/]+)/rescore$"
@@ -161,6 +183,35 @@ _COLLECT_MAX_CAP = 50
 # indistinguables pour ne pas révéler l'existence d'une ressource d'autrui (anti-énumération).
 _NOT_FOUND = "ressource introuvable"
 
+# Préférences (hors faits du CV) acceptées en plus du PDF à l'import d'un CV (OPP-174) : un CV
+# ne les porte pas, le front peut les joindre. Toute autre clé du corps est ignorée.
+_CV_PREFERENCE_KEYS = (
+    "target_salary",
+    "target_daily_rate",
+    "mobility",
+    "remote",
+    "availability",
+    "constraints",
+)
+
+
+def _decode_pdf_base64(value: object) -> bytes:
+    """Décode le PDF transmis en base64 (OPP-174) ; ``ApiError`` 400 si absent/invalide/vide.
+
+    Le transport API est JSON-only : un upload de fichier voyage encodé base64 dans le corps.
+    On valide strictement (``validate=True`` rejette tout caractère hors alphabet base64) et on
+    refuse un contenu vide, plutôt que de laisser un PDF corrompu filer jusqu'à l'extraction.
+    """
+    if not isinstance(value, str) or value.strip() == "":
+        raise ApiError(400, "pdf_base64 est requis (le CV PDF encodé en base64)")
+    try:
+        data = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ApiError(400, "pdf_base64 n'est pas un base64 valide") from exc
+    if not data:
+        raise ApiError(400, "pdf_base64 est vide")
+    return data
+
 
 class HermesApi:
     """Adapte l'orchestrateur Hermes en une API requête → réponse, sans transport."""
@@ -175,6 +226,7 @@ class HermesApi:
         offer_url_intake: OfferUrlIntake | None = None,
         collections: "CollectionJobRegistry | None" = None,
         profiles: "ProfileService | None" = None,
+        cv_intake: "CvIntake | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -198,6 +250,10 @@ class HermesApi:
         # Service du profil candidat (OPP-158). Optionnel : si absent, les routes
         # /candidates/{id}/profile ne sont pas montées (404). Injecté en prod, faux en test.
         self.profiles = profiles
+        # Intake de profil par CV PDF (OPP-174) : extraction du texte + analyse LLM + persistance.
+        # Optionnel : si absent (pas de LLM câblé), POST /candidates/{id}/profile/cv n'est pas
+        # monté (404 neutre). Injecté en prod (Ollama + pypdf), faux en test.
+        self.cv_intake = cv_intake
         # Fournisseur d'authentification. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune vérification. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur
         # ``None`` en production. Avec un fournisseur, toute route métier exige un jeton
@@ -262,6 +318,14 @@ class HermesApi:
         if match:
             self._require(method, "GET", path)
             return self._get_activity(unquote(match["candidate_id"]), user)
+
+        match = _PROFILE_CV.match(path)
+        if match:
+            # Montée uniquement si l'intake CV est câblé (sinon 404 neutre).
+            if self.cv_intake is None:
+                raise self._not_found(user, "intake CV non disponible")
+            self._require(method, "POST", path)
+            return self._post_profile_cv(unquote(match["candidate_id"]), body, user)
 
         match = _PROFILE.match(path)
         if match:
@@ -563,6 +627,37 @@ class HermesApi:
             raise ApiError(400, str(exc)) from exc
         if profile is None:
             raise self._not_found(user, f"profil introuvable : {candidate_id}")
+        return Response(200, self._serialize_profile(profile))
+
+    def _post_profile_cv(self, candidate_id: str, body: dict, user: User | None) -> Response:
+        """Importe un CV PDF pour créer/mettre à jour le profil (OPP-174).
+
+        Curation du profil → **reviewer** + propriété (comme PUT /profile). Le transport étant
+        JSON-only, le PDF arrive encodé base64 dans ``pdf_base64`` : on le décode ici (400 si
+        absent/invalide/vide) puis on délègue à l'intake injecté, qui extrait le texte et relance
+        l'analyse. ``contract_type`` (obligatoire) et les préférences éventuelles accompagnent le
+        CV — un CV ne les porte pas. Upsert sur l'``id`` du candidat (comme l'intake CLI).
+
+        Erreurs rendues comme pour l'intake d'offre : saisie fautive (base64, PDF illisible, CV
+        sans compétence, contrat invalide) → 400 ; analyse LLM non exploitable ou service
+        indisponible → 502. Le texte brut du CV n'est jamais persisté.
+        """
+        self._guard_owner(user, candidate_id)
+        self._guard_reviewer(user)
+        assert self.cv_intake is not None  # garanti par le dispatch (404 sinon)
+        pdf_bytes = _decode_pdf_base64(body.get("pdf_base64"))
+        contract_type = body.get("contract_type")
+        preferences = {key: body[key] for key in _CV_PREFERENCE_KEYS if key in body}
+        try:
+            profile = self.cv_intake(
+                candidate_id, pdf_bytes, contract_type=contract_type, **preferences
+            )
+        except (ValueError, ProfileValidationError, PdfExtractionError) as exc:
+            raise ApiError(400, str(exc)) from exc
+        except ProfileAnalysisError as exc:
+            raise ApiError(502, f"analyse du CV non exploitable : {exc}") from exc
+        except LLMError as exc:
+            raise ApiError(502, f"service d'analyse indisponible : {exc}") from exc
         return Response(200, self._serialize_profile(profile))
 
     @staticmethod

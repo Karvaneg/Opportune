@@ -154,6 +154,24 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     def offer_url_intake(url: str, *, source: str) -> Offer:
         return intake_offer_from_url(url, source=source, client=llm_client, store=offers)
 
+    # Import de profil par CV PDF depuis le front (OPP-174) : décodage déjà fait au transport,
+    # on extrait le texte (pypdf, extra « pdf ») puis on relance la MÊME chaîne d'intake que la
+    # CLI (OPP-137) — même client LLM, même dépôt de profils. Upsert sur l'id du candidat ; les
+    # faits verrouillés à la main (OPP-138) sont préservés par ``intake_profile``.
+    from app.profile_intake_service import intake_profile
+    from hermes.pdf_extract import extract_text_from_pdf_bytes
+
+    def cv_intake(candidate_id: str, pdf_bytes: bytes, *, contract_type, **preferences):
+        text = extract_text_from_pdf_bytes(pdf_bytes)
+        return intake_profile(
+            text,
+            contract_type=contract_type,
+            client=llm_client,
+            store=profiles,
+            id=candidate_id,
+            **preferences,
+        )
+
     # Collecte d'offres réelles **asynchrone** (OPP-170) : un registre lance la passe Adzuna dans
     # un thread de fond et la suit par sondage. Le runner ouvre sa **propre** connexion SQLite —
     # il tourne hors du thread HTTP, et la connexion partagée (``check_same_thread``) ne peut pas
@@ -218,6 +236,7 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
         offer_url_intake=offer_url_intake,
         collections=collections,
         profiles=profile_service,
+        cv_intake=cv_intake,
     )
 
 
