@@ -3,6 +3,24 @@
 [![CI](https://github.com/Karvaneg/Opportune/actions/workflows/ci.yml/badge.svg)](https://github.com/Karvaneg/Opportune/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+> **Local-first job-application assistant** — collects job offers, scores them against your
+> profile with a local LLM (Ollama), and drafts tailored cover letters. Everything runs on
+> your machine, nothing leaves it, and every outbound action needs your explicit approval.
+
+**Highlights**
+
+- 🔒 **Local-first & private** — SQLite storage and a local LLM; no third-party data sharing.
+- 🤖 **AI scoring & cover letters** — offer matching and letter drafting powered by Ollama.
+- ✋ **Human-in-the-loop** — explicit human validation before any outbound action.
+- 🧩 **Clean monorepo** — Python engine + HTTP API (`python/`), React/Vite dashboard (`frontend/`).
+- ✅ **Tested & CI-checked** — pytest + Vitest run on every pull request.
+
+> 📖 The documentation below is in French. If you don't read French, the Highlights above
+> summarise the project; the architecture diagram and the per-module READMEs are the quickest
+> way in.
+
+---
+
 Assistant de candidature : analyse d'offres, scoring, personnalisation et suivi, avec
 validation humaine avant toute action sortante.
 
