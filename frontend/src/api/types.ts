@@ -251,7 +251,6 @@ export interface CollectionReport {
 }
 
 /**
-/**
  * Une expérience du parcours, extraite du CV (OPP-173) et exposée pour affichage (OPP-176).
  * `title`, `company`, `period` et `highlights` sont toujours présents ; `location` et `skills`
  * sont facultatifs (le back ne les sérialise que s'ils ont été extraits).

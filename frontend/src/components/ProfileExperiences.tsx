@@ -40,9 +40,11 @@ export function ProfileExperiences({ experiences }: { experiences: Experience[] 
             )}
             {exp.skills && exp.skills.length > 0 && (
               <ul className="mt-2 flex flex-wrap gap-1.5">
-                {exp.skills.map((s) => (
+                {/* Clé par index : le back ne dédoublonne pas les skills d'une expérience, la
+                    valeur ne garantit donc pas l'unicité. Liste statique et ordonnée. */}
+                {exp.skills.map((s, k) => (
                   <li
-                    key={s}
+                    key={k}
                     className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600 ring-1 ring-slate-200"
                   >
                     {s}

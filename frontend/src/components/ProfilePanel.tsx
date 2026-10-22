@@ -125,7 +125,11 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
           Compétences
         </h4>
         {skills.length === 0 ? (
-          <p className="text-sm text-slate-500">Aucune compétence déclarée.</p>
+          // Sur un profil vierge, l'encart d'orientation dit déjà « profil vide » : on évite de
+          // redoubler avec ce libellé et on le réserve au cas « parcours présent, mais 0 skill ».
+          !isEmptyProfile && (
+            <p className="text-sm text-slate-500">Aucune compétence déclarée.</p>
+          )
         ) : (
           <ul className="flex flex-wrap gap-2">
             {skills.map((skill) => (
