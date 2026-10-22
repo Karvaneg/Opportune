@@ -45,17 +45,29 @@ def _format_list(values: list[str]) -> str:
     return ", ".join(cleaned) if cleaned else "Non précisé"
 
 
+def _format_value(value: object) -> str:
+    """Rend une valeur de sous-champ pour le prompt : les listes (p. ex. ``highlights``,
+    ``skills`` d'une expérience) sont aplaties en énumération lisible plutôt que laissées
+    en ``repr`` Python (``['a', 'b']`` → ``a, b``)."""
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
+    return str(value)
+
+
 def _format_dicts(items: list[dict]) -> list[str]:
     """Rend une liste d'objets (expériences, compétences structurées) en lignes.
 
     Chaque objet devient ``- clé: valeur ; clé: valeur`` dans l'ordre de ses clés
-    (déterministe). Les objets vides sont ignorés.
+    (déterministe). Les valeurs liste sont aplaties (cf. ``_format_value``). Les objets
+    vides sont ignorés.
     """
     lines: list[str] = []
     for item in items:
         if not isinstance(item, dict) or not item:
             continue
-        pairs = "; ".join(f"{key}: {value}" for key, value in item.items())
+        pairs = "; ".join(
+            f"{key}: {_format_value(value)}" for key, value in item.items()
+        )
         lines.append(f"- {pairs}")
     return lines
 
