@@ -48,9 +48,13 @@ def _env_int(name: str, default: int) -> int:
 DEFAULT_TIMEOUT = 60
 
 # Délai LLM « généreux » des appels métier (secondes), surchargeable par
-# ``OPPORTUNE_LLM_TIMEOUT``. Défaut 300 : une lettre dépasse 60 s à froid, et un intake
-# d'offre réaliste en sortie structurée ~85 s avec ministral-3:3b (cf. [[ollama-wsl2-acces]]).
-DEFAULT_LLM_TIMEOUT = 300
+# ``OPPORTUNE_LLM_TIMEOUT``. Une lettre dépasse 60 s à froid, un intake d'offre réaliste
+# en sortie structurée ~85 s avec ministral-3:3b (cf. [[ollama-wsl2-acces]]). Défaut 600
+# (OPP-175) : l'analyse d'un CV réel atteint ~300 s (6 expériences, dogfood OPP-174) et le
+# plafond ``num_predict`` de 2048 tokens à ~4 tok/s laisse un pire cas légitime ~475 s — 300
+# tronquait des CV honnêtes. Le timeout est un plafond, pas une cible : il ne ralentit pas
+# les appels qui finissent tôt (EOS), il élargit juste la marge avant l'échec.
+DEFAULT_LLM_TIMEOUT = 600
 
 # Plafond de tokens générés (``num_predict`` d'Ollama), surchargeable par
 # ``OLLAMA_NUM_PREDICT`` (OPP-154). C'est un *plafond* anti-emballement, pas une cible :
