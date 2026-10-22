@@ -1,5 +1,7 @@
 # Opportune
 
+[![CI](https://github.com/Karvaneg/Opportune/actions/workflows/ci.yml/badge.svg)](https://github.com/Karvaneg/Opportune/actions/workflows/ci.yml)
+
 Assistant de candidature : analyse d'offres, scoring, personnalisation et suivi, avec
 validation humaine avant toute action sortante.
 
