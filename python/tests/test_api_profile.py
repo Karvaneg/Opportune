@@ -74,6 +74,28 @@ def test_get_profile_serializes_fields():
     assert resp.body["name"] == "Marie"
     assert resp.body["skills"] == ["React", "HTML5"]
     assert resp.body["contract_type"] == "CDI"
+    # Parcours vide par défaut (OPP-176) : la clé existe toujours pour un front stable.
+    assert resp.body["experiences"] == []
+
+
+def test_get_profile_serializes_experiences():
+    # OPP-176 : le parcours extrait du CV (OPP-173) est exposé au front pour affichage.
+    exp = {
+        "title": "Développeuse Fullstack",
+        "company": "CBNSA",
+        "period": "2023 – 2025",
+        "location": "Gironde",
+        "highlights": ["Refonte d'un portail Symfony", "+45 % de trafic organique"],
+        "skills": ["Symfony", "PostgreSQL"],
+    }
+    profile = create_profile(
+        id="cand-1", name="Marie", skills=["React"], contract_type="CDI",
+        experiences=[exp],
+    )
+    api = _api(_service(profile))
+    resp = api.dispatch("GET", "/candidates/cand-1/profile", None, None)
+    assert resp.status == 200
+    assert resp.body["experiences"] == [exp]
 
 
 def test_get_profile_404_when_candidate_has_no_profile():

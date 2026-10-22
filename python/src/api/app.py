@@ -672,8 +672,11 @@ class HermesApi:
         """Profil exposé au front (OPP-158) : identité + compétences + faits utiles à l'affichage.
 
         On expose ce qui éclaire l'édition des compétences et le contexte de scoring (nom,
-        skills, type de contrat, localisation, langues, expérience). Les champs internes
-        (``structured_skills``, ``locked_fields``, préférences financières) restent côté serveur.
+        skills, type de contrat, localisation, langues, expérience). ``experiences`` (OPP-176)
+        est exposé pour afficher le parcours extrait du CV (OPP-173) dans le front — chaque
+        entrée est déjà normalisée (``title``/``company``/``period``/``highlights`` + ``location``
+        et ``skills`` optionnels). Les champs internes (``structured_skills``, ``locked_fields``,
+        préférences financières) restent côté serveur.
         """
         return {
             "id": profile.id,
@@ -683,6 +686,7 @@ class HermesApi:
             "location": profile.location,
             "languages": list(profile.languages),
             "total_experience_years": profile.total_experience_years,
+            "experiences": [dict(exp) for exp in profile.experiences],
         }
 
     def _post_rescore(

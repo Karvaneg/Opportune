@@ -251,9 +251,24 @@ export interface CollectionReport {
 }
 
 /**
+ * Une expérience du parcours, extraite du CV (OPP-173) et exposée pour affichage (OPP-176).
+ * `title`, `company`, `period` et `highlights` sont toujours présents ; `location` et `skills`
+ * sont facultatifs (le back ne les sérialise que s'ils ont été extraits).
+ */
+export interface Experience {
+  title: string;
+  company: string;
+  period: string;
+  highlights: string[];
+  location?: string;
+  skills?: string[];
+}
+
+/**
  * Profil candidat exposé pour consultation / édition (`GET/PUT /candidates/{id}/profile`,
  * OPP-158). Seuls les champs utiles à l'affichage et à l'édition des compétences sont exposés ;
- * `skills` est la liste éditable (le PUT en envoie le remplacement complet).
+ * `skills` est la liste éditable (le PUT en envoie le remplacement complet). `experiences` (OPP-176)
+ * est le parcours reconstitué par l'import CV, en lecture seule côté front.
  */
 export interface CandidateProfile {
   id: string;
@@ -263,6 +278,7 @@ export interface CandidateProfile {
   location: string | null;
   languages: string[];
   total_experience_years: number | null;
+  experiences: Experience[];
 }
 
 /** Statut d'un job de collecte asynchrone (OPP-170). */
