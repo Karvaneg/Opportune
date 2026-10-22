@@ -13,11 +13,34 @@ function memoryStorage(initial: string | null): AuthStorage {
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React", "Node.js"], contract_type: "CDI",
-  location: null, languages: [], total_experience_years: null,
+  location: null, languages: [], total_experience_years: null, experiences: [],
+};
+
+const EXPERIENCE = {
+  title: "Développeuse Fullstack",
+  company: "CBNSA",
+  period: "2023 – 2025",
+  location: "Gironde",
+  highlights: ["Refonte d'un portail Symfony", "+45 % de trafic organique"],
+  skills: ["Symfony", "PostgreSQL"],
 };
 
 const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+
+/** fetch factice renvoyant un profil **figé** (lecture seule), paramétrable — pour les cas
+ * d'affichage (parcours, état vide) qui n'exercent ni édition ni upload. */
+function stubProfile(profile: Record<string, unknown>, role = "reviewer") {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      const s = String(url);
+      if (s.includes("/me"))
+        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+      return ok(profile);
+    }),
+  );
+}
 
 /** fetch factice **stateful** : le PUT /profile persiste les skills que le GET renverra ensuite
  * (comme le vrai back, pour que le refetch post-édition reflète la mise à jour). */
@@ -183,5 +206,53 @@ describe("ProfilePanel (OPP-158)", () => {
 
     expect(await screen.findByText(/CV trop volumineux/)).toBeInTheDocument();
     expect(posts).toHaveLength(0); // aucun encodage ni POST
+  });
+
+  it("affiche le parcours extrait du CV (OPP-176)", async () => {
+    stubProfile({ ...PROFILE, experiences: [EXPERIENCE] }, "viewer");
+    renderPanel();
+
+    // En-tête de section + contenu d'une carte d'expérience.
+    expect(await screen.findByText("Parcours")).toBeInTheDocument();
+    expect(screen.getByText("Développeuse Fullstack")).toBeInTheDocument();
+    expect(screen.getByText(/CBNSA · Gironde/)).toBeInTheDocument();
+    expect(screen.getByText("2023 – 2025")).toBeInTheDocument();
+    expect(screen.getByText("+45 % de trafic organique")).toBeInTheDocument();
+    expect(screen.getByText("Symfony")).toBeInTheDocument();
+  });
+
+  it("oriente vers l'import quand le profil est vide (OPP-176)", async () => {
+    stubProfile({ ...PROFILE, skills: [], experiences: [] }, "reviewer");
+    renderPanel();
+
+    expect(await screen.findByText(/Ton profil est encore vide/)).toBeInTheDocument();
+    // Pas de section Parcours quand il n'y a aucune expérience.
+    expect(screen.queryByText("Parcours")).not.toBeInTheDocument();
+  });
+
+  it("annonce une attente de plusieurs minutes pendant l'analyse (OPP-176)", async () => {
+    // POST /profile/cv suspendu : on observe l'état d'attente sans le résoudre.
+    let release!: (v: unknown) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/me"))
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/profile/cv") && init?.method === "POST")
+          return new Promise((r) => { release = r; });
+        return ok(PROFILE);
+      }),
+    );
+    renderPanel();
+    await screen.findByText("React");
+
+    const file = new File([new Uint8Array([37, 80, 68, 70])], "cv.pdf", {
+      type: "application/pdf",
+    });
+    await userEvent.upload(screen.getByLabelText("Importer un CV PDF"), file);
+
+    expect(await screen.findByText(/l'extraction locale prend 1 à 5 minutes/)).toBeInTheDocument();
+    expect(release).toBeDefined(); // la requête est bien partie (et reste en attente)
   });
 });
