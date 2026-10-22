@@ -55,6 +55,40 @@ def test_intake_analyzes_merges_and_persists():
     assert store.get("cand-marie") == profile
 
 
+def test_intake_propagates_experiences_to_profile():
+    # OPP-173 : le parcours extrait du CV arrive jusqu'au profil persisté.
+    store = FakeProfileStore()
+    response = json.dumps(
+        {
+            "name": "Marie",
+            "location": "Paris",
+            "skills": ["Python"],
+            "languages": ["Français"],
+            "total_experience_years": 6,
+            "experiences": [
+                {
+                    "title": "Dev",
+                    "company": "Acme",
+                    "period": "2021-2024",
+                    "highlights": ["Refonte du front React"],
+                }
+            ],
+        }
+    )
+    profile = intake_profile(
+        "CV", contract_type="CDI", client=MockLLMClient([response]), store=store, id="cand-marie"
+    )
+    assert profile.experiences == [
+        {
+            "title": "Dev",
+            "company": "Acme",
+            "period": "2021-2024",
+            "highlights": ["Refonte du front React"],
+        }
+    ]
+    assert store.get("cand-marie").experiences == profile.experiences
+
+
 def test_intake_carries_supplied_preferences():
     store = FakeProfileStore()
     profile = intake_profile(
@@ -139,6 +173,20 @@ def test_intake_rejects_preference_colliding_with_cv_fact():
             client=MockLLMClient([VALID_RESPONSE]),
             store=store,
             location="Lyon",  # collision : location est un fait du CV
+        )
+    assert store.profiles == {}
+
+
+def test_intake_rejects_experiences_as_preference():
+    # OPP-173 : experiences est un fait du CV, pas une préférence saisissable.
+    store = FakeProfileStore()
+    with pytest.raises(ProfileValidationError):
+        intake_profile(
+            "CV",
+            contract_type="CDI",
+            client=MockLLMClient([VALID_RESPONSE]),
+            store=store,
+            experiences=[{"title": "faux"}],
         )
     assert store.profiles == {}
 

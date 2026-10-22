@@ -79,6 +79,25 @@ def test_prompt_contains_offer_and_profile_data():
     assert "Dev backend" in prompt  # expérience (objet) rendue
 
 
+def test_prompt_flattens_list_subfields_in_experiences():
+    # Un sous-champ liste (ex. highlights, OPP-173) est aplati en énumération lisible,
+    # jamais laissé en repr Python (``['a', 'b']``) dans le prompt.
+    prompt = build_cover_letter_prompt(
+        _offer(),
+        _profile(
+            experiences=[
+                {
+                    "title": "Dev",
+                    "company": "Acme",
+                    "highlights": ["Refonte du front React", "Mise en place de la CI"],
+                }
+            ]
+        ),
+    )
+    assert "highlights: Refonte du front React, Mise en place de la CI" in prompt
+    assert "['Refonte" not in prompt  # pas de repr de liste Python
+
+
 def test_prompt_omits_absent_optional_fields():
     # Un profil minimal ne doit pas produire de lignes « None » parasites.
     prompt = build_cover_letter_prompt(_offer(), _profile(languages=[], location=None))

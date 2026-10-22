@@ -33,14 +33,18 @@ REQUIRED_FIELDS = ("name", "skills", "contract_type")
 
 # Faits portés par un CV (cf. ``from_analysis``) : une préférence ne peut pas
 # reprendre l'une de ces clés, elle entrerait en collision avec la valeur du CV.
+# ``experiences`` (OPP-173) en fait partie : c'est un fait extrait du CV, ré-évalué à
+# chaque intake, pas une préférence saisie.
 _ANALYSIS_FACT_KEYS = frozenset(
-    {"name", "skills", "location", "languages", "total_experience_years"}
+    {"name", "skills", "location", "languages", "total_experience_years", "experiences"}
 )
 
 # Champs verrouillables par une correction humaine (OPP-138) : exactement les faits
 # ré-extraits du CV à chaque intake. Verrouiller un fait corrigé empêche un ré-intake
 # de l'écraser (même principe que la validation humaine préservée sur les décisions,
 # OPP-131). Les préférences ne sont jamais ré-extraites : inutile de les verrouiller.
+# ``experiences`` est verrouillable mais n'est jamais verrouillé par défaut : un ré-intake
+# rafraîchit le parcours tant qu'aucune correction manuelle ne l'a figé.
 LOCKABLE_FIELDS = _ANALYSIS_FACT_KEYS
 
 
@@ -85,13 +89,14 @@ class CandidateProfile:
         disponibilité) : elles sont fournies par l'appelant via ``contract_type``
         (obligatoire) et ``preferences`` (target_salary, mobility, remote, availability,
         constraints…). Les faits (``name``, ``skills``, ``location``, ``languages``,
-        ``total_experience_years``) viennent de l'analyse ; les ``skills`` passent par
-        ``normalize_skills`` (atomisation OPP-135) avant la validation de ``create_profile``.
+        ``total_experience_years``, ``experiences``) viennent de l'analyse ; les ``skills``
+        passent par ``normalize_skills`` (atomisation OPP-135) avant la validation de
+        ``create_profile``.
 
-        Passer un fait (name/skills/location/languages/total_experience_years) dans
-        ``preferences`` lève ``ProfileValidationError`` : il entrerait en collision avec
-        la valeur issue du CV. Un CV dont l'analyse ne remonte aucune compétence est
-        rejeté explicitement (profil non exploitable pour le matching).
+        Passer un fait (cf. ``_ANALYSIS_FACT_KEYS``) dans ``preferences`` lève
+        ``ProfileValidationError`` : il entrerait en collision avec la valeur issue du CV.
+        Un CV dont l'analyse ne remonte aucune compétence est rejeté explicitement
+        (profil non exploitable pour le matching).
         """
         collisions = _ANALYSIS_FACT_KEYS & preferences.keys()
         if collisions:
@@ -115,6 +120,7 @@ class CandidateProfile:
             location=analysis.location,
             languages=analysis.languages,
             total_experience_years=analysis.total_experience_years,
+            experiences=analysis.experiences,
             **preferences,
         )
 
