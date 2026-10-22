@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
-import { apiFetch, apiPut } from "./client";
+import { apiFetch, apiPost, apiPut } from "./client";
 import { useApiMutation } from "./mutations";
 import { offerKeys } from "./offers";
 import type { CandidateProfile } from "./types";
@@ -49,6 +49,32 @@ export function useUpdateProfileSkills() {
         `/candidates/${encodeURIComponent(candidateId)}/profile`,
         token,
         { skills },
+      ),
+    invalidateKeys: ({ candidateId }) => [profileKeys.candidate(candidateId), offerKeys.all],
+  });
+}
+
+export interface UploadCvVariables {
+  candidateId: string;
+  /** CV PDF encodé base64 (le transport API est JSON-only — pas de multipart). */
+  pdfBase64: string;
+  /** Type de contrat du profil (un CV ne le porte pas) — repris du profil existant. */
+  contractType: string;
+}
+
+/**
+ * Importe un CV PDF pour (re)constituer le profil : `POST /candidates/{id}/profile/cv` (OPP-174).
+ * Reviewer uniquement (curation du profil). Le back décode le base64, extrait le texte (pypdf) et
+ * relance l'analyse LLM ; les faits corrigés à la main (verrouillés, OPP-138) sont préservés. Au
+ * succès, invalide le profil **et** le catalogue : le nouveau profil change les scores de match.
+ */
+export function useUploadCv() {
+  return useApiMutation<CandidateProfile, UploadCvVariables>({
+    mutationFn: ({ candidateId, pdfBase64, contractType }, token) =>
+      apiPost<CandidateProfile>(
+        `/candidates/${encodeURIComponent(candidateId)}/profile/cv`,
+        token,
+        { pdf_base64: pdfBase64, contract_type: contractType },
       ),
     invalidateKeys: ({ candidateId }) => [profileKeys.candidate(candidateId), offerKeys.all],
   });

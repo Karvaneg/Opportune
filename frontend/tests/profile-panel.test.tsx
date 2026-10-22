@@ -45,6 +45,29 @@ function stubFetch(role = "reviewer") {
   return puts;
 }
 
+/** Variante du stub gérant aussi l'import de CV (`POST /profile/cv`) : enregistre les corps
+ * postés et simule un profil reconstitué par l'analyse du CV. */
+function stubFetchWithCv(role = "reviewer") {
+  const posts: Array<Record<string, unknown>> = [];
+  let current = { ...PROFILE };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, init?: RequestInit) => {
+      const s = String(url);
+      if (s.includes("/me"))
+        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+      if (s.includes("/profile/cv")) {
+        posts.push(JSON.parse(String(init?.body ?? "{}")));
+        current = { ...current, name: "Marie (depuis CV)", skills: ["Python", "SQL"] };
+        return ok(current);
+      }
+      if (s.includes("/profile")) return ok(current);
+      return ok(current);
+    }),
+  );
+  return posts;
+}
+
 function renderPanel() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -123,5 +146,26 @@ describe("ProfilePanel (OPP-158)", () => {
       screen.queryByRole("button", { name: /Enregistrer les compétences/ }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retirer React" })).not.toBeInTheDocument();
+    // L'import de CV est aussi une curation → absent pour un non-reviewer (OPP-174).
+    expect(screen.queryByLabelText("Importer un CV PDF")).not.toBeInTheDocument();
+  });
+
+  it("importe un CV PDF : POST base64 + contract_type, puis profil rafraîchi (OPP-174)", async () => {
+    const posts = stubFetchWithCv("reviewer");
+    renderPanel();
+    await screen.findByText("React");
+
+    // %PDF en octets : on vérifie que le composant les encode bien en base64 dans le corps.
+    const file = new File([new Uint8Array([37, 80, 68, 70])], "cv.pdf", {
+      type: "application/pdf",
+    });
+    await userEvent.upload(screen.getByLabelText("Importer un CV PDF"), file);
+
+    expect(await screen.findByText("Profil mis à jour depuis le CV.")).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect(posts[0].contract_type).toBe("CDI");
+    expect(posts[0].pdf_base64).toBe(btoa(String.fromCharCode(37, 80, 68, 70)));
+    // Le catalogue étant invalidé, le profil reconstitué s'affiche (nouvelles compétences).
+    expect(await screen.findByText("Python")).toBeInTheDocument();
   });
 });
