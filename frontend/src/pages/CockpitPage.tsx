@@ -6,6 +6,7 @@ import type { ActivityEvent } from "../api/types";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { AddOffer } from "../components/AddOffer";
 import { LaunchRun } from "../components/LaunchRun";
+import { NewProfileGuide } from "../components/NewProfileGuide";
 import { ProfilePanel } from "../components/ProfilePanel";
 import { ErrorNotice, Loading } from "../components/States";
 
@@ -44,10 +45,17 @@ export function CockpitPage() {
         )}
       </div>
 
+      {/* Guide d'accueil (OPP-177) : en tête de cockpit tant que la boucle de démarrage
+          (CV → offres → analyse) n'est pas complète. Se masque de lui-même ensuite. */}
+      {target !== "" && <NewProfileGuide candidateId={target} stats={data} />}
+
       {/* Raccourcis d'action en haut, juste sous l'en-tête : « que puis-je faire maintenant ? »
           doit rester visible sans scroller sous le flux d'activité (OPP-165, retour dogfood). */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+        <div
+          id="nouvelle-analyse"
+          className="space-y-2 rounded-lg border border-slate-200 bg-white p-4"
+        >
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
             Nouvelle analyse
           </h3>
@@ -66,7 +74,9 @@ export function CockpitPage() {
           {isError && <ErrorNotice error={error} />}
           {data && <StatCards candidateId={target} stats={data} />}
           <ActivityFeed candidateId={target} />
-          <ProfilePanel candidateId={target} />
+          <div id="profil">
+            <ProfilePanel candidateId={target} />
+          </div>
         </>
       )}
     </section>
