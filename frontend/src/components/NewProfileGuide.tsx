@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useProfile } from "../api/profile";
 import { useRuns } from "../api/runs";
+import { useIsReviewer } from "../auth/roles";
 import type { CandidateStats } from "../api/types";
 
 /** Fait défiler jusqu'à un ancrage de la page, en douceur. Pur confort de navigation (pas de
@@ -21,9 +22,12 @@ type Step = {
 /**
  * Guide d'accueil « Nouveau profil » (OPP-177) : transforme un cockpit vide en chemin clair.
  * Trois étapes — ajouter un CV, récupérer des offres, lancer une analyse — dont l'avancement se
- * **déduit de l'état réel** (profil, pool d'offres, runs), sans drapeau persistant. Chaque étape
- * à faire renvoie à l'action existante (navigation guidée, pas de duplication d'UI). L'encart
- * disparaît dès que la boucle de démarrage est complète.
+ * **déduit de l'état réel** (profil, pool d'offres, runs du candidat), sans drapeau persistant.
+ * Chaque étape à faire renvoie à l'action existante (navigation guidée, pas de duplication d'UI).
+ * L'encart disparaît dès que la boucle de démarrage est complète.
+ *
+ * Réservé au **reviewer** : les trois étapes (importer un CV, curer le pool d'offres, lancer une
+ * analyse) sont des actions de curation qu'un simple lecteur ne peut pas mener à bien.
  */
 export function NewProfileGuide({
   candidateId,
@@ -32,12 +36,19 @@ export function NewProfileGuide({
   candidateId: string;
   stats: CandidateStats | undefined;
 }) {
-  const { data: profile } = useProfile(candidateId);
-  const runs = useRuns(1);
+  const isReviewer = useIsReviewer();
+  const profileQuery = useProfile(candidateId);
+  // Runs **de ce candidat** uniquement : un périmètre multi-candidats ne doit pas cocher l'étape
+  // « analyse » parce qu'un autre candidat a déjà tourné (OPP-177).
+  const runs = useRuns(1, candidateId);
 
-  // On attend que les trois signaux soient chargés avant de décider quoi que ce soit : sinon
-  // l'encart apparaîtrait puis disparaîtrait (flash) au fil des réponses réseau.
-  if (!profile || !stats || runs.data === undefined) return null;
+  // On attend que chaque signal soit **résolu** (succès ou erreur) avant de décider quoi que ce
+  // soit : sinon l'encart apparaîtrait puis disparaîtrait (flash) au fil des réponses réseau.
+  if (!isReviewer || profileQuery.isPending || !stats || runs.isPending) return null;
+
+  // Un profil absent (404 : candidat sans CV encore) est l'état « nouveau profil » par
+  // excellence — on le traite comme un profil vide et on affiche le guide, au lieu de le masquer.
+  const profile = profileQuery.data;
 
   const steps: Step[] = [
     {
@@ -45,7 +56,7 @@ export function NewProfileGuide({
       description:
         "Importez un CV PDF : Opportune en extrait vos compétences et votre parcours.",
       // `experiences` peut manquer sur un profil mis en cache avant OPP-176 → fallback défensif.
-      done: (profile.experiences?.length ?? 0) > 0 || profile.skills.length > 0,
+      done: (profile?.experiences?.length ?? 0) > 0 || (profile?.skills.length ?? 0) > 0,
       action: { label: "Ajouter mon CV", onClick: () => scrollToId("profil") },
     },
     {
@@ -58,7 +69,9 @@ export function NewProfileGuide({
       title: "Lancer une analyse",
       description:
         "Opportune score les offres pour votre profil et recommande les meilleures.",
-      done: runs.data.total > 0,
+      // Runs du candidat ciblé (cf. `useRuns(1, candidateId)`). Erreur réseau → `data` absent →
+      // étape non cochée : on propose l'action plutôt que de la masquer à tort.
+      done: (runs.data?.total ?? 0) > 0,
       action: { label: "Lancer l'analyse", onClick: () => scrollToId("nouvelle-analyse") },
     },
   ];

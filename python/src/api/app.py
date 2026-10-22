@@ -753,10 +753,19 @@ class HermesApi:
         ressources tierces (cohérent OPP-097). En mode ouvert, tous les runs. Conventions de
         pagination identiques à ``GET /runs/{run_id}/recommendations`` ; ``total`` est le
         cardinal **avant** découpe en page.
+
+        ``?candidate_id`` (optionnel) restreint le listing à **un seul** candidat — owner-gated
+        comme ``/offers`` (404 neutre hors périmètre). Permet au cockpit de savoir si *ce*
+        candidat a déjà un run, sans fuite inter-candidats (OPP-177).
         """
         page, page_size = self._paginate(query)
 
-        scope = None if user is None else user.owned_candidates
+        candidate_id = self._query_one(query, "candidate_id")
+        if candidate_id is not None:
+            self._guard_owner(user, candidate_id)
+            scope: list[str] | None = [candidate_id]
+        else:
+            scope = None if user is None else list(user.owned_candidates)
         summaries, total = self.orchestrator.list_run_summaries(
             scope, limit=page_size, offset=(page - 1) * page_size
         )

@@ -21,7 +21,7 @@ export interface RecommendationFilters {
 // et `recommendations` : l'invalider rafraîchit toutes les vues d'un run (cf. OPP-105).
 // Les filtres entrent dans la clé → chaque combinaison a son propre cache (OPP-109).
 export const runKeys = {
-  list: (page: number) => ["runs", page] as const,
+  list: (page: number, candidateId = "") => ["runs", page, candidateId] as const,
   run: (runId: string) => ["run", runId] as const,
   detail: (runId: string) => ["run", runId, "detail"] as const,
   recommendations: (runId: string, page: number, advisory = "", decision = "") =>
@@ -65,12 +65,19 @@ export function useDeleteRun() {
   });
 }
 
-/** Listing paginé des runs du périmètre : `GET /runs`. */
-export function useRuns(page: number) {
+/**
+ * Listing paginé des runs du périmètre : `GET /runs`. `candidateId` (optionnel) restreint le
+ * listing à un seul candidat (owner-gated côté API) — utilisé par le guide d'accueil pour savoir
+ * si *ce* candidat a déjà un run, sans compter ceux des autres candidats du périmètre (OPP-177).
+ */
+export function useRuns(page: number, candidateId?: string) {
   const { token } = useAuth();
+  const scoped = candidateId
+    ? `&candidate_id=${encodeURIComponent(candidateId)}`
+    : "";
   return useQuery({
-    queryKey: runKeys.list(page),
-    queryFn: () => apiFetch<RunsPage>(`/runs?page=${page}`, token!),
+    queryKey: runKeys.list(page, candidateId ?? ""),
+    queryFn: () => apiFetch<RunsPage>(`/runs?page=${page}${scoped}`, token!),
     enabled: Boolean(token),
     placeholderData: keepPreviousData, // évite le clignotement entre pages
   });

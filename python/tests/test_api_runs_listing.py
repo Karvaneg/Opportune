@@ -81,6 +81,24 @@ def test_empty_scope_returns_empty_list(api_and_runs):
     assert resp.body["items"] == [] and resp.body["total"] == 0
 
 
+# --- Filtre ?candidate_id (OPP-177) -------------------------------------------
+
+def test_candidate_id_filter_narrows_to_one_candidate(api_and_runs):
+    # tok-both possède cand-1 ET cand-2 ; le filtre restreint le listing à cand-2 seul.
+    api, _ = api_and_runs
+    resp = api.dispatch("GET", "/runs?candidate_id=cand-2", None, _hdr("tok-both"))
+    assert resp.status == 200
+    assert _ids(resp) == ["r-b1"]
+    assert resp.body["total"] == 1  # ne compte pas les runs de cand-1
+
+
+def test_candidate_id_filter_owner_gated_404(api_and_runs):
+    # tok-1 ne possède pas cand-2 → 404 neutre (comme /offers?candidate_id), pas de fuite.
+    api, _ = api_and_runs
+    resp = api.dispatch("GET", "/runs?candidate_id=cand-2", None, _hdr("tok-1"))
+    assert resp.status == 404
+
+
 # --- Forme résumé -------------------------------------------------------------
 
 def test_summary_shape_has_counts_not_evaluations(api_and_runs):

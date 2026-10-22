@@ -16,6 +16,13 @@ function memoryStorage(initial: string | null): AuthStorage {
 const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
 
+const notFound = () =>
+  Promise.resolve({
+    ok: false,
+    status: 404,
+    json: () => Promise.resolve({ error: "profil introuvable" }),
+  } as Response);
+
 const EMPTY_PROFILE = {
   id: "cand-1", name: "Marie", skills: [], contract_type: "CDI",
   location: null, languages: [], total_experience_years: null, experiences: [],
@@ -29,14 +36,25 @@ const runsPage = (total: number) => ({
 const NO_STATS: CandidateStats = { a_etudier: 0, a_postuler: 0, postule: 0, offres_total: 0 };
 const WITH_OFFERS: CandidateStats = { ...NO_STATS, offres_total: 12 };
 
-/** fetch factice paramétrable : /me, /profile (vierge ou rempli), /runs (compte de runs). */
-function stubFetch({ profile, runsTotal }: { profile: unknown; runsTotal: number }) {
+/**
+ * fetch factice paramétrable : /me (rôle), /profile (vierge, rempli, ou **404** = candidat sans
+ * profil encore), /runs (compte de runs). `profile: null` ⇒ 404.
+ */
+function stubFetch({
+  profile,
+  runsTotal,
+  role = "reviewer",
+}: {
+  profile: unknown;
+  runsTotal: number;
+  role?: string;
+}) {
   const fetchMock = vi.fn((url: string) => {
     const s = String(url);
     if (s.includes("/me"))
-      return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+      return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
     if (s.includes("/runs")) return ok(runsPage(runsTotal));
-    if (s.includes("/profile")) return ok(profile);
+    if (s.includes("/profile")) return profile === null ? notFound() : ok(profile);
     return ok({});
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -104,6 +122,38 @@ describe("NewProfileGuide (OPP-177)", () => {
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
       expect(urls.some((u) => u.includes("/runs"))).toBe(true);
       expect(urls.some((u) => u.includes("/profile"))).toBe(true);
+    });
+    expect(screen.queryByText("Nouveau profil")).toBeNull();
+  });
+
+  it("candidat sans profil encore (404) : le guide s'affiche quand même, étape 1 à faire", async () => {
+    // Le cas « nouveau profil » par excellence : aucun profil en base → GET /profile renvoie 404.
+    // Le guide doit s'afficher (et non disparaître) pour inviter à importer un CV.
+    stubFetch({ profile: null, runsTotal: 0 });
+    renderGuide(NO_STATS);
+
+    expect(await screen.findByText("Nouveau profil")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ajouter mon CV" })).toBeInTheDocument();
+  });
+
+  it("étape « analyse » : les runs interrogés sont scopés au candidat ciblé", async () => {
+    const fetchMock = stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0 });
+    renderGuide(NO_STATS);
+
+    await screen.findByText("Nouveau profil");
+    const runsUrl = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .find((u) => u.includes("/runs"));
+    expect(runsUrl).toContain("candidate_id=cand-1");
+  });
+
+  it("non-reviewer : le guide ne s'affiche pas (actions de curation inaccessibles)", async () => {
+    const fetchMock = stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, role: "viewer" });
+    renderGuide(NO_STATS);
+
+    // On attend que l'identité (/me) soit résolue, puis on vérifie l'absence du guide.
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/me"))).toBe(true);
     });
     expect(screen.queryByText("Nouveau profil")).toBeNull();
   });
