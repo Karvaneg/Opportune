@@ -1,7 +1,26 @@
-import { useEffect, useState } from "react";
-import { useProfile, useUpdateProfileSkills } from "../api/profile";
+import { useEffect, useState, type ChangeEvent } from "react";
+import { useProfile, useUpdateProfileSkills, useUploadCv } from "../api/profile";
 import { useIsReviewer } from "../auth/roles";
 import { ErrorNotice, Loading } from "./States";
+
+/** Lit un fichier en base64 (sans le préfixe `data:…`), pour l'envoyer dans le corps JSON.
+ * Via `FileReader` : disponible dans tout navigateur (et sous jsdom en test). */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("lecture du fichier impossible"));
+    reader.onload = () => {
+      const result = String(reader.result);
+      const comma = result.indexOf(","); // "data:application/pdf;base64,XXXX"
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Taille max d'un CV accepté côté front (10 Mo) : le PDF voyage encodé base64 dans un corps
+ * JSON (~+33 %), on borne donc avant d'encoder pour ne pas gonfler mémoire et requête. */
+const MAX_CV_BYTES = 10 * 1024 * 1024;
 
 /**
  * Panneau « Mon profil » du cockpit (OPP-158) : consulte les compétences du candidat et, pour un
@@ -14,9 +33,13 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
   const isReviewer = useIsReviewer();
   const { data, isPending, isError, error } = useProfile(candidateId);
   const update = useUpdateProfileSkills();
+  const upload = useUploadCv();
   // Copie éditable locale des compétences, resynchronisée quand la liste **serveur** change.
   const [skills, setSkills] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
+  // Erreur locale de l'import CV, en amont de la mutation (fichier trop gros ou illisible) :
+  // la mutation ne part pas, donc `upload.error` ne la couvrirait pas.
+  const [cvError, setCvError] = useState<Error | null>(null);
 
   // On ne resynchronise que lorsque les skills du serveur changent réellement (clé par valeur),
   // pas à chaque nouvelle référence de `data` : un refetch au focus, ou la modification d'un autre
@@ -40,6 +63,27 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
     setDraft("");
   };
   const removeSkill = (skill: string) => setSkills(skills.filter((s) => s !== skill));
+
+  const onCvSelected = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // réautorise la re-sélection du même fichier
+    if (!file) return;
+    setCvError(null);
+    if (file.size > MAX_CV_BYTES) {
+      setCvError(new Error("CV trop volumineux (10 Mo maximum)."));
+      return;
+    }
+    let pdfBase64: string;
+    try {
+      pdfBase64 = await fileToBase64(file);
+    } catch (err) {
+      // Échec de lecture (fichier verrouillé/illisible) : on le signale au lieu d'un rejet muet.
+      setCvError(err instanceof Error ? err : new Error("Lecture du fichier impossible."));
+      return;
+    }
+    // Le contrat vient du profil existant : un CV ne le porte pas, le back l'exige.
+    upload.mutate({ candidateId, pdfBase64, contractType: data.contract_type ?? "" });
+  };
 
   const dirty = JSON.stringify(skills) !== JSON.stringify(data.skills);
   const canSave = dirty && skills.length > 0 && !update.isPending;
@@ -120,6 +164,32 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
               <span className="text-sm text-emerald-700">Compétences à jour.</span>
             )}
             {update.isError && <ErrorNotice error={update.error} />}
+          </div>
+
+          <div className="space-y-1 border-t border-slate-100 pt-3">
+            <label className="block text-sm font-medium text-slate-700">
+              Importer un CV (PDF)
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={onCvSelected}
+                disabled={upload.isPending}
+                aria-label="Importer un CV PDF"
+                className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-slate-50 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-100 disabled:opacity-50"
+              />
+            </label>
+            <p className="text-xs text-slate-400">
+              Le CV est analysé localement pour reconstituer ton profil et ton parcours. Les
+              compétences corrigées à la main sont préservées.
+            </p>
+            {upload.isPending && (
+              <span className="text-sm text-slate-500">Analyse du CV en cours…</span>
+            )}
+            {upload.isSuccess && (
+              <span className="text-sm text-emerald-700">Profil mis à jour depuis le CV.</span>
+            )}
+            {cvError && <ErrorNotice error={cvError} />}
+            {upload.isError && <ErrorNotice error={upload.error} />}
           </div>
         </>
       )}
