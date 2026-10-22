@@ -21,9 +21,6 @@
 
 ---
 
-Assistant de candidature : analyse d'offres, scoring, personnalisation et suivi, avec
-validation humaine avant toute action sortante.
-
 Le projet est en **migration V1 → V2** :
 
 - **V2 (Python) — active.** Le moteur métier, l'orchestrateur **Hermes**, l'API HTTP et
