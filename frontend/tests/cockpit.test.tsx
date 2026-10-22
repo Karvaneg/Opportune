@@ -41,6 +41,9 @@ function stubFetch(statsBody: unknown = STATS, role = "reviewer", activityBody: 
         return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/activity")) return ok(activityBody);
       if (s.includes("/profile")) return ok(PROFILE);
+      // Profil établi (OPP-177) : au moins un run existe → le guide « Nouveau profil » reste masqué
+      // et n'interfère pas avec ces scénarios (sinon il doublerait le bouton « Lancer une analyse »).
+      if (s.includes("/runs")) return ok({ items: [], page: 1, page_size: 20, total: 1, total_pages: 1 });
       if (s.includes("/stats")) return ok(statsBody);
       if (s.includes("/offers") && init?.method === "POST") {
         calls.push({ url: s, body: JSON.parse(String(init?.body ?? "{}")) });
