@@ -18,6 +18,10 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** Taille max d'un CV accepté côté front (10 Mo) : le PDF voyage encodé base64 dans un corps
+ * JSON (~+33 %), on borne donc avant d'encoder pour ne pas gonfler mémoire et requête. */
+const MAX_CV_BYTES = 10 * 1024 * 1024;
+
 /**
  * Panneau « Mon profil » du cockpit (OPP-158) : consulte les compétences du candidat et, pour un
  * reviewer, les édite. Le scoring sous-estimait l'adéquation quand une compétence réellement
@@ -33,6 +37,9 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
   // Copie éditable locale des compétences, resynchronisée quand la liste **serveur** change.
   const [skills, setSkills] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
+  // Erreur locale de l'import CV, en amont de la mutation (fichier trop gros ou illisible) :
+  // la mutation ne part pas, donc `upload.error` ne la couvrirait pas.
+  const [cvError, setCvError] = useState<Error | null>(null);
 
   // On ne resynchronise que lorsque les skills du serveur changent réellement (clé par valeur),
   // pas à chaque nouvelle référence de `data` : un refetch au focus, ou la modification d'un autre
@@ -61,7 +68,19 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
     const file = e.target.files?.[0];
     e.target.value = ""; // réautorise la re-sélection du même fichier
     if (!file) return;
-    const pdfBase64 = await fileToBase64(file);
+    setCvError(null);
+    if (file.size > MAX_CV_BYTES) {
+      setCvError(new Error("CV trop volumineux (10 Mo maximum)."));
+      return;
+    }
+    let pdfBase64: string;
+    try {
+      pdfBase64 = await fileToBase64(file);
+    } catch (err) {
+      // Échec de lecture (fichier verrouillé/illisible) : on le signale au lieu d'un rejet muet.
+      setCvError(err instanceof Error ? err : new Error("Lecture du fichier impossible."));
+      return;
+    }
     // Le contrat vient du profil existant : un CV ne le porte pas, le back l'exige.
     upload.mutate({ candidateId, pdfBase64, contractType: data.contract_type ?? "" });
   };
@@ -166,9 +185,10 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
             {upload.isPending && (
               <span className="text-sm text-slate-500">Analyse du CV en cours…</span>
             )}
-            {upload.isSuccess && !upload.isPending && (
+            {upload.isSuccess && (
               <span className="text-sm text-emerald-700">Profil mis à jour depuis le CV.</span>
             )}
+            {cvError && <ErrorNotice error={cvError} />}
             {upload.isError && <ErrorNotice error={upload.error} />}
           </div>
         </>

@@ -194,13 +194,18 @@ _CV_PREFERENCE_KEYS = (
     "constraints",
 )
 
+# Taille max d'un CV décodé (10 Mo), accordée à la borne front. Garde-fou mémoire : un corps
+# JSON arbitrairement gros ne doit pas filer jusqu'à pypdf/l'analyse LLM (OPP-174).
+_CV_MAX_BYTES = 10 * 1024 * 1024
+
 
 def _decode_pdf_base64(value: object) -> bytes:
-    """Décode le PDF transmis en base64 (OPP-174) ; ``ApiError`` 400 si absent/invalide/vide.
+    """Décode le PDF transmis en base64 (OPP-174) ; ``ApiError`` 400 si absent/invalide/vide/trop gros.
 
     Le transport API est JSON-only : un upload de fichier voyage encodé base64 dans le corps.
     On valide strictement (``validate=True`` rejette tout caractère hors alphabet base64) et on
     refuse un contenu vide, plutôt que de laisser un PDF corrompu filer jusqu'à l'extraction.
+    On borne aussi la taille décodée, pour ne pas charger un corps démesuré en mémoire.
     """
     if not isinstance(value, str) or value.strip() == "":
         raise ApiError(400, "pdf_base64 est requis (le CV PDF encodé en base64)")
@@ -210,6 +215,8 @@ def _decode_pdf_base64(value: object) -> bytes:
         raise ApiError(400, "pdf_base64 n'est pas un base64 valide") from exc
     if not data:
         raise ApiError(400, "pdf_base64 est vide")
+    if len(data) > _CV_MAX_BYTES:
+        raise ApiError(400, "le CV dépasse la taille maximale (10 Mo)")
     return data
 
 

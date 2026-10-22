@@ -168,4 +168,20 @@ describe("ProfilePanel (OPP-158)", () => {
     // Le catalogue étant invalidé, le profil reconstitué s'affiche (nouvelles compétences).
     expect(await screen.findByText("Python")).toBeInTheDocument();
   });
+
+  it("refuse un CV trop volumineux sans l'envoyer (OPP-174)", async () => {
+    const posts = stubFetchWithCv("reviewer");
+    renderPanel();
+    await screen.findByText("React");
+
+    const file = new File([new Uint8Array([37, 80, 68, 70])], "gros-cv.pdf", {
+      type: "application/pdf",
+    });
+    // Taille truquée au-delà de la borne (10 Mo) : inutile d'allouer réellement 10 Mo en test.
+    Object.defineProperty(file, "size", { value: 10 * 1024 * 1024 + 1 });
+    await userEvent.upload(screen.getByLabelText("Importer un CV PDF"), file);
+
+    expect(await screen.findByText(/CV trop volumineux/)).toBeInTheDocument();
+    expect(posts).toHaveLength(0); // aucun encodage ni POST
+  });
 });

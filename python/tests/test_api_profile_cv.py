@@ -131,6 +131,15 @@ def test_empty_pdf_after_decode_is_400():
     assert intake.calls == []
 
 
+def test_oversized_pdf_is_400_without_calling_intake():
+    intake = FakeCvIntake(result=_profile())
+    api = _api(intake)
+    oversized = base64.b64encode(b"x" * (10 * 1024 * 1024 + 1)).decode()
+    resp = _post(api, {"pdf_base64": oversized, "contract_type": "CDI"})
+    assert resp.status == 400
+    assert intake.calls == []  # on ne charge jamais un CV démesuré jusqu'à l'intake
+
+
 # --- Auth --------------------------------------------------------------------
 
 def test_requires_token_owner_and_reviewer():
