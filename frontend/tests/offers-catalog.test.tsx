@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OffersPage } from "../src/pages/OffersPage";
 import { funnelStage } from "../src/api/funnel";
 import { AuthProvider } from "../src/auth/AuthContext";
+import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
 import type { AuthStorage } from "../src/auth/authStorage";
 import type { DecisionStatus } from "../src/api/types";
 
@@ -56,12 +57,14 @@ function renderOffers(initialPath = "/") {
   return render(
     <AuthProvider storage={memoryStorage("good")}>
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={[initialPath]}>
-          <Routes>
-            <Route path="/" element={<OffersPage />} />
-            <Route path="/recommendations/:id" element={<div>FICHE RECO</div>} />
-          </Routes>
-        </MemoryRouter>
+        <TargetCandidateProvider>
+          <MemoryRouter initialEntries={[initialPath]}>
+            <Routes>
+              <Route path="/" element={<OffersPage />} />
+              <Route path="/recommendations/:id" element={<div>FICHE RECO</div>} />
+            </Routes>
+          </MemoryRouter>
+        </TargetCandidateProvider>
       </QueryClientProvider>
     </AuthProvider>,
   );

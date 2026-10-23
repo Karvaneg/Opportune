@@ -58,7 +58,7 @@ export function AddOffer() {
           type="button"
           onClick={submit}
           disabled={add.isPending || !canSubmit}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
         >
           {add.isPending ? "Ajout en cours…" : "Ajouter l'offre"}
         </button>

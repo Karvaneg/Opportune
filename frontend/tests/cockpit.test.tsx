@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useSearchParams } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CockpitPage } from "../src/pages/CockpitPage";
 import { AuthProvider } from "../src/auth/AuthContext";
+import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
 import type { AuthStorage } from "../src/auth/authStorage";
 
 function memoryStorage(initial: string | null): AuthStorage {
@@ -67,13 +68,15 @@ function renderCockpit() {
   return render(
     <AuthProvider storage={memoryStorage("good")}>
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/"]}>
-          <Routes>
-            <Route path="/" element={<CockpitPage />} />
-            <Route path="/offres" element={<OffersProbe />} />
-            <Route path="/recommendations/:id" element={<div>FICHE RECO</div>} />
-          </Routes>
-        </MemoryRouter>
+        <TargetCandidateProvider>
+          <MemoryRouter initialEntries={["/"]}>
+            <Routes>
+              <Route path="/" element={<CockpitPage />} />
+              <Route path="/offres" element={<OffersProbe />} />
+              <Route path="/recommendations/:id" element={<div>FICHE RECO</div>} />
+            </Routes>
+          </MemoryRouter>
+        </TargetCandidateProvider>
       </QueryClientProvider>
     </AuthProvider>,
   );

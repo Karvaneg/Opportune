@@ -426,7 +426,7 @@ function ApplicationConfirm({
                 )
               }
               disabled={markApplied.isPending}
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               J'ai candidaté
             </button>
@@ -442,7 +442,7 @@ function ApplicationConfirm({
             type="button"
             onClick={() => setOpen(true)}
             disabled={confirm.isPending}
-            className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
             Je vais candidater
           </button>
@@ -490,7 +490,7 @@ function ApplicationConfirm({
                 // onSettled : on referme dans tous les cas ; le résultat (succès ou 409)
                 // s'affiche dans le panneau, jamais masqué derrière la modale.
                 onClick={() => confirm.mutate(undefined, { onSettled: () => setOpen(false) })}
-                className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
               >
                 Oui, je vais candidater
               </button>
@@ -565,7 +565,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
             type="button"
             onClick={() => generate.mutate({})}
             disabled={generate.isPending}
-            className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
             {generate.isPending ? "Génération en cours…" : "Générer la lettre"}
           </button>
@@ -636,7 +636,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
               type="button"
               onClick={saveEdit}
               disabled={edit.isPending || draft.trim() === ""}
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               {edit.isPending ? "Enregistrement…" : "Enregistrer"}
             </button>
@@ -721,7 +721,7 @@ function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
           >
             {confirmLabel}
           </button>

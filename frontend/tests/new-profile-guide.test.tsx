@@ -89,7 +89,7 @@ describe("NewProfileGuide (OPP-177)", () => {
     expect(screen.getByText("Récupérer de nouvelles offres")).toBeInTheDocument();
     expect(screen.getByText("Lancer une analyse")).toBeInTheDocument();
     // Les trois actions sont offertes (navigation guidée).
-    expect(screen.getByRole("button", { name: "Ajouter mon CV" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ajouter mon CV" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Récupérer des offres" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lancer l'analyse" })).toBeInTheDocument();
   });
@@ -100,8 +100,8 @@ describe("NewProfileGuide (OPP-177)", () => {
 
     // L'étape 2 devient l'action en cours une fois le profil chargé.
     expect(await screen.findByRole("link", { name: "Récupérer des offres" })).toBeInTheDocument();
-    // L'étape 1 est faite → son bouton disparaît, mais l'intitulé reste (coché).
-    expect(screen.queryByRole("button", { name: "Ajouter mon CV" })).toBeNull();
+    // L'étape 1 est faite → son action disparaît, mais l'intitulé reste (coché).
+    expect(screen.queryByRole("link", { name: "Ajouter mon CV" })).toBeNull();
     expect(screen.getByText("Ajouter votre CV")).toBeInTheDocument();
   });
 
@@ -133,7 +133,7 @@ describe("NewProfileGuide (OPP-177)", () => {
     renderGuide(NO_STATS);
 
     expect(await screen.findByText("Nouveau profil")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ajouter mon CV" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ajouter mon CV" })).toBeInTheDocument();
   });
 
   it("étape « analyse » : les runs interrogés sont scopés au candidat ciblé", async () => {

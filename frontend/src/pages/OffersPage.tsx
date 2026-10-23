@@ -17,12 +17,9 @@ import { ErrorNotice, Loading } from "../components/States";
  */
 export function OffersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  // Candidat ciblé pour le score. Défaut : le candidat passé par le cockpit (OPP-164) s'il est
-  // dans le périmètre, sinon le 1er → on voit un score d'emblée.
-  const { candidates, target, setCandidate } = useTargetCandidate((cands) => {
-    const fromUrl = searchParams.get("candidate");
-    return fromUrl && cands.includes(fromUrl) ? fromUrl : cands[0] ?? "";
-  });
+  // Candidat ciblé pour le score : sélection **partagée** avec le reste de l'app (cockpit, profil)
+  // via le contexte — elle suit la navigation, p. ex. depuis une carte-compteur du cockpit.
+  const { candidates, target, setCandidate } = useTargetCandidate();
   // La curation du pool (collecte Adzuna ci-dessous, ajout depuis l'accueil) est réservée au
   // rôle reviewer : le message de catalogue vide n'oriente vers ces actions que si elles sont
   // réellement disponibles (sinon « ci-dessus » pointerait vers un bloc masqué).

@@ -120,7 +120,44 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
         </p>
       )}
 
-      <section className="space-y-2">
+      {isReviewer && (
+        <section className="space-y-1">
+          <label className="block text-sm font-medium text-slate-700">
+            Importer un CV (PDF)
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={onCvSelected}
+              disabled={upload.isPending}
+              aria-label="Importer un CV PDF"
+              className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-slate-50 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-100 disabled:opacity-50"
+            />
+          </label>
+          <p className="text-xs text-slate-400">
+            Le CV est analysé localement pour reconstituer ton profil et ton parcours. Les
+            compétences corrigées à la main sont préservées.
+          </p>
+          {upload.isPending && (
+            // L'analyse est un appel LLM **local synchrone** qui peut durer plusieurs minutes :
+            // on l'annonce explicitement (avec un indicateur animé) pour que l'attente ne passe
+            // pas pour un gel de l'interface.
+            <div role="status" className="flex items-center gap-2 text-sm text-slate-600">
+              <span
+                aria-hidden="true"
+                className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
+              />
+              <span>Analyse du CV en cours — l'extraction locale prend 1 à 5 minutes.</span>
+            </div>
+          )}
+          {upload.isSuccess && (
+            <span className="text-sm text-emerald-700">Profil mis à jour depuis le CV.</span>
+          )}
+          {cvError && <ErrorNotice error={cvError} />}
+          {upload.isError && <ErrorNotice error={upload.error} />}
+        </section>
+      )}
+
+      <section className="space-y-2 border-t border-slate-100 pt-3">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           Compétences
         </h4>
@@ -184,7 +221,7 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
               type="button"
               onClick={() => update.mutate({ candidateId, skills })}
               disabled={!canSave}
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               {update.isPending ? "Enregistrement…" : "Enregistrer les compétences"}
             </button>
@@ -198,43 +235,6 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
       </section>
 
       <ProfileExperiences experiences={experiences} />
-
-      {isReviewer && (
-        <section className="space-y-1 border-t border-slate-100 pt-3">
-          <label className="block text-sm font-medium text-slate-700">
-            Importer un CV (PDF)
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={onCvSelected}
-              disabled={upload.isPending}
-              aria-label="Importer un CV PDF"
-              className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-slate-50 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-100 disabled:opacity-50"
-            />
-          </label>
-          <p className="text-xs text-slate-400">
-            Le CV est analysé localement pour reconstituer ton profil et ton parcours. Les
-            compétences corrigées à la main sont préservées.
-          </p>
-          {upload.isPending && (
-            // L'analyse est un appel LLM **local synchrone** qui peut durer plusieurs minutes :
-            // on l'annonce explicitement (avec un indicateur animé) pour que l'attente ne passe
-            // pas pour un gel de l'interface.
-            <div role="status" className="flex items-center gap-2 text-sm text-slate-600">
-              <span
-                aria-hidden="true"
-                className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
-              />
-              <span>Analyse du CV en cours — l'extraction locale prend 1 à 5 minutes.</span>
-            </div>
-          )}
-          {upload.isSuccess && (
-            <span className="text-sm text-emerald-700">Profil mis à jour depuis le CV.</span>
-          )}
-          {cvError && <ErrorNotice error={cvError} />}
-          {upload.isError && <ErrorNotice error={upload.error} />}
-        </section>
-      )}
     </div>
   );
 }

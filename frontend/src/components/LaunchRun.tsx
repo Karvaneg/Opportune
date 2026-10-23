@@ -51,7 +51,7 @@ export function LaunchRun() {
             })
           }
           disabled={launch.isPending}
-          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
         >
           {launch.isPending ? "Analyse en cours…" : "Lancer une analyse"}
         </button>

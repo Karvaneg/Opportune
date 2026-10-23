@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunsListPage } from "../src/pages/RunsListPage";
 import { AuthProvider } from "../src/auth/AuthContext";
+import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
 import type { AuthStorage } from "../src/auth/authStorage";
 
 function memoryStorage(initial: string | null): AuthStorage {
@@ -64,9 +65,11 @@ function renderList() {
   return render(
     <AuthProvider storage={memoryStorage("good")}>
       <QueryClientProvider client={qc}>
-        <MemoryRouter>
-          <RunsListPage />
-        </MemoryRouter>
+        <TargetCandidateProvider>
+          <MemoryRouter>
+            <RunsListPage />
+          </MemoryRouter>
+        </TargetCandidateProvider>
       </QueryClientProvider>
     </AuthProvider>,
   );
