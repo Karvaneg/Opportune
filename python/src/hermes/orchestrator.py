@@ -265,11 +265,12 @@ class HermesOrchestrator:
         ``candidate_stats.funnel_stage``. ``applied_recommendation_ids`` (les offres candidatées,
         connues de la couche qui câble ``ActionService``) distingue « postulé » d'« à postuler ».
 
-        Déterministe, sans scoring : une simple lecture des décisions + du pool. Propage
-        ``UnknownCandidateError`` si le candidat est introuvable.
+        Déterministe, sans scoring : une simple lecture des décisions + du pool. **N'exige pas
+        de profil** : l'entonnoir se calcule sur les décisions et le pool, pas sur un scoring.
+        Un candidat du périmètre encore **sans profil** (état « nouveau profil ») obtient donc
+        des compteurs cohérents (aucune décision → toutes les offres « à étudier ») plutôt
+        qu'une erreur — le cockpit affiche alors le guide d'accueil, pas un bandeau rouge.
         """
-        if self.recommendations.profiles.get(candidate_id) is None:
-            raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
         state = self.funnel_state_by_offer(candidate_id, applied_recommendation_ids)
         stages = (funnel_stage(status, applied) for status, applied in state.values())
         return build_candidate_stats(stages)
@@ -318,12 +319,12 @@ class HermesOrchestrator:
         récent au plus ancien et tronqué à ``limit``.
 
         Les résolveurs prennent la **liste des ``recommendation_id``** du candidat et rendent une
-        table ``{recommendation_id: horodatage}`` (un seul accès par dépôt, pas de N+1). Propage
-        ``UnknownCandidateError`` si le candidat est introuvable.
-        """
-        if self.recommendations.profiles.get(candidate_id) is None:
-            raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
+        table ``{recommendation_id: horodatage}`` (un seul accès par dépôt, pas de N+1).
 
+        **N'exige pas de profil** (comme ``candidate_stats``) : le journal se lit sur les décisions,
+        le pool et les candidatures. Un candidat du périmètre encore sans profil obtient un flux
+        (souvent vide) plutôt qu'une erreur — le cockpit n'affiche pas de bandeau rouge.
+        """
         offers = self.recommendations.offers.list_all()
         title_of = {offer.id: offer.title for offer in offers}
 

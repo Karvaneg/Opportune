@@ -4,6 +4,22 @@ import type { ApiErrorBody } from "./types";
 // Isole les appels réseau des routes client React Router (`/runs/:runId`).
 const API_BASE = "/api";
 
+// Espace actif (OPP-182) : « mine » (vraies données) ou « demo » (exemple isolé). Le back
+// assemble deux bases SQLite distinctes et route chaque requête sur cet en-tête. `null` tant
+// qu'aucun espace n'est choisi (l'accueil n'a pas tranché) : le back retombe alors sur « mine »
+// par défaut — on n'envoie donc pas l'en-tête dans ce cas.
+let currentSpace: string | null = null;
+
+/** Fixe l'espace envoyé via `X-Opportune-Space` sur chaque requête (cf. SpaceProvider). */
+export function setApiSpace(space: string | null): void {
+  currentSpace = space;
+}
+
+/** Complète des en-têtes avec l'espace actif, quand il est défini. */
+function withSpace(headers: Record<string, string>): Record<string, string> {
+  return currentSpace ? { ...headers, "X-Opportune-Space": currentSpace } : headers;
+}
+
 /**
  * Erreur HTTP de l'API portant le `status` (et le corps si disponible).
  *
@@ -31,7 +47,7 @@ function messageFor(status: number, body: ApiErrorBody | null): string {
       return "Accès refusé : rôle insuffisant.";
     case 404:
       // « Inexistant » et « hors périmètre » sont indistinguables côté API : message neutre.
-      return "Run introuvable ou inaccessible.";
+      return "Ressource introuvable ou inaccessible.";
     default:
       return body?.error ?? "Une erreur est survenue.";
   }
@@ -53,9 +69,9 @@ async function parseOrThrow<T>(response: Response): Promise<T> {
  */
 export async function apiFetch<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
+    headers: withSpace({
       Accept: "application/json",
-    },
+    }),
   });
 
   return parseOrThrow<T>(response);
@@ -68,10 +84,10 @@ export async function apiFetch<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: {
+    headers: withSpace({
       Accept: "application/json",
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(body ?? {}),
   });
 
@@ -85,10 +101,10 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "PUT",
-    headers: {
+    headers: withSpace({
       Accept: "application/json",
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(body ?? {}),
   });
 
@@ -102,9 +118,9 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
 export async function apiDelete<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "DELETE",
-    headers: {
+    headers: withSpace({
       Accept: "application/json",
-    },
+    }),
   });
 
   return parseOrThrow<T>(response);

@@ -31,7 +31,7 @@ describe("apiFetch", () => {
     stubFetch(404, { error: "ressource introuvable" });
     await expect(apiFetch("/runs/x")).rejects.toMatchObject({
       status: 404,
-      message: "Run introuvable ou inaccessible.",
+      message: "Ressource introuvable ou inaccessible.",
     });
   });
 

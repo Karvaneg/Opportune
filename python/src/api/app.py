@@ -556,12 +556,12 @@ class HermesApi:
             if self.actions is not None
             else set()
         )
-        try:
-            stats = self.orchestrator.candidate_stats(
-                candidate_id, applied_recommendation_ids=applied_ids
-            )
-        except UnknownCandidateError:
-            raise self._not_found(user, f"candidat inconnu : {candidate_id}")
+        # Pas d'exigence de profil : l'entonnoir se lit sur les décisions + le pool (cf.
+        # orchestrateur). Un candidat du périmètre sans profil (« nouveau profil ») reçoit des
+        # compteurs cohérents plutôt qu'un 404 — le cockpit montre le guide, pas une erreur.
+        stats = self.orchestrator.candidate_stats(
+            candidate_id, applied_recommendation_ids=applied_ids
+        )
         return Response(
             200,
             {
@@ -587,12 +587,11 @@ class HermesApi:
         applied_at = (
             (lambda rids: self.actions.applied_at_for(rids)) if self.actions is not None else None
         )
-        try:
-            events = self.orchestrator.candidate_activity(
-                candidate_id, letters_at=letters_at, applied_at=applied_at
-            )
-        except UnknownCandidateError:
-            raise self._not_found(user, f"candidat inconnu : {candidate_id}")
+        # Pas d'exigence de profil (comme /stats) : un candidat du périmètre sans profil obtient
+        # un flux (souvent vide), pas un 404 — le cockpit montre le guide, pas un bandeau rouge.
+        events = self.orchestrator.candidate_activity(
+            candidate_id, letters_at=letters_at, applied_at=applied_at
+        )
         return Response(200, {"items": [self._serialize_activity_event(e) for e in events]})
 
     @staticmethod
@@ -813,17 +812,16 @@ class HermesApi:
             else set()
         )
 
-        try:
-            entries, total, funnel = self.orchestrator.list_offer_catalog(
-                limit=page_size,
-                offset=(page - 1) * page_size,
-                candidate_id=candidate_id,
-                stage=stage,
-                applied_recommendation_ids=applied_ids,
-            )
-        except UnknownCandidateError:
-            # candidat possédé mais sans profil → même 404 neutre que « hors périmètre ».
-            raise self._not_found(user, f"candidat inconnu : {candidate_id}")
+        # Pas d'exigence de profil : un candidat possédé sans profil (« nouveau profil ») voit les
+        # offres **sans score annoté** (cf. `_resolve_profile`), pas un 404 — le filtre par étape
+        # reste calculé sur ses décisions. L'owner-gating ci-dessus garde seul le périmètre.
+        entries, total, funnel = self.orchestrator.list_offer_catalog(
+            limit=page_size,
+            offset=(page - 1) * page_size,
+            candidate_id=candidate_id,
+            stage=stage,
+            applied_recommendation_ids=applied_ids,
+        )
 
         total_pages = (total + page_size - 1) // page_size
         return Response(

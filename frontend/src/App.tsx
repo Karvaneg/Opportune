@@ -3,9 +3,11 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { Briefcase, History, Home, User, type LucideIcon } from "lucide-react";
 import { createQueryClient } from "./api/queryClient";
-import { useAuth } from "./auth/AuthContext";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { TargetCandidateProvider } from "./auth/useTargetCandidate";
-import type { Me } from "./api/types";
+import { useSpace } from "./space/SpaceContext";
+import { WelcomeScreen } from "./space/WelcomeScreen";
+import { DemoBanner } from "./space/DemoBanner";
 import { CockpitPage } from "./pages/CockpitPage";
 import { OffersPage } from "./pages/OffersPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -36,7 +38,26 @@ function tabClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function App() {
-  const { status, identity, retry } = useAuth();
+  const { space, chooseSpace } = useSpace();
+
+  // Écran d'accueil (OPP-182) : tant qu'aucun espace n'est choisi, on propose « Mon espace »
+  // ou « Démo ». Remplace l'ancien `LoginGate` — pas de login en local, juste le choix d'espace.
+  if (!space) {
+    return <WelcomeScreen onChoose={chooseSpace} />;
+  }
+
+  // `AuthProvider` **keyé par l'espace** : au changement d'espace il se remonte, donc `GET /me`
+  // est resondé avec le bon en-tête `X-Opportune-Space` (identité/périmètre propres à l'espace)
+  // et le cache React Query repart à zéro — aucune fuite de données d'un espace à l'autre.
+  return (
+    <AuthProvider key={space}>
+      <BootGate />
+    </AuthProvider>
+  );
+}
+
+function BootGate() {
+  const { status, retry } = useAuth();
 
   // Amorçage local (OPP-181) : on interroge `GET /me` au démarrage. Tant que l'API n'a pas
   // répondu, plein-écran neutre — plus de barrière de jeton.
@@ -70,10 +91,11 @@ export function App() {
     );
   }
 
-  return <AuthenticatedApp identity={identity} />;
+  return <AuthenticatedApp />;
 }
 
-function AuthenticatedApp({ identity }: { identity: Me | null }) {
+function AuthenticatedApp() {
+  const { space, resetSpace } = useSpace();
   // Cache créé une fois au montage (local-first : plus de cycle de session à gérer).
   const queryClient = useMemo(() => createQueryClient(), []);
 
@@ -98,15 +120,28 @@ function AuthenticatedApp({ identity }: { identity: Me | null }) {
                   </nav>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-500 sm:gap-3">
-                  {identity?.id && (
-                    <span className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline">
-                      {identity.id}
-                      {identity.role ? ` · ${identity.role}` : ""}
-                    </span>
-                  )}
+                  {/* Espace actif (OPP-182) : pastille ambre en démo, neutre pour « Mon espace »,
+                      + bouton pour revenir à l'accueil et changer d'espace. */}
+                  <span
+                    className={
+                      space === "demo"
+                        ? "rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700"
+                        : "hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline"
+                    }
+                  >
+                    {space === "demo" ? "Démo" : "Mon espace"}
+                  </span>
+                  <button
+                    onClick={resetSpace}
+                    className="rounded-md px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                  >
+                    Changer d'espace
+                  </button>
                 </div>
               </div>
             </header>
+            {/* Bandeau démo (OPP-182) : repartir de zéro / restaurer l'exemple, espace démo uniquement. */}
+            {space === "demo" && <DemoBanner />}
             {/* Padding bas sur mobile pour que le contenu ne passe pas sous la barre d'onglets fixe. */}
             <main className="mx-auto max-w-5xl px-4 pb-24 pt-6 sm:px-6 sm:pb-8 sm:pt-8">
               <Routes>

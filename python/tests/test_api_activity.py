@@ -107,7 +107,13 @@ def test_activity_aggregates_all_event_types_sorted(env):
     assert decision_item["target_kind"] == "recommendation" and decision_item["target_id"] == rid
 
 
-def test_activity_unknown_candidate_is_404(env):
+def test_activity_owned_candidate_without_profile_is_200(env):
+    # Révisé (OPP-182) : cand-2 est dans le périmètre mais sans profil (« nouveau profil »).
+    # Le flux ne dépend pas du profil → 200 avec un journal (vide ici), pas un 404 qui ferait
+    # afficher un bandeau d'erreur au cockpit. Le hors-périmètre reste 404 (anti-énumération).
     api, _ = env
-    # cand-2 est dans le périmètre mais n'a aucune donnée : candidat inconnu → 404.
-    assert api.dispatch("GET", "/candidates/cand-2/activity", None, None).status == 404
+    resp = api.dispatch("GET", "/candidates/cand-2/activity", None, None)
+    assert resp.status == 200
+    # Aucun événement propre au candidat (ni décision ni candidature) : le flux ne contient, le
+    # cas échéant, que des offres du pool partagé — jamais décision/candidature.
+    assert all(item["type"] == "offer" for item in resp.body["items"])

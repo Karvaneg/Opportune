@@ -252,15 +252,55 @@ def build_local_auth(owned_candidates) -> LocalAuthProvider:
 
 def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     import os
+    from pathlib import Path
 
     from app.db import connect
+    from api.app import Response
+    from app.demo_candidate import DEMO_CANDIDATE_ID, reset_demo, seed_demo_candidate
+    from api.space_router import SpaceRouter
 
     # Local-first (OPP-181) : aucun jeton requis. Le périmètre reste lu depuis l'env pour
     # l'instant ; OPP-183 le dérivera de la base (« toutes mes recherches »).
     owned = [c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c]
-    auth = build_local_auth(owned)
+    mine = assemble_api(connect(), build_local_auth(owned))
 
-    server = create_server(assemble_api(connect(), auth))
+    # Espace démo (OPP-182) : une base d'exemple **séparée** (jamais mélangée au réel). On la
+    # seede au **tout premier lancement seulement** (fichier absent) : ainsi un « repartir de
+    # zéro » (vidage) n'est pas annulé par un redémarrage. Le seed est sans réseau ni LLM
+    # (cf. ``app.demo_candidate``). L'utilisateur démo ne possède que le candidat démo.
+    demo_db = os.environ.get("OPPORTUNE_DEMO_DB_PATH", "data/opportune-demo.db")
+    demo_is_new = demo_db == ":memory:" or not Path(demo_db).exists()
+    demo_conn = connect(demo_db)
+    if demo_is_new:
+        # Si ce **premier** seed échoue, le fichier à peine créé resterait « existant mais vide »
+        # et ne serait plus jamais re-seedé (traité comme un vidage volontaire). On le retire donc
+        # pour que le prochain démarrage réessaie — sans toucher à une base démo déjà en place.
+        try:
+            seed_demo_candidate(demo_conn)
+        except Exception:
+            demo_conn.close()
+            if demo_db != ":memory:":
+                Path(demo_db).unlink(missing_ok=True)
+            raise
+    demo = assemble_api(demo_conn, build_local_auth([DEMO_CANDIDATE_ID]))
+
+    # Commandes d'espace démo (OPP-182), portées par le routeur donc toujours ciblées sur la
+    # base démo : « repartir de zéro » (vider) et « restaurer l'exemple » (vitrine canonique).
+    def _reset_demo() -> Response:
+        reset_demo(demo_conn)
+        return Response(200, {"status": "reset"})
+
+    def _restore_demo() -> Response:
+        reset_demo(demo_conn)
+        seed_demo_candidate(demo_conn)
+        return Response(200, {"status": "restored"})
+
+    router = SpaceRouter(
+        mine=mine,
+        demo=demo,
+        demo_commands={"/demo/reset": _reset_demo, "/demo/restore": _restore_demo},
+    )
+    server = create_server(router)
     host, port = server.server_address
     print(f"API Hermes à l'écoute sur http://{host}:{port}")
     server.serve_forever()
