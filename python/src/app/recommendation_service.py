@@ -288,8 +288,9 @@ class RecommendationService:
         ``candidate_id`` (ou ``None`` si non évaluable, ou si aucun candidat n'est demandé).
         Retourne ``(entrées, total)`` — ``total`` est le cardinal **avant** découpe en page.
 
-        Lève ``ValueError`` si ``limit``/``offset`` sont négatifs ou les seuils incohérents, et
-        ``UnknownCandidateError`` si un ``candidate_id`` est fourni mais introuvable.
+        Lève ``ValueError`` si ``limit``/``offset`` sont négatifs ou les seuils incohérents.
+        N'exige **pas** de profil : un ``candidate_id`` sans profil (« nouveau profil ») donne
+        des offres **sans score annoté** (``None``), pas une erreur (cf. ``_resolve_profile``).
         """
         if limit < 0 or offset < 0:
             raise ValueError("limit et offset doivent être ≥ 0")
@@ -316,7 +317,8 @@ class RecommendationService:
         (p. ex. filtre par étape d'entonnoir côté serveur, OPP-164) : même annotation de score,
         mais sans re-trancher ni re-paginer. Les ``offer_ids`` introuvables sont ignorés.
 
-        Lève ``UnknownCandidateError`` si un ``candidate_id`` est fourni mais introuvable.
+        N'exige **pas** de profil (comme ``list_catalog``) : un ``candidate_id`` sans profil
+        donne des offres **sans score annoté** (``None``), pas une erreur.
         """
         validate_thresholds(high, medium)
         profile = self._resolve_profile(candidate_id)
@@ -329,13 +331,17 @@ class RecommendationService:
         return entries
 
     def _resolve_profile(self, candidate_id: str | None):
-        """Profil du candidat ciblé, ou ``None`` si aucun candidat. Lève si l'id est inconnu."""
+        """Profil à utiliser pour **annoter** le catalogue, ou ``None`` → scores non annotés.
+
+        ``None`` dans deux cas, traités pareil (score ``null``) : aucun candidat demandé, **ou**
+        candidat ciblé encore **sans profil** (« nouveau profil »). On ne lève pas : lister le
+        catalogue n'exige pas de profil (seul le **score** en a besoin), et le périmètre est déjà
+        garanti en amont (owner-gating de l'API). Le scoring explicite (``recommend`` /
+        ``recommend_one``), lui, continue d'exiger un profil et lève ``UnknownCandidateError``.
+        """
         if candidate_id is None:
             return None
-        profile = self.profiles.get(candidate_id)
-        if profile is None:
-            raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
-        return profile
+        return self.profiles.get(candidate_id)  # None si pas de profil → offres sans score
 
     def _catalog_entry(
         self, offer: Offer, profile, *, high: int, medium: int

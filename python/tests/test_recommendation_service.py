@@ -247,8 +247,12 @@ def test_list_catalog_paginates(env):
     assert [e.offer.id for e in page2] == ["a"]
 
 
-def test_list_catalog_unknown_candidate_raises(env):
+def test_list_catalog_candidate_without_profile_lists_without_score(env):
+    # Révisé (OPP-182) : lister le catalogue n'exige pas de profil — seul le **score** en a
+    # besoin. Un candidat sans profil (« nouveau profil ») obtient donc les offres **sans score
+    # annoté** (``None``) plutôt qu'une UnknownCandidateError. Le périmètre est gardé par l'API.
     service, offers = env
     _seed_three(offers)
-    with pytest.raises(UnknownCandidateError):
-        service.list_catalog(candidate_id="nope")
+    entries, total = service.list_catalog(candidate_id="nope")
+    assert total == 3
+    assert all(entry.score is None and entry.action is None for entry in entries)

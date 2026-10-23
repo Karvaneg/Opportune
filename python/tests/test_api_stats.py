@@ -117,7 +117,12 @@ def test_stats_coherent_with_catalog_funnel(env):
     assert stats["offres_total"] == catalog["total"]
 
 
-def test_stats_unknown_candidate_is_404(env):
-    # cand-2 est dans le périmètre mais n'a aucun profil : candidat inconnu → 404.
+def test_stats_owned_candidate_without_profile_is_200(env):
+    # Révisé (OPP-182) : cand-2 est dans le périmètre mais n'a pas encore de profil (« nouveau
+    # profil »). L'entonnoir ne dépend pas du profil → 200 avec des compteurs cohérents (aucune
+    # décision → tout « à étudier »), plutôt qu'un 404 qui ferait afficher un bandeau d'erreur
+    # au cockpit au lieu du guide d'accueil.
     resp = env.dispatch("GET", "/candidates/cand-2/stats", None, None)
-    assert resp.status == 404
+    assert resp.status == 200
+    assert resp.body["a_postuler"] == 0 and resp.body["postule"] == 0
+    assert resp.body["a_etudier"] == resp.body["offres_total"]

@@ -381,10 +381,14 @@ def test_candidate_stats_formation_counts_in_pool_and_funnel(env):
     assert stats.a_etudier == 4    # les 3 emplois + la formation, toutes à décider
 
 
-def test_candidate_stats_unknown_candidate_raises(env):
+def test_candidate_stats_unknown_candidate_returns_empty_funnel(env):
+    # Révisé (OPP-182) : l'entonnoir ne dépend plus du profil. Un candidat sans décisions ni
+    # offres au pool obtient des compteurs à zéro plutôt qu'une UnknownCandidateError — le
+    # cockpit d'un « nouveau profil » montre le guide, pas un bandeau d'erreur. L'owner-gating
+    # (API) reste seul garant du périmètre.
     orchestrator, _, _ = env
-    with pytest.raises(UnknownCandidateError):
-        orchestrator.candidate_stats("nope")
+    stats = orchestrator.candidate_stats("nope")
+    assert (stats.a_etudier, stats.a_postuler, stats.postule, stats.offres_total) == (0, 0, 0, 0)
 
 
 # --- Flux d'activité (OPP-165) -----------------------------------------------
@@ -446,10 +450,12 @@ def test_candidate_activity_caps_offers_so_they_dont_bury_candidate_events(env):
     assert "decision" in types
 
 
-def test_candidate_activity_unknown_candidate_raises(env):
+def test_candidate_activity_without_profile_returns_empty(env):
+    # Révisé (OPP-182) : le flux ne dépend plus du profil. Un candidat sans décisions ni
+    # candidatures obtient un journal vide plutôt qu'une UnknownCandidateError — le cockpit d'un
+    # « nouveau profil » reste propre (pas de bandeau d'erreur sous « Dernières activités »).
     orchestrator, _, _ = env
-    with pytest.raises(UnknownCandidateError):
-        orchestrator.candidate_activity("nope")
+    assert orchestrator.candidate_activity("nope") == []
 
 
 def test_rescore_offer_unknown_candidate_raises(env):
