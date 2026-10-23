@@ -5,9 +5,10 @@ import type { FunnelStage } from "../api/funnel";
 import type { ActivityEvent } from "../api/types";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { AddOffer } from "../components/AddOffer";
+import { CandidatePicker } from "../components/CandidatePicker";
 import { LaunchRun } from "../components/LaunchRun";
 import { NewProfileGuide } from "../components/NewProfileGuide";
-import { ProfilePanel } from "../components/ProfilePanel";
+import { ProfileSummaryCard } from "../components/ProfileSummaryCard";
 import { ErrorNotice, Loading } from "../components/States";
 
 /**
@@ -26,43 +27,17 @@ export function CockpitPage() {
     <section className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-xl font-semibold text-slate-900">Accueil</h2>
-        {candidates.length > 1 && (
-          <label className="flex items-center gap-2 text-sm text-slate-500">
-            Candidat
-            <select
-              aria-label="Candidat pour la synthèse"
-              value={target}
-              onChange={(e) => setCandidate(e.target.value)}
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            >
-              {candidates.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <CandidatePicker
+          candidates={candidates}
+          value={target}
+          onChange={setCandidate}
+          ariaLabel="Candidat pour la synthèse"
+        />
       </div>
 
       {/* Guide d'accueil (OPP-177) : en tête de cockpit tant que la boucle de démarrage
           (CV → offres → analyse) n'est pas complète. Se masque de lui-même ensuite. */}
       {target !== "" && <NewProfileGuide candidateId={target} stats={data} />}
-
-      {/* Raccourcis d'action en haut, juste sous l'en-tête : « que puis-je faire maintenant ? »
-          doit rester visible sans scroller sous le flux d'activité (OPP-165, retour dogfood). */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div
-          id="nouvelle-analyse"
-          className="space-y-2 rounded-lg border border-slate-200 bg-white p-4"
-        >
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Nouvelle analyse
-          </h3>
-          <LaunchRun />
-        </div>
-        <AddOffer />
-      </div>
 
       {target === "" ? (
         <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
@@ -70,13 +45,39 @@ export function CockpitPage() {
         </p>
       ) : (
         <>
+          {/* Profil en tête : « qui suis-je » avant « qu'ai-je à traiter ». Carte résumé compacte
+              (détail sur l'onglet Profil) — on ne l'enterre plus sous le flux d'activité. */}
+          <ProfileSummaryCard candidateId={target} />
+
+          {/* Compteurs : la vue d'ensemble « qu'ai-je à traiter ? ». */}
           {isPending && <Loading label="Chargement de la synthèse…" />}
           {isError && <ErrorNotice error={error} />}
-          {data && <StatCards candidateId={target} stats={data} />}
-          <ActivityFeed candidateId={target} />
-          <div id="profil">
-            <ProfilePanel candidateId={target} />
+          {data && <StatCards stats={data} />}
+
+          {/* Raccourcis d'action juste sous les compteurs : « que puis-je faire maintenant ? »
+              reste visible au-dessus du flux d'activité (esprit d'OPP-165, retour dogfood). */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div
+              id="nouvelle-analyse"
+              className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4"
+            >
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Nouvelle analyse
+              </h3>
+              <p className="text-sm text-slate-600">
+                Opportune passe en revue les offres de ton catalogue, les score pour ton profil
+                et met en avant les plus pertinentes à étudier.
+              </p>
+              {/* Bouton ancré en bas : la carte s'aligne en hauteur sur « Ajouter une offre »,
+                  l'action reste au même niveau que son bouton voisin plutôt que de flotter. */}
+              <div className="mt-auto pt-1">
+                <LaunchRun />
+              </div>
+            </div>
+            <AddOffer />
           </div>
+
+          <ActivityFeed candidateId={target} />
         </>
       )}
     </section>
@@ -85,10 +86,8 @@ export function CockpitPage() {
 
 /** Les trois compteurs d'avancement + le total du pool. */
 function StatCards({
-  candidateId,
   stats,
 }: {
-  candidateId: string;
   stats: { a_etudier: number; a_postuler: number; postule: number; offres_total: number };
 }) {
   return (
@@ -97,7 +96,6 @@ function StatCards({
         <StatCard
           label="À étudier"
           value={stats.a_etudier}
-          candidateId={candidateId}
           stage="a_etudier"
           tone="bg-amber-50 text-amber-900 hover:border-amber-300"
         />
@@ -107,14 +105,12 @@ function StatCards({
         <StatCard
           label="À postuler"
           value={stats.a_postuler}
-          candidateId={candidateId}
           stage="a_postuler"
           tone="bg-indigo-50 text-indigo-900 hover:border-indigo-300"
         />
         <StatCard
           label="Postulées"
           value={stats.postule}
-          candidateId={candidateId}
           stage="postule"
           tone="bg-emerald-50 text-emerald-900 hover:border-emerald-300"
         />
@@ -181,17 +177,16 @@ function formatActivityDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR");
 }
 
-/** Carte-compteur, cliquable : ouvre Offres filtré sur l'étape d'entonnoir, pour ce candidat. */
+/** Carte-compteur, cliquable : ouvre Offres filtré sur l'étape d'entonnoir. Le candidat ciblé est
+ *  porté par le contexte partagé (cf. useTargetCandidate), inutile de le repasser par l'URL. */
 function StatCard({
   label,
   value,
-  candidateId,
   stage,
   tone,
 }: {
   label: string;
   value: number;
-  candidateId: string;
   stage: FunnelStage;
   tone: string;
 }) {
@@ -199,9 +194,7 @@ function StatCard({
   return (
     <button
       type="button"
-      onClick={() =>
-        navigate(`/offres?candidate=${encodeURIComponent(candidateId)}&stage=${stage}`)
-      }
+      onClick={() => navigate(`/offres?stage=${stage}`)}
       className={`rounded-lg border border-slate-200 p-4 text-left transition-colors ${tone}`}
     >
       <p className="text-3xl font-semibold">{value}</p>

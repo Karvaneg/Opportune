@@ -22,8 +22,13 @@ export function LoginGate() {
         className="w-full max-w-sm space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
       >
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Opportune — Hermes</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="flex items-baseline gap-2">
+            <span className="text-lg font-bold tracking-tight text-slate-900">Opportune</span>
+            <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">
+              Hermes
+            </span>
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
             Saisissez votre jeton d'accès pour consulter les runs.
           </p>
         </div>

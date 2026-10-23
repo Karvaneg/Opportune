@@ -57,7 +57,7 @@ export function NewProfileGuide({
         "Importez un CV PDF : Opportune en extrait vos compétences et votre parcours.",
       // `experiences` peut manquer sur un profil mis en cache avant OPP-176 → fallback défensif.
       done: (profile?.experiences?.length ?? 0) > 0 || (profile?.skills.length ?? 0) > 0,
-      action: { label: "Ajouter mon CV", onClick: () => scrollToId("profil") },
+      action: { label: "Ajouter mon CV", to: "/profil" },
     },
     {
       title: "Récupérer de nouvelles offres",
