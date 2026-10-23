@@ -239,15 +239,16 @@ def assemble_api(conn, auth: "LocalAuthProvider") -> HermesApi:
     )
 
 
-def build_local_auth(owned_candidates) -> LocalAuthProvider:
-    """Compose l'identité locale : un unique utilisateur ``reviewer`` propriétaire du périmètre.
+def build_local_auth(owned_provider) -> LocalAuthProvider:
+    """Compose l'identité locale : un unique utilisateur ``reviewer`` au périmètre **dynamique**.
 
-    Mono-utilisateur, sans jeton (OPP-181) : l'identité est fabriquée au boot à partir du
-    périmètre fourni (``OPPORTUNE_API_CANDIDATES`` pour l'instant ; dérivation dynamique depuis
-    la base en OPP-183). Isolé de ``main`` pour être testable sans démarrer de serveur.
+    Mono-utilisateur, sans jeton (OPP-181). Périmètre dérivé de la base (OPP-183) :
+    ``owned_provider`` est un callable rappelé **à chaque requête** qui rend les ids du
+    périmètre courant (registre des candidats) — fini le ``frozenset`` figé au boot depuis
+    ``OPPORTUNE_API_CANDIDATES``. Isolé de ``main`` pour être testable sans démarrer de serveur.
     """
-    user = User(id="moi", role=REVIEWER, owned_candidates=frozenset(owned_candidates))
-    return LocalAuthProvider(user)
+    user = User(id="moi", role=REVIEWER, owned_candidates=frozenset())
+    return LocalAuthProvider(user, owned_provider=owned_provider)
 
 
 def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
@@ -256,13 +257,23 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
 
     from app.db import connect
     from api.app import Response
+    from app.candidate_registry import CandidateRegistry
     from app.demo_candidate import DEMO_CANDIDATE_ID, reset_demo, seed_demo_candidate
+    from app.profile_store import ProfileStore
     from api.space_router import SpaceRouter
 
-    # Local-first (OPP-181) : aucun jeton requis. Le périmètre reste lu depuis l'env pour
-    # l'instant ; OPP-183 le dérivera de la base (« toutes mes recherches »).
-    owned = [c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c]
-    mine = assemble_api(connect(), build_local_auth(owned))
+    # Périmètre dynamique en base (OPP-183) : « Mon espace » dérive ses candidats du registre,
+    # recalculé à chaque requête. À chaque boot on **réunit** (insert-or-ignore, idempotent) le
+    # périmètre connu depuis l'env ``OPPORTUNE_API_CANDIDATES`` ∪ les profils déjà présents : ainsi
+    # l'env reste un moyen d'enrôler un candidat (migration d'une install en place, mais aussi
+    # ajout d'une recherche par redémarrage) tant qu'OPP-184 n'offre pas la création à chaud.
+    # Additif seulement : le registre conserve les candidats enrôlés au runtime — l'env ne retire
+    # jamais rien.
+    mine_conn = connect()
+    mine_registry = CandidateRegistry(mine_conn)
+    env_ids = [c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c]
+    mine_registry.ensure([*env_ids, *ProfileStore(mine_conn).list_ids()])
+    mine = assemble_api(mine_conn, build_local_auth(mine_registry.list_ids))
 
     # Espace démo (OPP-182) : une base d'exemple **séparée** (jamais mélangée au réel). On la
     # seede au **tout premier lancement seulement** (fichier absent) : ainsi un « repartir de
@@ -282,7 +293,12 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
             if demo_db != ":memory:":
                 Path(demo_db).unlink(missing_ok=True)
             raise
-    demo = assemble_api(demo_conn, build_local_auth([DEMO_CANDIDATE_ID]))
+    # Périmètre démo : son unique candidat vit aussi dans le registre (OPP-183). On garantit le
+    # slot au boot (idempotent) — vrai même pour une base démo antérieure à OPP-183, ou après un
+    # « repartir de zéro » qui conserve le slot vide pour l'onboarding.
+    demo_registry = CandidateRegistry(demo_conn)
+    demo_registry.ensure([DEMO_CANDIDATE_ID])
+    demo = assemble_api(demo_conn, build_local_auth(demo_registry.list_ids))
 
     # Commandes d'espace démo (OPP-182), portées par le routeur donc toujours ciblées sur la
     # base démo : « repartir de zéro » (vider) et « restaurer l'exemple » (vitrine canonique).

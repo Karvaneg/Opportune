@@ -135,3 +135,11 @@ class ProfileStore:
     def count(self) -> int:
         """Nombre de profils stockés."""
         return self.conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0]
+
+    def list_ids(self) -> list[str]:
+        """Ids de tous les profils stockés (ordre d'id).
+
+        Sert au bootstrap du périmètre (OPP-183) : une installation en place dont les profils
+        existaient déjà (avant la table ``candidates``) voit ses candidats enrôlés d'office.
+        """
+        return [row[0] for row in self.conn.execute("SELECT id FROM profiles ORDER BY id")]

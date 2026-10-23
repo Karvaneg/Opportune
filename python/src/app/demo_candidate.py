@@ -25,6 +25,7 @@ from typing import Callable
 
 from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
+from app.candidate_registry import CandidateRegistry
 from app.candidate_profile import create_profile
 from app.decision import decision_from_recommendation, decision_id, validate
 from app.decision_service import DecisionService
@@ -257,6 +258,10 @@ def seed_demo_candidate(
     runs = RunStore(conn)
     recommender = RecommendationService(profiles, offers)
 
+    # 0. Périmètre : le candidat démo est enrôlé dans le registre (OPP-183) — son slot existe
+    #    indépendamment du profil (il survit à un « repartir de zéro », cf. ``reset_demo``).
+    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID)
+
     # 1. Profil démo (upsert : écrase toujours vers le profil canonique — 100 % synthétique).
     profiles.save(create_profile(**_demo_profile_kwargs()))
 
@@ -345,6 +350,10 @@ def reset_demo(conn: sqlite3.Connection) -> None:
     plutôt que de les lister en dur : la base démo n'héberge **que** des données de démo, donc
     un vidage total est sûr et ne peut jamais rater une table (ni, par construction du routeur,
     atteindre la base réelle). ``restore`` = ``reset_demo`` puis ``seed_demo_candidate``.
+
+    Le **slot** du candidat démo est **réinséré** dans le registre après le vidage (OPP-183) :
+    le périmètre garde donc une recherche, vide de données, pour que le cockpit propose le guide
+    d'accueil (« nouveau profil ») plutôt qu'un « aucun candidat » — c'est le sens du reset.
     """
     tables = [
         row[0]
@@ -355,3 +364,4 @@ def reset_demo(conn: sqlite3.Connection) -> None:
     for table in tables:
         conn.execute(f"DELETE FROM {table}")
     conn.commit()
+    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID)

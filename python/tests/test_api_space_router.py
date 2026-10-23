@@ -11,6 +11,7 @@ import pytest
 from api.app import Response
 from api.server import assemble_api, build_local_auth
 from api.space_router import SPACE_HEADER, SpaceRouter
+from app.candidate_registry import CandidateRegistry
 from app.db import connect
 from app.demo_candidate import DEMO_CANDIDATE_ID, reset_demo, seed_demo_candidate
 from app.offer_store import OfferStore
@@ -35,13 +36,13 @@ def _demo_commands(demo_conn):
 
 @pytest.fixture
 def router():
-    # « Mon espace » : base vide, périmètre = un candidat réel fictif.
+    # « Mon espace » : base vide, périmètre = un candidat réel fictif (provider statique).
     mine_conn = connect(":memory:")
-    mine = assemble_api(mine_conn, build_local_auth([MINE_CANDIDATE_ID]))
-    # « Démo » : base séparée, seedée (candidat démo + offres), périmètre = candidat démo.
+    mine = assemble_api(mine_conn, build_local_auth(lambda: [MINE_CANDIDATE_ID]))
+    # « Démo » : base séparée, seedée (candidat démo + offres) ; périmètre dérivé du registre démo.
     demo_conn = connect(":memory:")
     seed_demo_candidate(demo_conn)
-    demo = assemble_api(demo_conn, build_local_auth([DEMO_CANDIDATE_ID]))
+    demo = assemble_api(demo_conn, build_local_auth(CandidateRegistry(demo_conn).list_ids))
     router = SpaceRouter(mine=mine, demo=demo, demo_commands=_demo_commands(demo_conn))
     # On expose la conn démo pour les tests de commandes (reset/restore).
     router._test_demo_conn = demo_conn  # type: ignore[attr-defined]
