@@ -8,16 +8,19 @@ export function CandidatePicker({
   value,
   onChange,
   ariaLabel,
+  label = "Candidat",
 }: {
   candidates: string[];
   value: string;
   onChange: (next: string) => void;
   ariaLabel: string;
+  /** Intitulé devant le sélecteur. Défaut « Candidat » ; p. ex. « Score pour » sur les offres. */
+  label?: string;
 }) {
   if (candidates.length <= 1) return null;
   return (
     <label className="flex items-center gap-2 text-sm text-slate-500">
-      Candidat
+      {label}
       <select
         aria-label={ariaLabel}
         value={value}

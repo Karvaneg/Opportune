@@ -18,7 +18,7 @@ export function RunsListPage() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h2 className="text-xl font-semibold text-slate-900">Historique</h2>
         <DirectAccess />
       </div>
@@ -57,9 +57,9 @@ export function RunsListPage() {
 
 function RunRow({ run }: { run: RunSummary }) {
   return (
-    <li className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400">
+    <li className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <Link to={`/runs/${encodeURIComponent(run.run_id)}`} className="min-w-0 flex-1">
-        <p className="font-mono text-sm text-slate-900">{run.run_id}</p>
+        <p className="truncate font-mono text-sm text-slate-900">{run.run_id}</p>
         <p className="text-sm text-slate-500">
           {run.candidate_id} · {formatDate(run.executed_at)}
         </p>
@@ -155,7 +155,7 @@ function DirectAccess() {
         value={runId}
         onChange={(e) => setRunId(e.target.value)}
         placeholder="run_id…"
-        className="w-40 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
+        className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none sm:w-40 sm:flex-none"
       />
       <button
         type="submit"
