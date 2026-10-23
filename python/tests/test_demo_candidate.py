@@ -8,6 +8,7 @@ cohérente (profil, offres, entonnoir du cockpit, candidature, lettre), et qu'il
 import pytest
 
 from app.action_store import ApplicationActionStore
+from app.candidate_registry import CandidateRegistry
 from app.db import connect
 from app.decision import decision_id
 from app.decision_service import DecisionService
@@ -137,6 +138,10 @@ def test_reset_demo_vide_tout(conn):
     assert OfferStore(conn).count() == 0
     assert ProfileStore(conn).get(DEMO_CANDIDATE_ID) is None
     assert DecisionStore(conn).count() == 0
+
+    # Mais le SLOT du candidat démo survit au vidage (OPP-183) : le périmètre garde une recherche
+    # vide → le cockpit propose le guide d'accueil, pas « aucun candidat ».
+    assert CandidateRegistry(conn).list_ids() == [DEMO_CANDIDATE_ID]
 
     # Et « restaurer » (reset + seed) ramène la vitrine canonique.
     reset_demo(conn)
