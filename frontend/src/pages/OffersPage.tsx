@@ -5,6 +5,7 @@ import { FUNNEL_LABELS, isFunnelStage } from "../api/funnel";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { useIsReviewer } from "../auth/roles";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
+import { CandidatePicker } from "../components/CandidatePicker";
 import { CollectOffers } from "../components/CollectOffers";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
@@ -52,26 +53,16 @@ export function OffersPage() {
     <section className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-xl font-semibold text-slate-900">Offres</h2>
-        {candidates.length > 1 && (
-          <label className="flex items-center gap-2 text-sm text-slate-500">
-            Score pour
-            <select
-              aria-label="Candidat pour le score de match"
-              value={target}
-              onChange={(e) => {
-                setCandidate(e.target.value);
-                setPage(1);
-              }}
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            >
-              {candidates.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <CandidatePicker
+          candidates={candidates}
+          value={target}
+          onChange={(c) => {
+            setCandidate(c);
+            setPage(1);
+          }}
+          ariaLabel="Candidat pour le score de match"
+          label="Score pour"
+        />
       </div>
 
       <CollectOffers />
@@ -145,7 +136,7 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
     );
 
   return (
-    <li className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400">
+    <li className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         {candidateId ? (
           <button
@@ -169,19 +160,22 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-3 text-sm">
-        {offer.url && (
-          <a
-            href={offer.url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-slate-400 hover:text-slate-600 hover:underline"
-            title="Voir l'offre sur le site"
-          >
-            voir sur le site ↗
-          </a>
-        )}
-        <span className="text-slate-400">{offer.source}</span>
+      {/* Sur mobile : la ligne d'actions passe sous le titre, le score reste bien visible à droite. */}
+      <div className="flex shrink-0 items-center justify-between gap-3 text-sm sm:justify-end">
+        <div className="flex items-center gap-3">
+          {offer.url && (
+            <a
+              href={offer.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-slate-400 hover:text-slate-600 hover:underline"
+              title="Voir l'offre sur le site"
+            >
+              voir sur le site ↗
+            </a>
+          )}
+          <span className="text-slate-400">{offer.source}</span>
+        </div>
         <ScoreBadge kind={offer.kind} score={offer.score} action={offer.action} />
       </div>
     </li>
