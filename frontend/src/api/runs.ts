@@ -1,5 +1,4 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useAuth } from "../auth/AuthContext";
 import { apiDelete, apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
 import type {
@@ -43,10 +42,9 @@ export interface LaunchRunResult {
  */
 export function useLaunchRun() {
   return useApiMutation<LaunchRunResult, string>({
-    mutationFn: (candidateId, token) =>
+    mutationFn: (candidateId) =>
       apiPost<LaunchRunResult>(
         `/candidates/${encodeURIComponent(candidateId)}/recommendations`,
-        token,
         {},
       ),
     invalidateKeys: () => [["runs"]],
@@ -59,8 +57,8 @@ export function useLaunchRun() {
  */
 export function useDeleteRun() {
   return useApiMutation<{ deleted: string }, string>({
-    mutationFn: (runId, token) =>
-      apiDelete<{ deleted: string }>(`/runs/${encodeURIComponent(runId)}`, token),
+    mutationFn: (runId) =>
+      apiDelete<{ deleted: string }>(`/runs/${encodeURIComponent(runId)}`),
     invalidateKeys: () => [["runs"]],
   });
 }
@@ -71,25 +69,22 @@ export function useDeleteRun() {
  * si *ce* candidat a déjà un run, sans compter ceux des autres candidats du périmètre (OPP-177).
  */
 export function useRuns(page: number, candidateId?: string) {
-  const { token } = useAuth();
   const scoped = candidateId
     ? `&candidate_id=${encodeURIComponent(candidateId)}`
     : "";
   return useQuery({
     queryKey: runKeys.list(page, candidateId ?? ""),
-    queryFn: () => apiFetch<RunsPage>(`/runs?page=${page}${scoped}`, token!),
-    enabled: Boolean(token),
+    queryFn: () => apiFetch<RunsPage>(`/runs?page=${page}${scoped}`),
     placeholderData: keepPreviousData, // évite le clignotement entre pages
   });
 }
 
 /** Détail d'un run : `GET /runs/{run_id}`. */
 export function useRunDetail(runId: string) {
-  const { token } = useAuth();
   return useQuery({
     queryKey: runKeys.detail(runId),
-    queryFn: () => apiFetch<RunDetail>(`/runs/${encodeURIComponent(runId)}`, token!),
-    enabled: Boolean(token) && runId.length > 0,
+    queryFn: () => apiFetch<RunDetail>(`/runs/${encodeURIComponent(runId)}`),
+    enabled: runId.length > 0,
   });
 }
 
@@ -103,7 +98,6 @@ export function useRunRecommendations(
   page: number,
   filters: RecommendationFilters = {},
 ) {
-  const { token } = useAuth();
   const advisory = filters.advisoryStatus ?? "";
   const decision = filters.decisionStatus ?? "";
 
@@ -116,9 +110,8 @@ export function useRunRecommendations(
     queryFn: () =>
       apiFetch<RunRecommendationsPage>(
         `/runs/${encodeURIComponent(runId)}/recommendations?${params}`,
-        token!,
       ),
-    enabled: Boolean(token) && runId.length > 0,
+    enabled: runId.length > 0,
     placeholderData: keepPreviousData, // évite le clignotement entre pages/filtres
   });
 }

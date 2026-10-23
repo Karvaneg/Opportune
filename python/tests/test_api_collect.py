@@ -13,7 +13,7 @@ import time
 import pytest
 
 from api.app import _COLLECT_MAX_CAP, _COLLECT_MAX_DEFAULT, HermesApi
-from app.auth import REVIEWER, AuthProvider, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 from app.collection_jobs import CollectionJobRegistry
 from app.db import connect
 from app.decision_service import DecisionService
@@ -49,8 +49,6 @@ def _api(runner, *, auth=None, spawn=_sync_spawn) -> HermesApi:
     return HermesApi(orchestrator, auth=auth, collections=registry)
 
 
-def _hdr(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def _start(api, body=None, headers=None):
@@ -279,16 +277,19 @@ def test_collect_unsupported_method_405():
 
 
 def test_collect_requires_reviewer_role():
-    auth = AuthProvider({
-        "tok-rev": User("rev", REVIEWER, frozenset({"cand-1"})),
-        "tok-view": User("view", "viewer", frozenset({"cand-1"})),
-    })
-    api = _api(lambda **k: _report(), auth=auth)
-    assert api.dispatch("POST", "/collect", {}, _hdr("tok-view")).status == 403
-    assert api.dispatch("POST", "/collect", {}, None).status == 401
-    resp = api.dispatch("POST", "/collect", {}, _hdr("tok-rev"))
+    # Sans le rôle reviewer : POST et sondage refusés (403), avant toute création/lecture de job.
+    viewer = _api(
+        lambda **k: _report(),
+        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
+    )
+    assert viewer.dispatch("POST", "/collect", {}).status == 403
+    assert viewer.dispatch("GET", "/collect/n-importe", None).status == 403
+    # Avec le rôle : la passe démarre (202) et le sondage répond (200).
+    reviewer = _api(
+        lambda **k: _report(),
+        auth=LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"}))),
+    )
+    resp = reviewer.dispatch("POST", "/collect", {})
     assert resp.status == 202
-    # Le sondage exige aussi le rôle reviewer.
     job_id = resp.body["job_id"]
-    assert api.dispatch("GET", f"/collect/{job_id}", None, _hdr("tok-view")).status == 403
-    assert api.dispatch("GET", f"/collect/{job_id}", None, _hdr("tok-rev")).status == 200
+    assert reviewer.dispatch("GET", f"/collect/{job_id}", None).status == 200

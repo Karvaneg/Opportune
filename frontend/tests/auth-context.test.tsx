@@ -1,25 +1,9 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  AuthProvider,
-  SESSION_EXPIRED_MESSAGE,
-  useAuth,
-} from "../src/auth/AuthContext";
-import type { AuthStorage } from "../src/auth/authStorage";
+import { AuthProvider, useAuth } from "../src/auth/AuthContext";
 
-function memoryStorage(initial: string | null = null): AuthStorage {
-  let value = initial;
-  return {
-    get: () => value,
-    set: (t) => {
-      value = t;
-    },
-    clear: () => {
-      value = null;
-    },
-  };
-}
+const ME = { id: "moi", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] };
 
 function stubMeOk() {
   vi.stubGlobal(
@@ -27,26 +11,18 @@ function stubMeOk() {
     vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ id: "u", role: "reviewer", owned_count: 1 }),
+      json: () => Promise.resolve(ME),
     }),
   );
 }
 
-function stubMe401() {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: () => Promise.resolve({ error: "authentification requise" }),
-    }),
-  );
+/** `/me` en échec réseau : l'API est injoignable (serveur non lancé). */
+function stubMeDown() {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("réseau")));
 }
 
-function wrapperWith(storage: AuthStorage) {
-  return ({ children }: { children: ReactNode }) => (
-    <AuthProvider storage={storage}>{children}</AuthProvider>
-  );
+function wrapper({ children }: { children: ReactNode }) {
+  return <AuthProvider>{children}</AuthProvider>;
 }
 
 afterEach(() => {
@@ -54,61 +30,38 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("AuthContext — fin de session", () => {
-  it("expireSession : retour anonyme, jeton purgé, message d'expiration affiché", async () => {
+describe("AuthContext — amorçage local (OPP-181)", () => {
+  it("GET /me réussit → statut ready + identité locale, sans jeton", async () => {
     stubMeOk();
-    const storage = memoryStorage("good");
-    const { result } = renderHook(() => useAuth(), { wrapper: wrapperWith(storage) });
+    const { result } = renderHook(() => useAuth(), { wrapper });
 
-    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.identity).toEqual(ME);
 
-    act(() => result.current.expireSession());
-
-    expect(result.current.status).toBe("anonymous");
-    expect(result.current.token).toBeNull();
-    expect(result.current.error).toBe(SESSION_EXPIRED_MESSAGE);
-    expect(storage.get()).toBeNull(); // jeton purgé du stockage
+    // Aucun en-tête Authorization n'est envoyé (local-first).
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init?.headers ?? {}).Authorization).toBeUndefined();
   });
 
-  it("logout volontaire : retour anonyme SANS message (différencié de l'expiration)", async () => {
-    stubMeOk();
-    const storage = memoryStorage("good");
-    const { result } = renderHook(() => useAuth(), { wrapper: wrapperWith(storage) });
+  it("API injoignable → statut error, identité nulle (pas de login)", async () => {
+    stubMeDown();
+    const { result } = renderHook(() => useAuth(), { wrapper });
 
-    await waitFor(() => expect(result.current.status).toBe("authenticated"));
-
-    act(() => result.current.logout());
-
-    expect(result.current.status).toBe("anonymous");
-    expect(result.current.error).toBeNull();
-    expect(storage.get()).toBeNull();
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.identity).toBeNull();
   });
 
-  it("un login efface le message d'expiration de la session précédente", async () => {
+  it("retry relance GET /me et récupère une API revenue", async () => {
+    stubMeDown();
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    // L'API redevient joignable, puis on réessaie.
     stubMeOk();
-    const storage = memoryStorage("good");
-    const { result } = renderHook(() => useAuth(), { wrapper: wrapperWith(storage) });
+    act(() => result.current.retry());
 
-    await waitFor(() => expect(result.current.status).toBe("authenticated"));
-    act(() => result.current.expireSession());
-    expect(result.current.error).toBe(SESSION_EXPIRED_MESSAGE);
-
-    await act(async () => {
-      await result.current.login("good");
-    });
-
-    expect(result.current.status).toBe("authenticated");
-    expect(result.current.error).toBeNull();
-  });
-
-  it("jeton stocké refusé au démarrage (/me 401) : anonyme AVEC message d'expiration", async () => {
-    stubMe401();
-    const storage = memoryStorage("stale");
-    const { result } = renderHook(() => useAuth(), { wrapper: wrapperWith(storage) });
-
-    await waitFor(() => expect(result.current.status).toBe("anonymous"));
-    expect(result.current.token).toBeNull();
-    expect(result.current.error).toBe(SESSION_EXPIRED_MESSAGE);
-    expect(storage.get()).toBeNull(); // jeton périmé purgé du stockage
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.identity).toEqual(ME);
   });
 });

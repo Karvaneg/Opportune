@@ -7,8 +7,8 @@ const API_BASE = "/api";
 /**
  * Erreur HTTP de l'API portant le `status` (et le corps si disponible).
  *
- * On conserve le `status` — au lieu d'un simple `Error` — pour que la couche d'auth
- * puisse réagir spécifiquement au 401 (purge du jeton), cf. OPP-100.
+ * On conserve le `status` — au lieu d'un simple `Error` — pour que l'appelant distingue les
+ * cas (400 saisie, 403 rôle, 404 neutre, 409 conflit) et réagisse en conséquence.
  */
 export class ApiHttpError extends Error {
   readonly status: number;
@@ -48,13 +48,12 @@ async function parseOrThrow<T>(response: Response): Promise<T> {
 }
 
 /**
- * Lecture authentifiée de l'API (GET). Renvoie le JSON typé `T` en cas de succès,
- * lève un `ApiHttpError` (status préservé) sinon.
+ * Lecture de l'API (GET). Renvoie le JSON typé `T` en cas de succès, lève un `ApiHttpError`
+ * (status préservé) sinon. Local-first (OPP-181) : aucun jeton, pas d'en-tête `Authorization`.
  */
-export async function apiFetch<T>(path: string, token: string): Promise<T> {
+export async function apiFetch<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
-      Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
   });
@@ -63,15 +62,13 @@ export async function apiFetch<T>(path: string, token: string): Promise<T> {
 }
 
 /**
- * Écriture authentifiée de l'API (POST + corps JSON). Même contrat d'erreur qu'`apiFetch`
- * (`ApiHttpError` porteur du `status`) — indispensable pour que la couche d'auth réagisse
- * au 401 et que l'appelant distingue 400/403/404/409 (cf. OPP-105).
+ * Écriture de l'API (POST + corps JSON). Même contrat d'erreur qu'`apiFetch`
+ * (`ApiHttpError` porteur du `status`) — l'appelant distingue 400/403/404/409 (cf. OPP-105).
  */
-export async function apiPost<T>(path: string, token: string, body: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       Accept: "application/json",
       "Content-Type": "application/json",
     },
@@ -82,14 +79,13 @@ export async function apiPost<T>(path: string, token: string, body: unknown): Pr
 }
 
 /**
- * Mise à jour authentifiée (PUT + corps JSON). Même contrat d'erreur qu'`apiPost` : utilisé
- * pour l'édition d'une lettre (`PUT /recommendations/{id}/letter`, OPP-147).
+ * Mise à jour (PUT + corps JSON). Même contrat d'erreur qu'`apiPost` : utilisé pour l'édition
+ * d'une lettre (`PUT /recommendations/{id}/letter`, OPP-147).
  */
-export async function apiPut<T>(path: string, token: string, body: unknown): Promise<T> {
+export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "PUT",
     headers: {
-      Authorization: `Bearer ${token}`,
       Accept: "application/json",
       "Content-Type": "application/json",
     },
@@ -100,14 +96,13 @@ export async function apiPut<T>(path: string, token: string, body: unknown): Pro
 }
 
 /**
- * Suppression authentifiée (DELETE). Même contrat d'erreur qu'`apiFetch` (`ApiHttpError`
- * porteur du `status`) — l'appelant distingue 403/404 et `QueryCache.onError` purge le 401.
+ * Suppression (DELETE). Même contrat d'erreur qu'`apiFetch` (`ApiHttpError` porteur du
+ * `status`) — l'appelant distingue 403/404.
  */
-export async function apiDelete<T>(path: string, token: string): Promise<T> {
+export async function apiDelete<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "DELETE",
     headers: {
-      Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
   });

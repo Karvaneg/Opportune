@@ -1,5 +1,4 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useAuth } from "../auth/AuthContext";
 import { apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
 import type {
@@ -26,14 +25,12 @@ export const offerKeys = {
  * au-delà d'une page. Plus récentes d'abord (tri serveur, OPP-152).
  */
 export function useOffers(page: number, candidateId: string, stage = "") {
-  const { token } = useAuth();
   const params = new URLSearchParams({ page: String(page) });
   if (candidateId) params.set("candidate_id", candidateId);
   if (stage) params.set("stage", stage);
   return useQuery({
     queryKey: offerKeys.catalog(page, candidateId, stage),
-    queryFn: () => apiFetch<OffersCatalogPage>(`/offers?${params}`, token!),
-    enabled: Boolean(token),
+    queryFn: () => apiFetch<OffersCatalogPage>(`/offers?${params}`),
     placeholderData: keepPreviousData, // évite le clignotement entre pages/candidats/étapes
   });
 }
@@ -57,7 +54,7 @@ export interface AddOfferVariables {
  */
 export function useAddOffer() {
   return useApiMutation<OfferSummary, AddOfferVariables>({
-    mutationFn: (variables, token) => apiPost<OfferSummary>("/offers", token, variables),
+    mutationFn: (variables) => apiPost<OfferSummary>("/offers", variables),
     invalidateKeys: () => [offerKeys.all],
   });
 }
@@ -87,8 +84,8 @@ export const collectJobKeys = {
  */
 export function useStartCollect() {
   return useApiMutation<CollectionJobStart, CollectOffersVariables>({
-    mutationFn: (variables, token) =>
-      apiPost<CollectionJobStart>("/collect", token, variables),
+    mutationFn: (variables) =>
+      apiPost<CollectionJobStart>("/collect", variables),
   });
 }
 
@@ -100,11 +97,10 @@ export function useStartCollect() {
  * l'appelant (il connaît le `stored` final et évite de recharger pour rien).
  */
 export function useCollectJob(jobId: string | null) {
-  const { token } = useAuth();
   return useQuery({
     queryKey: collectJobKeys.job(jobId ?? ""),
-    queryFn: () => apiFetch<CollectionJob>(`/collect/${jobId}`, token!),
-    enabled: Boolean(token && jobId),
+    queryFn: () => apiFetch<CollectionJob>(`/collect/${jobId}`),
+    enabled: Boolean(jobId),
     refetchInterval: (query) =>
       query.state.data?.status === "running" ? COLLECT_POLL_INTERVAL_MS : false,
   });
@@ -128,10 +124,9 @@ export interface EvaluateOfferVariables {
  */
 export function useEvaluateOffer() {
   return useApiMutation<RecommendationDetail, EvaluateOfferVariables>({
-    mutationFn: ({ candidateId, offerId }, token) =>
+    mutationFn: ({ candidateId, offerId }) =>
       apiPost<RecommendationDetail>(
         `/candidates/${encodeURIComponent(candidateId)}/offers/${encodeURIComponent(offerId)}/rescore`,
-        token,
         {},
       ),
   });

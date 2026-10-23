@@ -4,12 +4,6 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProfileSummaryCard } from "../src/components/ProfileSummaryCard";
 import { AuthProvider } from "../src/auth/AuthContext";
-import type { AuthStorage } from "../src/auth/authStorage";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React", "Node.js"], contract_type: "CDI",
@@ -43,7 +37,7 @@ function stub(profile: unknown) {
 function renderCard() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <ProfileSummaryCard candidateId="cand-1" />

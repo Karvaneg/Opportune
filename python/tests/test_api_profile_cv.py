@@ -10,7 +10,7 @@ import base64
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, AuthProvider, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import ProfileValidationError, create_profile
 from app.db import connect
 from app.decision_service import DecisionService
@@ -61,18 +61,6 @@ def _api(cv_intake, *, auth=None) -> HermesApi:
         runs=RunStore(conn),
     )
     return HermesApi(orchestrator, auth=auth, cv_intake=cv_intake)
-
-
-def _hdr(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
-
-
-def _auth():
-    return AuthProvider({
-        "tok-rev": User("rev", REVIEWER, frozenset({"cand-1"})),
-        "tok-view": User("view", "viewer", frozenset({"cand-1"})),
-        "tok-other": User("other", REVIEWER, frozenset({"cand-2"})),
-    })
 
 
 def _post(api, body, headers=None, candidate="cand-1"):
@@ -142,13 +130,26 @@ def test_oversized_pdf_is_400_without_calling_intake():
 
 # --- Auth --------------------------------------------------------------------
 
-def test_requires_token_owner_and_reviewer():
-    api = _api(FakeCvIntake(result=_profile()), auth=_auth())
+def test_cv_intake_owner_and_reviewer_gated():
     body = {"pdf_base64": PDF_B64, "contract_type": "CDI"}
-    assert _post(api, body, None).status == 401  # pas de jeton
-    assert _post(api, body, _hdr("tok-other")).status == 404  # owner d'un autre candidat
-    assert _post(api, body, _hdr("tok-view")).status == 403  # propriétaire mais non reviewer
-    assert _post(api, body, _hdr("tok-rev")).status == 200
+    # Propriétaire d'un AUTRE candidat → 404 neutre (anti-énumération).
+    foreign = _api(
+        FakeCvIntake(result=_profile()),
+        auth=LocalAuthProvider(User("autre", REVIEWER, frozenset({"cand-2"}))),
+    )
+    assert _post(foreign, body).status == 404
+    # Propriétaire mais non reviewer → 403.
+    viewer = _api(
+        FakeCvIntake(result=_profile()),
+        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
+    )
+    assert _post(viewer, body).status == 403
+    # Propriétaire reviewer → 200.
+    owner = _api(
+        FakeCvIntake(result=_profile()),
+        auth=LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"}))),
+    )
+    assert _post(owner, body).status == 200
 
 
 # --- Route optionnelle / méthode ---------------------------------------------

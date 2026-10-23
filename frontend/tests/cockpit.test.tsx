@@ -6,12 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CockpitPage } from "../src/pages/CockpitPage";
 import { AuthProvider } from "../src/auth/AuthContext";
 import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
-import type { AuthStorage } from "../src/auth/authStorage";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 const STATS = { a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12 };
 
@@ -66,7 +60,7 @@ function OffersProbe() {
 function renderCockpit() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <MemoryRouter initialEntries={["/"]}>

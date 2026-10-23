@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "../auth/AuthContext";
 import { apiDelete, apiFetch, apiPost, apiPut } from "./client";
 import { useApiMutation } from "./mutations";
 import type { Letter } from "./types";
@@ -15,15 +14,13 @@ export const letterKeys = {
  * l'appelant distingue ce 404 d'une vraie erreur pour proposer la génération.
  */
 export function useLetter(recommendationId: string) {
-  const { token } = useAuth();
   return useQuery({
     queryKey: letterKeys.detail(recommendationId),
     queryFn: () =>
       apiFetch<Letter>(
         `/recommendations/${encodeURIComponent(recommendationId)}/letter`,
-        token!,
       ),
-    enabled: Boolean(token) && recommendationId.length > 0,
+    enabled: recommendationId.length > 0,
     retry: false,
   });
 }
@@ -36,10 +33,9 @@ export function useLetter(recommendationId: string) {
  */
 export function useGenerateLetter(recommendationId: string) {
   return useApiMutation<Letter, { regenerate?: boolean }>({
-    mutationFn: (variables, token) =>
+    mutationFn: (variables) =>
       apiPost<Letter>(
         `/recommendations/${encodeURIComponent(recommendationId)}/letter`,
-        token,
         variables ?? {},
       ),
     invalidateKeys: () => [letterKeys.detail(recommendationId)],
@@ -52,10 +48,9 @@ export function useGenerateLetter(recommendationId: string) {
  */
 export function useEditLetter(recommendationId: string) {
   return useApiMutation<Letter, string>({
-    mutationFn: (body, token) =>
+    mutationFn: (body) =>
       apiPut<Letter>(
         `/recommendations/${encodeURIComponent(recommendationId)}/letter`,
-        token,
         { body },
       ),
     invalidateKeys: () => [letterKeys.detail(recommendationId)],
@@ -68,10 +63,9 @@ export function useEditLetter(recommendationId: string) {
  */
 export function useDeleteLetter(recommendationId: string) {
   return useApiMutation<{ deleted: string }, void>({
-    mutationFn: (_variables, token) =>
+    mutationFn: (_variables) =>
       apiDelete<{ deleted: string }>(
         `/recommendations/${encodeURIComponent(recommendationId)}/letter`,
-        token,
       ),
     invalidateKeys: () => [letterKeys.detail(recommendationId)],
   });

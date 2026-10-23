@@ -10,11 +10,10 @@ Exécution : ``python -m api.server`` (base SQLite via ``OPPORTUNE_DB_PATH``).
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from api.app import HermesApi
-from app.auth import REVIEWER, AuthProvider, TokenRecord, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 
 
 def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
@@ -88,12 +87,12 @@ def create_server(
     return HTTPServer((host, port), make_handler(api))
 
 
-def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
-    """Compose l'API **de production** : orchestrateur + actions + **authentification**.
+def assemble_api(conn, auth: "LocalAuthProvider") -> HermesApi:
+    """Compose l'API **de production** : orchestrateur + actions + **identité locale**.
 
     ``auth`` est **obligatoire** : le point d'entrée réseau ne sert jamais l'API en mode
     ouvert (``auth=None`` est réservé aux tests/compatibilité). Fonction isolée pour être
-    testable — vérifier qu'elle produit bien une API qui **exige** un jeton.
+    testable — vérifier qu'elle produit bien une API portant une identité.
     """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
@@ -115,7 +114,7 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     from hermes.run_store import RunStore
 
     if auth is None:
-        raise ValueError("assemble_api exige un AuthProvider (pas de mode ouvert en prod)")
+        raise ValueError("assemble_api exige un LocalAuthProvider (pas de mode ouvert en prod)")
 
     # Un seul dépôt d'offres partagé entre le scoring (RecommendationService) et l'intake
     # collé (POST /offers) : une offre fraîchement ajoutée est immédiatement évaluable.
@@ -240,55 +239,15 @@ def assemble_api(conn, auth: "AuthProvider") -> HermesApi:
     )
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+def build_local_auth(owned_candidates) -> LocalAuthProvider:
+    """Compose l'identité locale : un unique utilisateur ``reviewer`` propriétaire du périmètre.
 
-
-def _ttl_to_expires_at(ttl_seconds: int, *, issued_at: datetime | None = None) -> str:
-    """Échéance ISO 8601 = instant d'émission + ``ttl_seconds`` (émission = maintenant UTC)."""
-    return ((issued_at or _utcnow()) + timedelta(seconds=ttl_seconds)).isoformat()
-
-
-def parse_ttl_seconds(raw: str | None) -> int | None:
-    """Valide ``OPPORTUNE_API_TOKEN_TTL`` : entier **strictement positif** de secondes, ou ``None``.
-
-    ``None``/chaîne vide → ``None`` (jeton sans échéance, rétro-compat). Toute autre valeur
-    non conforme (non entière, nulle ou négative) → ``ValueError`` explicite : on refuse de
-    démarrer sur une échéance ambiguë plutôt que d'émettre un jeton mort-né ou de planter
-    sur un ``int()`` brut. Cohérent avec le fail-fast du jeton manquant.
+    Mono-utilisateur, sans jeton (OPP-181) : l'identité est fabriquée au boot à partir du
+    périmètre fourni (``OPPORTUNE_API_CANDIDATES`` pour l'instant ; dérivation dynamique depuis
+    la base en OPP-183). Isolé de ``main`` pour être testable sans démarrer de serveur.
     """
-    if raw is None or raw == "":
-        return None
-    try:
-        ttl = int(raw)
-    except ValueError:
-        raise ValueError(
-            f"OPPORTUNE_API_TOKEN_TTL invalide ({raw!r}) : entier positif de secondes attendu."
-        ) from None
-    if ttl <= 0:
-        raise ValueError(
-            f"OPPORTUNE_API_TOKEN_TTL invalide ({ttl}) : doit être strictement positif."
-        )
-    return ttl
-
-
-def build_auth(
-    token: str,
-    owned_candidates,
-    *,
-    expires_at: str | None = None,
-    now=None,
-) -> AuthProvider:
-    """Compose un ``AuthProvider`` mono-jeton (rôle ``reviewer``), échéance optionnelle.
-
-    ``expires_at=None`` → jeton **sans expiration** (``User`` nu) ; sinon un ``TokenRecord``
-    porteur de l'échéance. ``now`` (horloge de vérification) est transmis tel quel à
-    ``AuthProvider``. Isolé de ``main`` pour être testable sans démarrer de serveur.
-    """
-    user = User(id="demo", role=REVIEWER, owned_candidates=frozenset(owned_candidates))
-    record: User | TokenRecord = user if expires_at is None else TokenRecord(user, expires_at)
-    kwargs = {} if now is None else {"now": now}
-    return AuthProvider({token: record}, **kwargs)
+    user = User(id="moi", role=REVIEWER, owned_candidates=frozenset(owned_candidates))
+    return LocalAuthProvider(user)
 
 
 def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
@@ -296,20 +255,10 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
 
     from app.db import connect
 
-    token = os.environ.get("OPPORTUNE_API_TOKEN")
-    if not token:
-        raise SystemExit(
-            "OPPORTUNE_API_TOKEN manquant : l'API ne démarre jamais sans authentification."
-        )
+    # Local-first (OPP-181) : aucun jeton requis. Le périmètre reste lu depuis l'env pour
+    # l'instant ; OPP-183 le dérivera de la base (« toutes mes recherches »).
     owned = [c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c]
-    # Expiration réelle si OPPORTUNE_API_TOKEN_TTL (secondes) est fourni ; sinon jeton sans
-    # échéance (rétro-compat). Câblage pur : toute la logique vit dans AuthProvider.
-    try:
-        ttl = parse_ttl_seconds(os.environ.get("OPPORTUNE_API_TOKEN_TTL"))
-    except ValueError as err:
-        raise SystemExit(str(err)) from err
-    expires_at = _ttl_to_expires_at(ttl) if ttl is not None else None
-    auth = build_auth(token, owned, expires_at=expires_at)
+    auth = build_local_auth(owned)
 
     server = create_server(assemble_api(connect(), auth))
     host, port = server.server_address

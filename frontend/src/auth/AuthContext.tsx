@@ -7,124 +7,54 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiHttpError, apiFetch } from "../api/client";
+import { apiFetch } from "../api/client";
 import type { Me } from "../api/types";
-import { purgeLegacyLocalToken, sessionAuthStorage, type AuthStorage } from "./authStorage";
 
-/** `checking` = jeton en cours de vérification (`GET /me`) ; on ne montre pas la coquille. */
-type AuthStatus = "checking" | "anonymous" | "authenticated";
-
-/** Message affiché à la barrière quand la session a expiré **en cours d'usage** (OPP-102). */
-export const SESSION_EXPIRED_MESSAGE = "Session expirée — veuillez vous reconnecter.";
+/**
+ * État d'amorçage de l'app locale (OPP-181). Plus de jeton ni de login : Opportune est local
+ * et mono-utilisateur. `checking` = on interroge `GET /me` au démarrage ; `ready` = l'API a
+ * répondu, l'identité locale est connue ; `error` = l'API est injoignable (serveur non lancé),
+ * on propose de réessayer plutôt qu'une barrière de login.
+ */
+type AuthStatus = "checking" | "ready" | "error";
 
 interface AuthValue {
   status: AuthStatus;
-  token: string | null;
   identity: Me | null;
-  error: string | null;
-  /** Vérifie le jeton via `GET /me` ; n'authentifie que s'il est **accepté** (≠ 401). */
-  login: (token: string) => Promise<void>;
-  /** Déconnexion volontaire (bouton) : retour anonyme, sans message d'erreur. */
-  logout: () => void;
-  /**
-   * Fin de session **subie** : un 401 survenu alors qu'on était authentifié (jeton
-   * expiré/révoqué). Même effet que `logout`, mais affiche `SESSION_EXPIRED_MESSAGE` pour
-   * expliquer le retour à la barrière plutôt que de larguer l'utilisateur sans contexte.
-   */
-  expireSession: () => void;
+  /** Relance `GET /me` — bouton « Réessayer » de l'écran « API injoignable ». */
+  retry: () => void;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-export function AuthProvider({
-  children,
-  storage = sessionAuthStorage,
-}: {
-  children: ReactNode;
-  storage?: AuthStorage;
-}) {
-  const [token, setToken] = useState<string | null>(() => storage.get());
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [status, setStatus] = useState<AuthStatus>("checking");
   const [identity, setIdentity] = useState<Me | null>(null);
-  const [status, setStatus] = useState<AuthStatus>(() =>
-    storage.get() ? "checking" : "anonymous",
-  );
-  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
-  // Remise à l'état anonyme, partagée par la déconnexion volontaire et l'expiration subie.
-  // Le `reason` (null = aucun) distingue les deux côté barrière de login.
-  const reset = useCallback(
-    (reason: string | null) => {
-      storage.clear();
-      setToken(null);
-      setIdentity(null);
-      setStatus("anonymous");
-      setError(reason);
-    },
-    [storage],
-  );
-
-  // Migration OPP-102 : purge une fois l'éventuel jeton hérité de `localStorage` (défaut
-  // d'avant la bascule vers `sessionStorage`), pour ne pas laisser un secret y traîner.
+  // Au démarrage (et à chaque « Réessayer ») : sonde `GET /me`. Succès → identité locale et
+  // app prête ; échec (API down) → état d'erreur, jamais de login. Aucun jeton n'est envoyé.
   useEffect(() => {
-    purgeLegacyLocalToken();
-  }, []);
-
-  // Au démarrage : un jeton stocké est **revérifié** (il a pu expirer). Tant qu'on ne l'a
-  // pas confirmé via /me, on reste en `checking` — jamais de coquille sur un jeton périmé.
-  useEffect(() => {
-    const stored = storage.get();
-    if (!stored) return;
     let cancelled = false;
-    apiFetch<Me>("/me", stored)
+    setStatus("checking");
+    apiFetch<Me>("/me")
       .then((me) => {
         if (cancelled) return;
         setIdentity(me);
-        setStatus("authenticated");
+        setStatus("ready");
       })
       .catch(() => {
         if (cancelled) return;
-        // Le jeton de cette session d'onglet n'est plus accepté → même traitement qu'une
-        // expiration en cours d'usage : retour anonyme AVEC message, pas un largage muet.
-        reset(SESSION_EXPIRED_MESSAGE);
+        setIdentity(null);
+        setStatus("error");
       });
     return () => {
       cancelled = true;
     };
-  }, [storage, reset]);
+  }, [attempt]);
 
-  const login = useCallback(
-    async (next: string) => {
-      const trimmed = next.trim();
-      if (!trimmed) return;
-      setError(null);
-      setStatus("checking");
-      try {
-        const me = await apiFetch<Me>("/me", trimmed);
-        storage.set(trimmed);
-        setToken(trimmed);
-        setIdentity(me);
-        setStatus("authenticated");
-      } catch (e) {
-        setToken(null);
-        setIdentity(null);
-        setStatus("anonymous");
-        setError(
-          e instanceof ApiHttpError && e.status === 401
-            ? "Jeton invalide."
-            : "Connexion impossible — API injoignable ?",
-        );
-      }
-    },
-    [storage],
-  );
-
-  const logout = useCallback(() => reset(null), [reset]);
-  const expireSession = useCallback(() => reset(SESSION_EXPIRED_MESSAGE), [reset]);
-
-  const value = useMemo(
-    () => ({ status, token, identity, error, login, logout, expireSession }),
-    [status, token, identity, error, login, logout, expireSession],
-  );
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  const value = useMemo(() => ({ status, identity, retry }), [status, identity, retry]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

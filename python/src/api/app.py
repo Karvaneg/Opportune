@@ -36,13 +36,13 @@ message) sous **confirmation explicite obligatoire** (``{"confirm": true}``) : u
 ``approved`` (sinon 409) ; ils sont idempotents (``already_confirmed``) et **simulés** à ce
 stade. Ces routes ne sont montées que si un ``ActionService`` est fourni à ``HermesApi``.
 
-Sécurité (OPP-097) : si un ``AuthProvider`` est fourni, **toute** route métier exige un jeton
-``Authorization: Bearer`` valide (401 sinon), puis un contrôle de **propriété** (l'utilisateur
-n'accède qu'à ses candidats/runs — sinon **404**, on ne révèle pas l'existence d'une ressource
-d'autrui) et, pour la validation humaine et les actions sensibles, le **rôle ``reviewer``**
-(sinon **403**). Le propriétaire est toujours résolu depuis la **ressource persistée**, jamais
-d'un identifiant du corps. Sans ``AuthProvider`` (``auth=None``), l'API reste **ouverte** :
-mode de **compatibilité/test uniquement**, à ne pas utiliser en production.
+Identité (OPP-181) : si un ``LocalAuthProvider`` est fourni, chaque requête est résolue en
+l'unique utilisateur local (aucun jeton — local-first), puis soumise à un contrôle de
+**propriété** (l'utilisateur n'accède qu'à ses candidats/runs — sinon **404**, on ne révèle pas
+l'existence d'une ressource d'autrui) et, pour la validation humaine et les actions sensibles,
+au **rôle ``reviewer``** (sinon **403**). Le propriétaire est toujours résolu depuis la
+**ressource persistée**, jamais d'un identifiant du corps. Sans fournisseur (``auth=None``),
+l'API reste **ouverte** : mode de **compatibilité/test uniquement**, sans identité applicative.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ if TYPE_CHECKING:
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.candidate_profile import ProfileValidationError
 from app.collection_jobs import CollectionAlreadyRunning
-from app.auth import AuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.cover_letter import CoverLetterError
 from app.decision import VALIDATION_STATUSES, Decision, decision_id
 from app.decision_service import PRE_EVALUATION_STATUSES, UnknownDecisionError
@@ -227,7 +227,7 @@ class HermesApi:
         self,
         orchestrator: HermesOrchestrator,
         actions: ActionService | None = None,
-        auth: AuthProvider | None = None,
+        auth: LocalAuthProvider | None = None,
         offer_intake: OfferIntake | None = None,
         letters: LetterService | None = None,
         offer_url_intake: OfferUrlIntake | None = None,
@@ -261,10 +261,10 @@ class HermesApi:
         # Optionnel : si absent (pas de LLM câblé), POST /candidates/{id}/profile/cv n'est pas
         # monté (404 neutre). Injecté en prod (Ollama + pypdf), faux en test.
         self.cv_intake = cv_intake
-        # Fournisseur d'authentification. ``None`` = **mode ouvert** (compatibilité/test) :
-        # aucune vérification. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur
-        # ``None`` en production. Avec un fournisseur, toute route métier exige un jeton
-        # valide (401) puis contrôle propriété/rôle (404/403).
+        # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
+        # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
+        # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
+        # subit le contrôle propriété/rôle (404/403).
         self.auth = auth
 
     def dispatch(
@@ -292,7 +292,11 @@ class HermesApi:
             return Response(500, {"error": "erreur interne"})
 
     def _authenticate(self, headers: dict) -> User | None:
-        """Résout l'utilisateur courant : ``None`` en mode ouvert, sinon un ``User`` ou 401."""
+        """Résout l'utilisateur courant : ``None`` en mode ouvert, sinon l'utilisateur local.
+
+        En local (``LocalAuthProvider``) une identité est toujours résolue. Le filet 401 reste
+        pour un futur fournisseur (OPP-183) qui pourrait, lui, refuser une requête.
+        """
         if self.auth is None:
             return None
         user = self.auth.authenticate(headers)

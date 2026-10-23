@@ -76,8 +76,8 @@ Chaque brique V2 a son propre README détaillé :
 
 ### Back — API Python
 
-L'API **refuse de démarrer sans jeton** (`OPPORTUNE_API_TOKEN`) : elle n'est jamais exposée
-sans authentification.
+Opportune est **local et mono-utilisateur** : l'API démarre **sans jeton** (local-first,
+OPP-181) et n'écoute que sur `localhost`.
 
 **Démarrage simplifié (recommandé, OPP-153)** — depuis la racine du dépôt :
 
@@ -87,17 +87,15 @@ bash scripts/serve-api.sh                      # écoute sur http://127.0.0.1:80
 
 Le script lit toute la configuration depuis `python/.env` (**source unique** — plus de
 variables à retaper), **auto-détecte `OLLAMA_HOST`** sous WSL et utilise le venv s'il existe.
-Renseigner au minimum `OPPORTUNE_API_TOKEN` et `OPPORTUNE_API_CANDIDATES` dans `python/.env`
-(modèle sans secret : [`python/.env.example`](python/.env.example)). Détails :
+Renseigner au minimum `OPPORTUNE_API_CANDIDATES` dans `python/.env`
+(modèle : [`python/.env.example`](python/.env.example)). Détails :
 [`python/README.md`](python/README.md#lancer-lapi).
 
 **Démarrage manuel** (variables à l'ancienne) — depuis `python/` :
 
 ```bash
-export OPPORTUNE_API_TOKEN=mon-jeton          # requis
 export OPPORTUNE_API_CANDIDATES=cand-marie    # périmètre : candidats possédés (CSV)
 export OPPORTUNE_DB_PATH=data/opportune.db     # base SQLite (défaut : data/opportune.db)
-# export OPPORTUNE_API_TOKEN_TTL=3600          # optionnel : expiration du jeton (secondes)
 
 python -m api.server                           # écoute sur http://127.0.0.1:8000
 ```

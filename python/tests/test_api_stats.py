@@ -1,7 +1,8 @@
 """Tests de l'endpoint d'agrégats du cockpit (OPP-163).
 
-``GET /candidates/{id}/stats`` : compteurs pré-calculés, owner-gated, régression transport.
-Vrais dépôts SQLite en mémoire ; aucune I/O réseau.
+``GET /candidates/{id}/stats`` : compteurs pré-calculés de l'entonnoir, candidat inconnu → 404.
+Vrais dépôts SQLite en mémoire ; aucune I/O réseau. Le gating identité/rôle est couvert par
+``test_api_auth.py`` (local-first, OPP-181).
 """
 
 import itertools
@@ -11,7 +12,7 @@ import pytest
 from api.app import HermesApi
 from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
-from app.auth import REVIEWER, AuthProvider, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision import decision_id
@@ -33,10 +34,6 @@ def _offer(**overrides) -> Offer:
     )
     data.update(overrides)
     return Offer(**data)
-
-
-def _hdr(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -65,11 +62,9 @@ def env():
         decisions, applications, OutboundMessageActionStore(conn),
         new_id=lambda: next(ids), now=lambda: "2026-09-05T00:00:00+00:00",
     )
-    # rev possède cand-1 (reviewer) ; str est reviewer mais possède un autre périmètre.
-    auth = AuthProvider({
-        "tok-rev": User("rev", REVIEWER, frozenset({"cand-1"})),
-        "tok-str": User("str", REVIEWER, frozenset({"cand-2"})),
-    })
+    # Identité locale : propriétaire reviewer de cand-1 (et cand-2, laissé sans profil pour le
+    # cas « candidat inconnu »).
+    auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1", "cand-2"})))
     api = HermesApi(orchestrator, actions, auth)
     yield api
     conn.close()
@@ -77,7 +72,7 @@ def env():
 
 def test_stats_all_undecided_are_a_etudier(env):
     # Entonnoir piloté par les décisions : sans décision, les 3 offres sont « à étudier ».
-    resp = env.dispatch("GET", "/candidates/cand-1/stats", None, _hdr("tok-rev"))
+    resp = env.dispatch("GET", "/candidates/cand-1/stats", None, None)
     assert resp.status == 200
     assert resp.body == {"a_etudier": 3, "a_postuler": 0, "postule": 0, "offres_total": 3}
 
@@ -86,13 +81,13 @@ def test_stats_funnel_follows_my_decisions(env):
     # Approuver a → à postuler ; approuver + candidater b → postulé ; c reste à étudier.
     for oid in ("a", "b"):
         rid = decision_id("cand-1", oid)
-        env.dispatch("POST", f"/candidates/cand-1/offers/{oid}/rescore", {}, _hdr("tok-rev"))
-        env.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, _hdr("tok-rev"))
+        env.dispatch("POST", f"/candidates/cand-1/offers/{oid}/rescore", {}, None)
+        env.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, None)
     rid_b = decision_id("cand-1", "b")
-    env.dispatch("POST", f"/applications/{rid_b}/confirm", {"confirm": True}, _hdr("tok-rev"))
-    env.dispatch("POST", f"/applications/{rid_b}/applied", {}, _hdr("tok-rev"))
+    env.dispatch("POST", f"/applications/{rid_b}/confirm", {"confirm": True}, None)
+    env.dispatch("POST", f"/applications/{rid_b}/applied", {}, None)
 
-    stats = env.dispatch("GET", "/candidates/cand-1/stats", None, _hdr("tok-rev")).body
+    stats = env.dispatch("GET", "/candidates/cand-1/stats", None, None).body
     assert stats == {"a_etudier": 1, "a_postuler": 1, "postule": 1, "offres_total": 3}
 
 
@@ -100,11 +95,11 @@ def test_stats_coherent_with_catalog_funnel(env):
     # Cohérence cartes ↔ catalogue : les compteurs égalent l'entonnoir dérivé de l'état
     # (décision + candidature) que le catalogue expose par offre. Approuve a pour un cas non trivial.
     rid = decision_id("cand-1", "a")
-    env.dispatch("POST", "/candidates/cand-1/offers/a/rescore", {}, _hdr("tok-rev"))
-    env.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, _hdr("tok-rev"))
+    env.dispatch("POST", "/candidates/cand-1/offers/a/rescore", {}, None)
+    env.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, None)
 
-    catalog = env.dispatch("GET", "/offers?candidate_id=cand-1", None, _hdr("tok-rev")).body
-    stats = env.dispatch("GET", "/candidates/cand-1/stats", None, _hdr("tok-rev")).body
+    catalog = env.dispatch("GET", "/offers?candidate_id=cand-1", None, None).body
+    stats = env.dispatch("GET", "/candidates/cand-1/stats", None, None).body
 
     def stage(i):
         if i["applied"]:
@@ -122,19 +117,7 @@ def test_stats_coherent_with_catalog_funnel(env):
     assert stats["offres_total"] == catalog["total"]
 
 
-def test_stats_owner_gated_returns_404_out_of_scope(env):
-    # str est reviewer mais ne possède pas cand-1 : 404 (anti-énumération, pas 403 distinctif).
-    resp = env.dispatch("GET", "/candidates/cand-1/stats", None, _hdr("tok-str"))
-    assert resp.status == 404
-
-
-def test_stats_requires_token(env):
-    # Régression transport : GET sans jeton → 401.
-    resp = env.dispatch("GET", "/candidates/cand-1/stats", None, {})
-    assert resp.status == 401
-
-
 def test_stats_unknown_candidate_is_404(env):
-    # cand-2 est dans le périmètre de tok-str mais n'a aucun profil : candidat inconnu → 404.
-    resp = env.dispatch("GET", "/candidates/cand-2/stats", None, _hdr("tok-str"))
+    # cand-2 est dans le périmètre mais n'a aucun profil : candidat inconnu → 404.
+    resp = env.dispatch("GET", "/candidates/cand-2/stats", None, None)
     assert resp.status == 404
