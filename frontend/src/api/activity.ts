@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "./client";
 import type { ActivityEvent } from "./types";
 
@@ -14,14 +13,12 @@ export const activityKeys = {
  * le bloc « Dernière activité » du cockpit. Désactivé sans candidat ciblé (périmètre vide).
  */
 export function useCandidateActivity(candidateId: string) {
-  const { token } = useAuth();
   return useQuery({
     queryKey: activityKeys.candidate(candidateId),
     queryFn: () =>
       apiFetch<{ items: ActivityEvent[] }>(
         `/candidates/${encodeURIComponent(candidateId)}/activity`,
-        token!,
       ),
-    enabled: Boolean(token) && candidateId !== "",
+    enabled: candidateId !== "",
   });
 }

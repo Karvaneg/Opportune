@@ -8,7 +8,7 @@ corps, 404 profil absent, route optionnelle, et méthode non supportée.
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, AuthProvider, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision_service import DecisionService
@@ -52,16 +52,9 @@ def _service(*profiles):
     return ProfileService(FakeProfileStore(*profiles))
 
 
-def _hdr(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
-
-
-def _auth():
-    return AuthProvider({
-        "tok-rev": User("rev", REVIEWER, frozenset({"cand-1"})),
-        "tok-view": User("view", "viewer", frozenset({"cand-1"})),
-        "tok-other": User("other", REVIEWER, frozenset({"cand-2"})),
-    })
+def _auth() -> LocalAuthProvider:
+    # Identité locale par défaut des tests : propriétaire reviewer de cand-1.
+    return LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"})))
 
 
 # --- GET ---------------------------------------------------------------------
@@ -115,11 +108,14 @@ def test_get_profile_route_absent_without_service():
 
 
 def test_get_profile_owner_gated():
-    api = _api(_service(_profile()), auth=_auth())
-    assert api.dispatch("GET", "/candidates/cand-1/profile", None, None).status == 401
     # Propriétaire d'un autre candidat → 404 neutre (anti-énumération).
-    assert api.dispatch("GET", "/candidates/cand-1/profile", None, _hdr("tok-other")).status == 404
-    assert api.dispatch("GET", "/candidates/cand-1/profile", None, _hdr("tok-rev")).status == 200
+    foreign = _api(
+        _service(_profile()),
+        auth=LocalAuthProvider(User("autre", REVIEWER, frozenset({"cand-2"}))),
+    )
+    assert foreign.dispatch("GET", "/candidates/cand-1/profile", None, None).status == 404
+    owner = _api(_service(_profile()), auth=_auth())
+    assert owner.dispatch("GET", "/candidates/cand-1/profile", None, None).status == 200
 
 
 # --- PUT ---------------------------------------------------------------------
@@ -128,7 +124,7 @@ def test_put_profile_updates_skills():
     store = FakeProfileStore(_profile(skills=["React"]))
     api = _api(ProfileService(store), auth=_auth())
     resp = api.dispatch(
-        "PUT", "/candidates/cand-1/profile", {"skills": ["React", "Agile", "Scrum"]}, _hdr("tok-rev")
+        "PUT", "/candidates/cand-1/profile", {"skills": ["React", "Agile", "Scrum"]}
     )
     assert resp.status == 200
     assert set(resp.body["skills"]) >= {"React", "Agile", "Scrum"}
@@ -136,39 +132,45 @@ def test_put_profile_updates_skills():
 
 
 def test_put_profile_requires_reviewer():
-    api = _api(_service(_profile()), auth=_auth())
     body = {"skills": ["React"]}
-    assert api.dispatch("PUT", "/candidates/cand-1/profile", body, _hdr("tok-view")).status == 403
-    assert api.dispatch("PUT", "/candidates/cand-1/profile", body, None).status == 401
-    assert api.dispatch("PUT", "/candidates/cand-1/profile", body, _hdr("tok-rev")).status == 200
+    # Propriétaire sans le rôle reviewer → 403.
+    viewer = _api(
+        _service(_profile()),
+        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
+    )
+    assert viewer.dispatch("PUT", "/candidates/cand-1/profile", body).status == 403
+    # Propriétaire reviewer → 200.
+    owner = _api(_service(_profile()), auth=_auth())
+    assert owner.dispatch("PUT", "/candidates/cand-1/profile", body).status == 200
 
 
 def test_put_profile_owner_gated_before_reviewer():
     # Un reviewer d'un AUTRE candidat ne doit pas distinguer « existe » de « hors périmètre ».
-    api = _api(_service(_profile()), auth=_auth())
-    resp = api.dispatch(
-        "PUT", "/candidates/cand-1/profile", {"skills": ["React"]}, _hdr("tok-other")
+    foreign = _api(
+        _service(_profile()),
+        auth=LocalAuthProvider(User("autre", REVIEWER, frozenset({"cand-2"}))),
     )
+    resp = foreign.dispatch("PUT", "/candidates/cand-1/profile", {"skills": ["React"]})
     assert resp.status == 404
 
 
 @pytest.mark.parametrize("bad", [123, "React", None, [1, 2], ["ok", 3]])
 def test_put_profile_rejects_invalid_skills(bad):
     api = _api(_service(_profile()), auth=_auth())
-    resp = api.dispatch("PUT", "/candidates/cand-1/profile", {"skills": bad}, _hdr("tok-rev"))
+    resp = api.dispatch("PUT", "/candidates/cand-1/profile", {"skills": bad})
     assert resp.status == 400
 
 
 def test_put_profile_empty_skills_is_400():
     api = _api(_service(_profile()), auth=_auth())
-    resp = api.dispatch("PUT", "/candidates/cand-1/profile", {"skills": []}, _hdr("tok-rev"))
+    resp = api.dispatch("PUT", "/candidates/cand-1/profile", {"skills": []})
     assert resp.status == 400
 
 
 def test_put_profile_404_when_candidate_has_no_profile():
     api = _api(_service(), auth=_auth())  # aucun profil
     resp = api.dispatch(
-        "PUT", "/candidates/cand-1/profile", {"skills": ["React"]}, _hdr("tok-rev")
+        "PUT", "/candidates/cand-1/profile", {"skills": ["React"]}
     )
     assert resp.status == 404
 
@@ -176,5 +178,5 @@ def test_put_profile_404_when_candidate_has_no_profile():
 def test_profile_unsupported_method_405():
     api = _api(_service(_profile()), auth=_auth())
     assert api.dispatch(
-        "POST", "/candidates/cand-1/profile", {}, _hdr("tok-rev")
+        "POST", "/candidates/cand-1/profile", {}
     ).status == 405

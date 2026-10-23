@@ -5,13 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewProfileGuide } from "../src/components/NewProfileGuide";
 import { AuthProvider } from "../src/auth/AuthContext";
-import type { AuthStorage } from "../src/auth/authStorage";
 import type { CandidateStats } from "../src/api/types";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -64,7 +58,7 @@ function stubFetch({
 function renderGuide(stats: CandidateStats) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/"]}>
           <Routes>

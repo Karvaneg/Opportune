@@ -4,12 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProfilePanel } from "../src/components/ProfilePanel";
 import { AuthProvider } from "../src/auth/AuthContext";
-import type { AuthStorage } from "../src/auth/authStorage";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React", "Node.js"], contract_type: "CDI",
@@ -94,7 +88,7 @@ function stubFetchWithCv(role = "reviewer") {
 function renderPanel() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <ProfilePanel candidateId="cand-1" />
       </QueryClientProvider>

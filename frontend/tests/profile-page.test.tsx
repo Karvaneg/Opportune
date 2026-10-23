@@ -4,12 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProfilePage } from "../src/pages/ProfilePage";
 import { AuthProvider } from "../src/auth/AuthContext";
 import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
-import type { AuthStorage } from "../src/auth/authStorage";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
@@ -36,7 +30,7 @@ function stub(candidates: string[], role = "reviewer") {
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <ProfilePage />

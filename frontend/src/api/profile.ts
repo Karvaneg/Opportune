@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "../auth/AuthContext";
 import { apiFetch, apiPost, apiPut } from "./client";
 import { useApiMutation } from "./mutations";
 import { offerKeys } from "./offers";
@@ -18,15 +17,13 @@ export const profileKeys = {
  * (candidat sans profil) remonte comme erreur — l'appelant l'affiche sobrement.
  */
 export function useProfile(candidateId: string) {
-  const { token } = useAuth();
   return useQuery({
     queryKey: profileKeys.candidate(candidateId),
     queryFn: () =>
       apiFetch<CandidateProfile>(
         `/candidates/${encodeURIComponent(candidateId)}/profile`,
-        token!,
       ),
-    enabled: Boolean(token) && candidateId !== "",
+    enabled: candidateId !== "",
   });
 }
 
@@ -44,10 +41,9 @@ export interface UpdateProfileSkillsVariables {
  */
 export function useUpdateProfileSkills() {
   return useApiMutation<CandidateProfile, UpdateProfileSkillsVariables>({
-    mutationFn: ({ candidateId, skills }, token) =>
+    mutationFn: ({ candidateId, skills }) =>
       apiPut<CandidateProfile>(
         `/candidates/${encodeURIComponent(candidateId)}/profile`,
-        token,
         { skills },
       ),
     invalidateKeys: ({ candidateId }) => [profileKeys.candidate(candidateId), offerKeys.all],
@@ -70,10 +66,9 @@ export interface UploadCvVariables {
  */
 export function useUploadCv() {
   return useApiMutation<CandidateProfile, UploadCvVariables>({
-    mutationFn: ({ candidateId, pdfBase64, contractType }, token) =>
+    mutationFn: ({ candidateId, pdfBase64, contractType }) =>
       apiPost<CandidateProfile>(
         `/candidates/${encodeURIComponent(candidateId)}/profile/cv`,
-        token,
         { pdf_base64: pdfBase64, contract_type: contractType },
       ),
     invalidateKeys: ({ candidateId }) => [profileKeys.candidate(candidateId), offerKeys.all],

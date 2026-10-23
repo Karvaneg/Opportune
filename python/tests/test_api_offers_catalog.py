@@ -7,7 +7,7 @@ tri par date, annotation du score via ``?candidate_id`` et gardes (401 / owner-g
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, AuthProvider, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision_service import DecisionService
@@ -55,10 +55,6 @@ def _build(*, auth=None):
         runs=RunStore(conn),
     )
     return HermesApi(orchestrator, auth=auth), offers
-
-
-def _hdr(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def test_get_offers_lists_paginated_in_date_order():
@@ -154,19 +150,12 @@ def test_get_offers_unknown_or_candidateless_stage_is_ignored():
     assert no_cand.body["total"] == 3  # pas de candidat → filtre ignoré
 
 
-def test_get_offers_requires_authentication():
-    auth = AuthProvider({"tok": User("u", REVIEWER, frozenset({"cand-1"}))})
-    api, _ = _build(auth=auth)
-    assert api.dispatch("GET", "/offers").status == 401  # pas de jeton
-    assert api.dispatch("GET", "/offers", None, _hdr("tok")).status == 200
-
-
 def test_get_offers_candidate_owner_gated():
-    auth = AuthProvider({"tok": User("u", REVIEWER, frozenset({"cand-1"}))})
+    auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"})))
     api, offers = _build(auth=auth)
     _seed_three(offers)
     # Candidat possédé : OK + scores.
-    ok = api.dispatch("GET", "/offers?candidate_id=cand-1", None, _hdr("tok"))
+    ok = api.dispatch("GET", "/offers?candidate_id=cand-1")
     assert ok.status == 200 and ok.body["items"][0]["score"] is not None
-    # Candidat d'autrui : 404 neutre (anti-énumération), on ne note jamais pour lui.
-    assert api.dispatch("GET", "/offers?candidate_id=autre", None, _hdr("tok")).status == 404
+    # Candidat hors périmètre : 404 neutre (anti-énumération), on ne note jamais pour lui.
+    assert api.dispatch("GET", "/offers?candidate_id=autre").status == 404

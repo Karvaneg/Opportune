@@ -17,37 +17,34 @@ afterEach(() => {
 });
 
 describe("apiFetch", () => {
-  it("préfixe /api, envoie le Bearer et renvoie le JSON en cas de succès", async () => {
+  it("préfixe /api, n'envoie aucun Authorization (local-first) et renvoie le JSON", async () => {
     const fetchMock = stubFetch(200, { run_id: "r1" });
-    const data = await apiFetch<{ run_id: string }>("/runs/r1", "tok");
+    const data = await apiFetch<{ run_id: string }>("/runs/r1");
 
     expect(data).toEqual({ run_id: "r1" });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/runs/r1",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer tok" }),
-      }),
-    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/runs/r1");
+    expect((init?.headers ?? {}).Authorization).toBeUndefined();
   });
 
   it("404 → message NEUTRE (anti-énumération) avec status préservé", async () => {
     stubFetch(404, { error: "ressource introuvable" });
-    await expect(apiFetch("/runs/x", "tok")).rejects.toMatchObject({
+    await expect(apiFetch("/runs/x")).rejects.toMatchObject({
       status: 404,
       message: "Run introuvable ou inaccessible.",
     });
   });
 
-  it("401 → ApiHttpError.status = 401 (permet la purge du jeton en amont)", async () => {
-    stubFetch(401, { error: "authentification requise" });
-    const err = await apiFetch("/runs/x", "tok").catch((e: unknown) => e);
+  it("erreur HTTP → ApiHttpError avec status préservé", async () => {
+    stubFetch(403, { error: "interdit" });
+    const err = await apiFetch("/runs/x").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiHttpError);
-    expect((err as ApiHttpError).status).toBe(401);
+    expect((err as ApiHttpError).status).toBe(403);
   });
 
   it("autre erreur → reprend le message { error } du corps", async () => {
     stubFetch(400, { error: "page doit être un entier ≥ 1" });
-    await expect(apiFetch("/runs/x/recommendations?page=0", "tok")).rejects.toMatchObject({
+    await expect(apiFetch("/runs/x/recommendations?page=0")).rejects.toMatchObject({
       status: 400,
       message: "page doit être un entier ≥ 1",
     });
@@ -60,7 +57,7 @@ describe("apiFetch", () => {
       json: () => Promise.reject(new Error("not json")),
     });
     vi.stubGlobal("fetch", fn);
-    await expect(apiFetch("/runs/x", "tok")).rejects.toMatchObject({
+    await expect(apiFetch("/runs/x")).rejects.toMatchObject({
       status: 500,
       message: "Une erreur est survenue.",
     });
@@ -68,13 +65,11 @@ describe("apiFetch", () => {
 });
 
 describe("apiPost", () => {
-  it("POST + corps JSON, Bearer et Content-Type, renvoie le JSON en cas de succès", async () => {
+  it("POST + corps JSON et Content-Type (sans Authorization), renvoie le JSON", async () => {
     const fetchMock = stubFetch(200, { action_id: "a1", status: "simulated" });
-    const data = await apiPost<{ action_id: string }>(
-      "/applications/rec-1/confirm",
-      "tok",
-      { confirm: true },
-    );
+    const data = await apiPost<{ action_id: string }>("/applications/rec-1/confirm", {
+      confirm: true,
+    });
 
     expect(data).toEqual({ action_id: "a1", status: "simulated" });
     expect(fetchMock).toHaveBeenCalledWith(
@@ -82,17 +77,16 @@ describe("apiPost", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ confirm: true }),
-        headers: expect.objectContaining({
-          Authorization: "Bearer tok",
-          "Content-Type": "application/json",
-        }),
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
       }),
     );
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init?.headers ?? {}).Authorization).toBeUndefined();
   });
 
   it("409 → ApiHttpError avec status préservé (ex. candidature sans décision approuvée)", async () => {
     stubFetch(409, { error: "décision approuvée requise" });
-    const err = await apiPost("/applications/x/confirm", "tok", { confirm: true }).catch(
+    const err = await apiPost("/applications/x/confirm", { confirm: true }).catch(
       (e: unknown) => e,
     );
     expect(err).toBeInstanceOf(ApiHttpError);
@@ -102,7 +96,7 @@ describe("apiPost", () => {
 
   it("corps absent → envoie un objet vide (jamais `undefined` dans le body)", async () => {
     const fetchMock = stubFetch(200, {});
-    await apiPost("/x", "tok", undefined);
+    await apiPost("/x", undefined);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/x",
       expect.objectContaining({ body: "{}" }),

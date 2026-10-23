@@ -2,12 +2,11 @@ import { useMemo } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { Briefcase, History, Home, User, type LucideIcon } from "lucide-react";
-import { createAuthAwareQueryClient } from "./api/queryClient";
+import { createQueryClient } from "./api/queryClient";
 import { useAuth } from "./auth/AuthContext";
 import { TargetCandidateProvider } from "./auth/useTargetCandidate";
 import type { Me } from "./api/types";
 import { CockpitPage } from "./pages/CockpitPage";
-import { LoginGate } from "./pages/LoginGate";
 import { OffersPage } from "./pages/OffersPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RecommendationPage } from "./pages/RecommendationPage";
@@ -37,39 +36,46 @@ function tabClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function App() {
-  const { status, token, identity, logout, expireSession } = useAuth();
+  const { status, identity, retry } = useAuth();
 
-  // Plein-écran réservé à la **revérification au démarrage** d'un jeton stocké (`token`
-  // déjà présent, encore en `checking`). Pendant un login interactif, `token` est null
-  // tant que /me n'a pas répondu : on laisse la barrière afficher son état inline.
-  if (status === "checking" && token) {
+  // Amorçage local (OPP-181) : on interroge `GET /me` au démarrage. Tant que l'API n'a pas
+  // répondu, plein-écran neutre — plus de barrière de jeton.
+  if (status === "checking") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
-        Vérification du jeton…
+        Chargement…
       </div>
     );
   }
 
-  if (status !== "authenticated") return <LoginGate />;
+  // API injoignable (serveur non lancé) : message clair + « Réessayer », pas un login.
+  if (status === "error") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 text-center">
+        <div>
+          <h1 className="text-lg font-bold tracking-tight text-slate-900">Opportune</h1>
+          <p className="mt-2 max-w-sm text-sm text-slate-500">
+            L'API est injoignable. Vérifie que le serveur local est démarré
+            (<code className="rounded bg-slate-100 px-1 py-0.5">bash scripts/serve-api.sh</code>),
+            puis réessaie.
+          </p>
+        </div>
+        <button
+          onClick={retry}
+          className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
+        >
+          Réessayer
+        </button>
+      </div>
+    );
+  }
 
-  // Sous-arbre monté uniquement pendant une session authentifiée : le `QueryClient` y naît
-  // et meurt avec la session (démonté au logout/expiration), garantissant un cache neuf par
-  // session sans le recréer à chaque transition de `token`.
-  return <AuthenticatedApp identity={identity} logout={logout} expireSession={expireSession} />;
+  return <AuthenticatedApp identity={identity} />;
 }
 
-function AuthenticatedApp({
-  identity,
-  logout,
-  expireSession,
-}: {
-  identity: Me | null;
-  logout: () => void;
-  expireSession: () => void;
-}) {
-  // Un 401 sur n'importe quelle requête (lecture ou écriture) → fin de session : purge du
-  // jeton et retour à la barrière de login, avec message d'expiration (cf. expireSession).
-  const queryClient = useMemo(() => createAuthAwareQueryClient(expireSession), [expireSession]);
+function AuthenticatedApp({ identity }: { identity: Me | null }) {
+  // Cache créé une fois au montage (local-first : plus de cycle de session à gérer).
+  const queryClient = useMemo(() => createQueryClient(), []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -98,12 +104,6 @@ function AuthenticatedApp({
                       {identity.role ? ` · ${identity.role}` : ""}
                     </span>
                   )}
-                  <button
-                    onClick={logout}
-                    className="rounded-md px-2 py-1 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                  >
-                    Déconnexion
-                  </button>
                 </div>
               </div>
             </header>

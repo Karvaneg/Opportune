@@ -1,7 +1,8 @@
 """Tests de l'endpoint de flux d'activité du cockpit (OPP-165).
 
-``GET /candidates/{id}/activity`` : journal transversal horodaté, owner-gated. Vrais dépôts
-SQLite en mémoire ; lettres et actions câblées pour couvrir les quatre types d'événements.
+``GET /candidates/{id}/activity`` : journal transversal horodaté, candidat inconnu → 404. Vrais
+dépôts SQLite en mémoire ; lettres et actions câblées pour couvrir les quatre types d'événements.
+Le gating identité/rôle est couvert par ``test_api_auth.py`` (local-first, OPP-181).
 """
 
 import itertools
@@ -11,7 +12,7 @@ import pytest
 from api.app import HermesApi
 from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
-from app.auth import REVIEWER, AuthProvider, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision import decision_id
@@ -36,10 +37,6 @@ def _offer(**overrides) -> Offer:
     )
     data.update(overrides)
     return Offer(**data)
-
-
-def _hdr(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -68,17 +65,16 @@ def env():
     letters = LetterService(
         letters=letters_store, decisions=decisions, profiles=profiles, offers=offers, redacteur=None
     )
-    auth = AuthProvider({
-        "tok-rev": User("rev", REVIEWER, frozenset({"cand-1"})),
-        "tok-str": User("str", REVIEWER, frozenset({"cand-2"})),
-    })
+    # Identité locale : propriétaire reviewer de cand-1 (et cand-2, sans profil, pour le cas
+    # « candidat inconnu »).
+    auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1", "cand-2"})))
     api = HermesApi(orchestrator, actions, auth, letters=letters)
     return api, letters_store
 
 
 def test_activity_lists_offer_additions_when_fresh(env):
     api, _ = env
-    resp = api.dispatch("GET", "/candidates/cand-1/activity", None, _hdr("tok-rev"))
+    resp = api.dispatch("GET", "/candidates/cand-1/activity", None, None)
     assert resp.status == 200
     items = resp.body["items"]
     # Aucune décision/lettre/candidature encore → seulement les 3 offres ajoutées, récentes d'abord.
@@ -91,16 +87,16 @@ def test_activity_aggregates_all_event_types_sorted(env):
     api, letters_store = env
     rid = decision_id("cand-1", "a")
     # Décision tranchée (approuvée) sur a, candidature déclarée sur a, lettre pour a.
-    api.dispatch("POST", "/candidates/cand-1/offers/a/rescore", {}, _hdr("tok-rev"))
-    api.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, _hdr("tok-rev"))
-    api.dispatch("POST", f"/applications/{rid}/confirm", {"confirm": True}, _hdr("tok-rev"))
-    api.dispatch("POST", f"/applications/{rid}/applied", {}, _hdr("tok-rev"))
+    api.dispatch("POST", "/candidates/cand-1/offers/a/rescore", {}, None)
+    api.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, None)
+    api.dispatch("POST", f"/applications/{rid}/confirm", {"confirm": True}, None)
+    api.dispatch("POST", f"/applications/{rid}/applied", {}, None)
     letters_store.save(Letter(
         recommendation_id=rid, body="Madame…", source="ai", model="m",
         created_at="2026-09-06T00:00:00+00:00", updated_at="2026-09-06T00:00:00+00:00",
     ))
 
-    items = api.dispatch("GET", "/candidates/cand-1/activity", None, _hdr("tok-rev")).body["items"]
+    items = api.dispatch("GET", "/candidates/cand-1/activity", None, None).body["items"]
     types = {i["type"] for i in items}
     assert {"decision", "application", "letter", "offer"} <= types
     # Horodatages décroissants.
@@ -111,16 +107,7 @@ def test_activity_aggregates_all_event_types_sorted(env):
     assert decision_item["target_kind"] == "recommendation" and decision_item["target_id"] == rid
 
 
-def test_activity_owner_gated_returns_404_out_of_scope(env):
-    api, _ = env
-    assert api.dispatch("GET", "/candidates/cand-1/activity", None, _hdr("tok-str")).status == 404
-
-
-def test_activity_requires_token(env):
-    api, _ = env
-    assert api.dispatch("GET", "/candidates/cand-1/activity", None, {}).status == 401
-
-
 def test_activity_unknown_candidate_is_404(env):
     api, _ = env
-    assert api.dispatch("GET", "/candidates/cand-2/activity", None, _hdr("tok-str")).status == 404
+    # cand-2 est dans le périmètre mais n'a aucune donnée : candidat inconnu → 404.
+    assert api.dispatch("GET", "/candidates/cand-2/activity", None, None).status == 404

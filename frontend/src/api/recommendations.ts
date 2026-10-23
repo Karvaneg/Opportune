@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "../auth/AuthContext";
 import { apiDelete, apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
 import type { ActionConfirmation, ApplicationIntent, RecommendationDetail } from "./types";
@@ -20,15 +19,13 @@ export interface ValidateVariables {
 
 /** Détail d'une recommandation : `GET /recommendations/{id}` (cf. OPP-107/112). */
 export function useRecommendation(recommendationId: string) {
-  const { token } = useAuth();
   return useQuery({
     queryKey: recommendationKeys.detail(recommendationId),
     queryFn: () =>
       apiFetch<RecommendationDetail>(
         `/recommendations/${encodeURIComponent(recommendationId)}`,
-        token!,
       ),
-    enabled: Boolean(token) && recommendationId.length > 0,
+    enabled: recommendationId.length > 0,
   });
 }
 
@@ -40,10 +37,9 @@ export function useRecommendation(recommendationId: string) {
  */
 export function useValidateRecommendation(recommendationId: string) {
   return useApiMutation<RecommendationDetail, ValidateVariables>({
-    mutationFn: (variables, token) =>
+    mutationFn: (variables) =>
       apiPost<RecommendationDetail>(
         `/recommendations/${encodeURIComponent(recommendationId)}/decision`,
-        token,
         variables,
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
@@ -63,10 +59,9 @@ export function useRescoreOffer(
   offerId: string,
 ) {
   return useApiMutation<RecommendationDetail, void>({
-    mutationFn: (_variables, token) =>
+    mutationFn: (_variables) =>
       apiPost<RecommendationDetail>(
         `/candidates/${encodeURIComponent(candidateId)}/offers/${encodeURIComponent(offerId)}/rescore`,
-        token,
         {},
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId), ["runs"], ["run"]],
@@ -83,10 +78,9 @@ export function useRescoreOffer(
  */
 export function useConfirmApplication(recommendationId: string) {
   return useApiMutation<ActionConfirmation, void>({
-    mutationFn: (_variables, token) =>
+    mutationFn: (_variables) =>
       apiPost<ActionConfirmation>(
         `/applications/${encodeURIComponent(recommendationId)}/confirm`,
-        token,
         { confirm: true },
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
@@ -102,10 +96,9 @@ export function useConfirmApplication(recommendationId: string) {
  */
 export function useMarkApplied(recommendationId: string) {
   return useApiMutation<ApplicationIntent, { applied_at?: string }>({
-    mutationFn: (variables, token) =>
+    mutationFn: (variables) =>
       apiPost<ApplicationIntent>(
         `/applications/${encodeURIComponent(recommendationId)}/applied`,
-        token,
         variables,
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
@@ -119,10 +112,9 @@ export function useMarkApplied(recommendationId: string) {
  */
 export function useUnmarkApplied(recommendationId: string) {
   return useApiMutation<ApplicationIntent, void>({
-    mutationFn: (_variables, token) =>
+    mutationFn: (_variables) =>
       apiDelete<ApplicationIntent>(
         `/applications/${encodeURIComponent(recommendationId)}/applied`,
-        token,
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
   });

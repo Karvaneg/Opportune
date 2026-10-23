@@ -9,8 +9,8 @@
 # Usage :
 #   bash scripts/serve-api.sh
 #
-# Prérequis : `python/.env` renseigné (au minimum OPPORTUNE_API_TOKEN). Modèle de
-# configuration versionné (sans secret) : `python/.env.example`.
+# Prérequis : `python/.env` renseigné (au minimum OPPORTUNE_API_CANDIDATES). Modèle de
+# configuration versionné : `python/.env.example`.
 #
 set -euo pipefail
 
@@ -47,17 +47,11 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   export "$key=$value"
 done < "$ENV_FILE"
 
-# Le serveur refuse de démarrer sans jeton ; on le signale tôt, en pointant vers .env.
-if [ -z "${OPPORTUNE_API_TOKEN:-}" ]; then
-  echo "✗ OPPORTUNE_API_TOKEN manquant dans $ENV_FILE : l'API ne démarre jamais sans jeton." >&2
-  exit 1
-fi
-
-# Le jeton ne possède alors aucun candidat : l'API démarre mais ne peut agir sur rien.
-# Non bloquant (le serveur le tolère), mais on prévient — c'est presque toujours une
-# config incomplète. Voir README « au minimum OPPORTUNE_API_TOKEN et …_CANDIDATES ».
+# Local-first (OPP-181) : aucun jeton requis. Sans candidat, l'API démarre mais ne peut agir
+# sur rien. Non bloquant (le serveur le tolère), mais on prévient — c'est presque toujours une
+# config incomplète. Voir README « au minimum OPPORTUNE_API_CANDIDATES ».
 if [ -z "${OPPORTUNE_API_CANDIDATES:-}" ]; then
-  echo "⚠ OPPORTUNE_API_CANDIDATES vide : le jeton ne possédera aucun candidat." >&2
+  echo "⚠ OPPORTUNE_API_CANDIDATES vide : l'identité locale ne possédera aucun candidat." >&2
 fi
 
 # Auto-détection de l'hôte Ollama sous WSL : l'Ollama natif Windows est joignable via

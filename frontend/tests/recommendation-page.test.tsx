@@ -5,12 +5,6 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecommendationPage } from "../src/pages/RecommendationPage";
 import { AuthProvider } from "../src/auth/AuthContext";
-import type { AuthStorage } from "../src/auth/authStorage";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 const DETAIL = {
   recommendation_id: "cand-1:off-app",
@@ -52,7 +46,7 @@ function stubFetch(status: number, body: unknown) {
 function renderPage(id = "cand-1:off-app") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={[`/recommendations/${id}`]}>
           <Routes>

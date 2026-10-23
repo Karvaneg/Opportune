@@ -7,8 +7,9 @@ Vitest + Testing Library.
 
 ## Périmètre
 
-- **Login** (`LoginGate`) : jeton saisi dans l'UI → session (`authStorage`, localStorage) →
-  `Authorization: Bearer` ; déconnexion explicite + purge automatique du jeton sur `401` (OPP-102).
+- **Amorçage local** (`AuthContext`, OPP-181) : app locale **sans login ni jeton** ; au
+  démarrage un `GET /me` identifie l'unique utilisateur local, ou affiche « API injoignable »
+  (+ « Réessayer ») si le serveur n'est pas lancé.
 - **Runs** : liste paginée (`/`) et détail d'un run (`/runs/:runId`) — métadonnées,
   évaluations, erreurs, recommandations paginées.
 - **Catalogue d'offres** (`/offres`) : tout le stock, annoté du **score de match** (calcul

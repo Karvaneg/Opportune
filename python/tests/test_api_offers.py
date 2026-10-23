@@ -7,7 +7,7 @@ HTTP (validation, sérialisation, mapping d'erreurs, garde reviewer, route optio
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, AuthProvider, User
+from app.auth import REVIEWER, LocalAuthProvider, User
 from app.db import connect
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
@@ -53,10 +53,6 @@ def _api_url(offer_url_intake, *, offer_intake=None, auth=None) -> HermesApi:
     return HermesApi(
         orchestrator, auth=auth, offer_intake=offer_intake, offer_url_intake=offer_url_intake
     )
-
-
-def _hdr(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def test_post_offers_creates_and_serializes():
@@ -134,14 +130,17 @@ def test_offers_unsupported_method_405():
 
 
 def test_post_offers_requires_reviewer_role():
-    auth = AuthProvider({
-        "tok-rev": User("rev", REVIEWER, frozenset({"cand-1"})),
-        "tok-view": User("view", "viewer", frozenset({"cand-1"})),
-    })
-    api = _api(lambda raw_text, *, source, url="": _offer(), auth=auth)
-    assert api.dispatch("POST", "/offers", {"text": "x"}, _hdr("tok-view")).status == 403
-    assert api.dispatch("POST", "/offers", {"text": "x"}, _hdr("tok-rev")).status == 201
-    assert api.dispatch("POST", "/offers", {"text": "x"}, None).status == 401
+    # Même périmètre (cand-1), rôle différent : sans reviewer → 403, avec → 201.
+    viewer = _api(
+        lambda raw_text, *, source, url="": _offer(),
+        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
+    )
+    assert viewer.dispatch("POST", "/offers", {"text": "x"}).status == 403
+    reviewer = _api(
+        lambda raw_text, *, source, url="": _offer(),
+        auth=LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"}))),
+    )
+    assert reviewer.dispatch("POST", "/offers", {"text": "x"}).status == 201
 
 
 # --- Voie URL (OPP-148) ------------------------------------------------------

@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "./client";
 import type { CandidateStats } from "./types";
 
@@ -16,14 +15,12 @@ export const statsKeys = {
  * désactivée sans candidat ciblé (périmètre vide) — le cockpit affiche alors un état neutre.
  */
 export function useCandidateStats(candidateId: string) {
-  const { token } = useAuth();
   return useQuery({
     queryKey: statsKeys.candidate(candidateId),
     queryFn: () =>
       apiFetch<CandidateStats>(
         `/candidates/${encodeURIComponent(candidateId)}/stats`,
-        token!,
       ),
-    enabled: Boolean(token) && candidateId !== "",
+    enabled: candidateId !== "",
   });
 }

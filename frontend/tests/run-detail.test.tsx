@@ -4,12 +4,6 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunDetailPage } from "../src/pages/RunDetailPage";
 import { AuthProvider } from "../src/auth/AuthContext";
-import type { AuthStorage } from "../src/auth/authStorage";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 function item(id: string) {
   return {
@@ -58,7 +52,7 @@ function stub() {
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/runs/run-1"]}>
           <Routes>

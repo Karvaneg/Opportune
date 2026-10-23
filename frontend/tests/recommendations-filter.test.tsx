@@ -5,12 +5,6 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunRecommendations } from "../src/components/RunRecommendations";
 import { AuthProvider } from "../src/auth/AuthContext";
-import type { AuthStorage } from "../src/auth/authStorage";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 function item(id: string, decision_status = "pending") {
   return {
@@ -65,7 +59,7 @@ function stubFilterableFetch() {
 function renderRecommendations() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <RunRecommendations runId="r1" />

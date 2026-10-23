@@ -7,13 +7,7 @@ import { OffersPage } from "../src/pages/OffersPage";
 import { funnelStage } from "../src/api/funnel";
 import { AuthProvider } from "../src/auth/AuthContext";
 import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
-import type { AuthStorage } from "../src/auth/authStorage";
 import type { DecisionStatus } from "../src/api/types";
-
-function memoryStorage(initial: string | null): AuthStorage {
-  let value = initial;
-  return { get: () => value, set: (t) => { value = t; }, clear: () => { value = null; } };
-}
 
 const CATALOG = {
   items: [
@@ -55,7 +49,7 @@ function stubFetch(catalogBody: unknown) {
 function renderOffers(initialPath = "/") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider storage={memoryStorage("good")}>
+    <AuthProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <MemoryRouter initialEntries={[initialPath]}>
