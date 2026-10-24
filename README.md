@@ -3,6 +3,10 @@
 [![CI](https://github.com/Karvaneg/Opportune/actions/workflows/ci.yml/badge.svg)](https://github.com/Karvaneg/Opportune/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/images/Opportune.png" width="320" alt="Opportune — Saisir l'occasion au vol." />
+</p>
+
 > **Local-first job-application assistant** — collects job offers, scores them against your
 > profile with a local LLM (Ollama), and drafts tailored cover letters. Everything runs on
 > your machine, nothing leaves it, and every outbound action needs your explicit approval.
@@ -32,6 +36,7 @@
 - [Migration V1 → V2](#migration-v1--v2)
 - [Cartographie du dépôt](#cartographie-du-dépôt-monorepo)
 - [Architecture V2](#architecture-v2-vue-densemble)
+- [Aperçu et design](#aperçu-et-design)
 - [Prérequis](#prérequis)
 - [Démarrage (V2)](#démarrage-v2)
 - [Sources d'offres](#sources-doffres--pourquoi-adzuna-par-défaut)
@@ -90,6 +95,39 @@ Chaque brique V2 a son propre README détaillé :
   identifier l'unique utilisateur local (plus de login ni de jeton porteur). Historique de cette
   décision : [`docs/adr/0003-auth-local-first-sans-jeton.md`](docs/adr/0003-auth-local-first-sans-jeton.md)
   (remplace l'ADR 0002).
+
+## Aperçu et design
+
+Opportune se veut un **copilote de confiance** : sérieux et rigoureux, mais chaleureux — pas un
+outil corporate. Sa signature reprend le mythe du **toupet de Kairos** (le dieu grec du moment
+opportun, qu'on attrape au passage par son unique mèche de cheveux) : dans le logo, le trait du
+**O** se décolle et s'enroule au-dessus des « pp », en indigo. L'occasion passe, Opportune aide à
+la saisir.
+
+Interface **React/Vite**, **thèmes clair et sombre** (bascule auto / clair / sombre), couleurs
+pilotées par des **jetons sémantiques**. Design system complet :
+[`frontend/src/styles/README.md`](frontend/src/styles/README.md).
+
+| Jeton | Rôle | Clair | Sombre |
+|---|---|---|---|
+| `brand` | marque — mèche, liens, action principale | `#4f46e5` | `#818cf8` |
+| `ink` | texte | `#0f172a` | `#f8fafc` |
+| `surface` | fond | `#f8fafc` | `#0f172a` |
+| `success` | succès | `#059669` | `#34d399` |
+| `warning` | alerte | `#d97706` | `#fbbf24` |
+| `danger` | erreur | `#dc2626` | `#f87171` |
+
+### Captures d'écran
+
+*Captures prises dans l'espace Démo (aucune donnée personnelle).*
+
+| Écran d'accueil — Démo / Mon espace | Cockpit — guide de démarrage |
+|:---:|:---:|
+| ![Écran d'accueil Démo / Mon espace](docs/images/WelcomeScreen.png) | ![Cockpit avec le guide « Nouveau profil » en 3 étapes](docs/images/guide.png) |
+| **Cockpit — synthèse** | **Profil — CV & compétences** |
+| ![Cockpit de synthèse : compteurs et activité récente](docs/images/accueil.png) | ![Profil : import de CV, compétences et parcours](docs/images/profil.png) |
+| **Offres scorées** | **Recommandation + lettre** |
+| ![Catalogue d'offres scorées](docs/images/offres.png) | ![Fiche recommandation : score, lettre et validation](docs/images/recommandation.png) |
 
 ## Prérequis
 
