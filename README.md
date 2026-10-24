@@ -118,6 +118,22 @@ Cible du proxy surchargeable via `API_PROXY_TARGET` (ex. réseau Docker).
 Front et API sur un réseau bridge partagé, ports publiés vers l'hôte (host-networking
 inopérant sous Docker Desktop/WSL2).
 
+## Sources d'offres — pourquoi Adzuna par défaut
+
+Opportune collecte des offres réelles via des **connecteurs** (détail et commandes :
+[`python/README.md`](python/README.md#collecter-des-offres-réelles-opp-120--opp-122)) :
+
+- **Adzuna** — source **recommandée et par défaut** : inscription gratuite et **clé délivrée
+  instantanément en self-service**, idéale pour que n'importe qui installe Opportune et collecte
+  tout de suite (quota gratuit ~2 500 appels/mois).
+- **RSS/Atom** — sans identifiant, à alimenter avec vos propres flux d'alertes emploi.
+- **France Travail** — l'API officielle, la plus riche, mais **indisponible aujourd'hui**
+  (vérifié oct. 2026) : elle a été **retirée de `francetravail.io`** le temps d'une analyse des
+  modalités de distribution/réutilisation, suite à des **usages automatisés massifs par des
+  solutions d'IA**. À sa réouverture, l'accès sera **sur autorisation préalable** (pas de
+  self-service), ce qui se prête mal à une diffusion large. Le connecteur existe mais reste
+  **dormant** — d'où le choix d'Adzuna comme source par défaut.
+
 ## Tests
 
 - **Back** : `cd python && docker compose run --rm app pytest -q`

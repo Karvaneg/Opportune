@@ -337,6 +337,12 @@ fait que lire sa configuration, assembler sa source et lancer la passe (briques 
 échecs) et sortent en code non nul si la **source** a échoué (quota, réseau, identifiants) ;
 les échecs d'analyse **par offre** sont consignés sans interrompre la passe.
 
+> **Quelle source utiliser ?** Pour un usage prêt à l'emploi, **Adzuna** est la source
+> recommandée : inscription gratuite et **clé délivrée instantanément en self-service**, sans
+> démarche manuelle. Le connecteur **RSS** complète (aucun identifiant, mais à vous de fournir
+> des flux). **France Travail**, l'API officielle, serait la plus riche mais n'est **pas
+> utilisable** aujourd'hui (voir plus bas) — d'où le choix d'Adzuna par défaut.
+
 ### RSS — connecteur actif, sans secret
 
 `app.rss_runner` ingère des offres depuis des **flux RSS/Atom** d'alertes emploi (`app.rss_feed`
@@ -382,10 +388,19 @@ CDI). Le runner pagine jusqu'au total annoncé (`count`) ou au plafond.
 ### France Travail — connecteur dormant
 
 `app.france_travail_runner` interroge l'API officielle France Travail « Offres d'emploi ».
-⚠️ **Cette API n'est plus en accès self-service** : elle a été restreinte (usage automatisé/IA
-massif) et nécessite désormais une demande d'accès + l'acceptation d'un contrat de licence sur
-[francetravail.io](https://francetravail.io). Le connecteur est **prêt mais inactif** tant que
-l'accès n'est pas accordé.
+⚠️ **Cette API n'est pas utilisable en l'état** (vérifié oct. 2026). Elle a été **retirée de
+`francetravail.io`** le temps d'une analyse des modalités de distribution et de réutilisation,
+**suite à des usages automatisés massifs par des solutions d'IA** ne respectant pas les
+conditions/licences associées. Quand l'accès rouvrira, il sera **« Restreint »** : demande via
+le formulaire de contact + **autorisation préalable** (pas de self-service), acceptation d'une
+**licence de réutilisation** (non ouverte au sens strict ; rappelle les art. L.5321-1 et s. du
+Code du travail sur le placement). Les **particuliers** font partie des publics éligibles.
+
+Conséquence pour Opportune : ce modèle d'autorisation **au cas par cas** se prête mal à une
+diffusion où chaque utilisateur apporterait ses identifiants — c'est précisément le profil
+d'usage que France Travail cherche à encadrer. Le connecteur reste donc **prêt mais dormant**,
+conservé pour un usage personnel autorisé ou une réouverture future. **Adzuna** reste la source
+par défaut.
 
 ```bash
 export FRANCE_TRAVAIL_CLIENT_ID=...             # requis : identifiant de l'application
