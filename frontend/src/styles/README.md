@@ -43,8 +43,10 @@ Couleurs **sémantiques**, jamais des noms de teinte — on écrit l'intention, 
   `border-strong` (contours).
 - **Marque** : `brand` (LA couleur de marque — mèche, liens, bouton principal, focus),
   `brand-strong` (survol), `on-brand` (texte posé sur un fond `brand`).
-- **Sémantiques** : `success` / `warning` / `danger` (+ `-text` pour le texte lisible sur fond clair,
-  `-strong` pour le survol). **Jamais utilisées comme couleur de marque.**
+- **Sémantiques** : `success` / `warning` / `danger` (+ `-strong` pour le survol). `success` et
+  `warning` ont en plus un `-text`, assez foncé pour rester lisible en texte sur fond clair (la
+  teinte de base est trop claire pour ça) ; `danger` s'en passe, il est déjà contrasté comme texte.
+  **Jamais utilisées comme couleur de marque.**
 
 Chaque jeton a une valeur claire et une valeur sombre ; le code ne manipule que le nom.
 
