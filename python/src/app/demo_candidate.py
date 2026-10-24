@@ -260,7 +260,7 @@ def seed_demo_candidate(
 
     # 0. Périmètre : le candidat démo est enrôlé dans le registre (OPP-183) — son slot existe
     #    indépendamment du profil (il survit à un « repartir de zéro », cf. ``reset_demo``).
-    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID)
+    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID, label=DEMO_CANDIDATE_NAME)
 
     # 1. Profil démo (upsert : écrase toujours vers le profil canonique — 100 % synthétique).
     profiles.save(create_profile(**_demo_profile_kwargs()))
@@ -364,4 +364,4 @@ def reset_demo(conn: sqlite3.Connection) -> None:
     for table in tables:
         conn.execute(f"DELETE FROM {table}")
     conn.commit()
-    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID)
+    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID, label=DEMO_CANDIDATE_NAME)

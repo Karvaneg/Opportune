@@ -7,6 +7,9 @@ C'est là que vit le routage ; ``server.py`` n'en est que l'adaptateur socket.
 Endpoints :
 
     GET  /me                                           (OPP-103, sonde d'auth + identité)
+    GET  /searches                                      (OPP-184, recherches de l'espace)
+    POST /searches                                      (OPP-184, crée une recherche nommée)
+    PUT  /searches/{search_id}                          (OPP-184, renomme une recherche)
     GET  /runs                                          (OPP-101, listing paginé, périmètre)
     POST /candidates/{candidate_id}/recommendations   (OPP-093, filtres OPP-095)
     GET  /runs/{run_id}                                (OPP-094)
@@ -57,6 +60,7 @@ from urllib.parse import parse_qs, unquote
 
 if TYPE_CHECKING:
     from app.candidate_profile import CandidateProfile
+    from app.candidate_registry import CandidateRegistry
     from app.collection_jobs import CollectionJob, CollectionJobRegistry
     from app.offer_collection import CollectionReport
     from app.profile_service import ProfileService
@@ -143,6 +147,8 @@ class ApiError(Exception):
 
 # Routes connues (chemin sans query string).
 _ME = re.compile(r"^/me$")
+_SEARCHES = re.compile(r"^/searches$")
+_SEARCH = re.compile(r"^/searches/(?P<sid>[^/]+)$")
 _RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
 _STATS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/stats$")
@@ -182,6 +188,10 @@ _COLLECT_MAX_CAP = 50
 # Corps 404 générique en mode authentifié : « absent » et « hors périmètre » doivent être
 # indistinguables pour ne pas révéler l'existence d'une ressource d'autrui (anti-énumération).
 _NOT_FOUND = "ressource introuvable"
+
+# Longueur max d'un libellé de recherche (OPP-184) : garde-fou de saisie, pas une règle métier —
+# un nom raisonnable tient largement dedans, au-delà c'est un collage accidentel qu'on refuse.
+_SEARCH_LABEL_MAX = 120
 
 # Préférences (hors faits du CV) acceptées en plus du PDF à l'import d'un CV (OPP-174) : un CV
 # ne les porte pas, le front peut les joindre. Toute autre clé du corps est ignorée.
@@ -234,6 +244,7 @@ class HermesApi:
         collections: "CollectionJobRegistry | None" = None,
         profiles: "ProfileService | None" = None,
         cv_intake: "CvIntake | None" = None,
+        searches: "CandidateRegistry | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -261,6 +272,11 @@ class HermesApi:
         # Optionnel : si absent (pas de LLM câblé), POST /candidates/{id}/profile/cv n'est pas
         # monté (404 neutre). Injecté en prod (Ollama + pypdf), faux en test.
         self.cv_intake = cv_intake
+        # Registre des recherches de l'espace (OPP-184) : expose le CRUD « recherche »
+        # (list/create/rename) sur le périmètre. Optionnel : si absent, /searches n'est pas
+        # monté (404 neutre). C'est **le même registre** que celui dont l'auth dérive le
+        # périmètre — une recherche créée ici entre donc aussitôt dans ``owned_candidates``.
+        self.searches = searches
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
@@ -310,6 +326,20 @@ class HermesApi:
         if _ME.match(path):
             self._require(method, "GET", path)
             return self._get_me(user)
+
+        # Recherches (OPP-184) : montées uniquement si le registre est câblé (sinon 404 neutre).
+        if self.searches is not None:
+            if _SEARCHES.match(path):
+                if method == "GET":
+                    return self._get_searches(user)
+                if method == "POST":
+                    return self._post_search(body, user)
+                raise ApiError(405, f"méthode {method} non autorisée sur {path}")
+
+            match = _SEARCH.match(path)
+            if match:
+                self._require(method, "PUT", path)
+                return self._put_search(unquote(match["sid"]), body, user)
 
         if _RUNS.match(path):
             self._require(method, "GET", path)
@@ -474,6 +504,59 @@ class HermesApi:
                 "owned_candidate_ids": sorted(user.owned_candidates),
             },
         )
+
+    # --- Recherches (OPP-184) : CRUD du périmètre, porté par le registre ---
+
+    def _get_searches(self, user: User | None) -> Response:
+        """Liste les recherches de l'espace (id + libellé) pour le sélecteur (OPP-184).
+
+        Lecture du **propre** périmètre (le registre *est* le périmètre du seul utilisateur local) :
+        un jeton valide suffit (401 géré en amont), pas de rôle reviewer — lequel n'est requis que
+        pour *modifier* le périmètre (créer/renommer). Ordre déterministe (par id, cf. registre).
+        """
+        assert self.searches is not None  # garanti par le dispatch (404 sinon)
+        return Response(
+            200,
+            {"items": [{"id": s.id, "label": s.label} for s in self.searches.list()]},
+        )
+
+    def _post_search(self, body: dict, user: User | None) -> Response:
+        """Crée une recherche nommée (OPP-184) ; renvoie son id technique généré + le libellé.
+
+        Modifier le périmètre → **reviewer** (comme curer offres/profil). Le libellé est requis
+        (400 si absent/vide/trop long) ; l'id est généré côté registre, opaque et stable.
+        """
+        self._guard_reviewer(user)
+        assert self.searches is not None  # garanti par le dispatch (404 sinon)
+        label = self._parse_label(body.get("label"))
+        search = self.searches.create(label)
+        return Response(201, {"id": search.id, "label": search.label})
+
+    def _put_search(self, search_id: str, body: dict, user: User | None) -> Response:
+        """Renomme une recherche (OPP-184). 404 neutre si l'id est hors périmètre (anti-énumération).
+
+        Reviewer requis (modification du périmètre). Le libellé suit les mêmes règles qu'à la
+        création. ``rename`` rend ``False`` pour un id inconnu → 404 générique, indistinguable
+        d'« existe mais pas à moi ».
+        """
+        self._guard_reviewer(user)
+        assert self.searches is not None  # garanti par le dispatch (404 sinon)
+        label = self._parse_label(body.get("label"))
+        if not self.searches.rename(search_id, label):
+            raise self._not_found(user, f"recherche introuvable : {search_id}")
+        return Response(200, {"id": search_id, "label": label})
+
+    @staticmethod
+    def _parse_label(raw: object) -> str:
+        """Valide le libellé d'une recherche : chaîne non vide une fois rognée, bornée en longueur."""
+        if not isinstance(raw, str):
+            raise ApiError(400, "label doit être une chaîne")
+        label = raw.strip()
+        if not label:
+            raise ApiError(400, "label est requis (le nom de la recherche)")
+        if len(label) > _SEARCH_LABEL_MAX:
+            raise ApiError(400, f"label dépasse {_SEARCH_LABEL_MAX} caractères")
+        return label
 
     # --- Autorisation (propriété / rôle) : résolue depuis la ressource persistée ---
 
