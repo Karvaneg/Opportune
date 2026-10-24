@@ -38,13 +38,13 @@ export function LaunchRun() {
             })
           }
           disabled={launch.isPending}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
           {launch.isPending ? "Analyse en cours…" : "Lancer une analyse"}
         </button>
       </div>
       {launch.data?.total === 0 && launch.data.errors.length === 0 && (
-        <p className="text-sm text-slate-500">Aucune nouvelle offre à évaluer.</p>
+        <p className="text-sm text-ink-muted">Aucune nouvelle offre à évaluer.</p>
       )}
       {launch.isError && <ErrorNotice error={launch.error} />}
     </div>

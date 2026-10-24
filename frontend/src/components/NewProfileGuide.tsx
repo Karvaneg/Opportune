@@ -85,13 +85,13 @@ export function NewProfileGuide({
   return (
     <section
       aria-label="Nouveau profil"
-      className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/60 p-4"
+      className="space-y-3 rounded-lg border border-brand/30 bg-brand/5 p-4"
     >
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-700">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-brand">
           Nouveau profil
         </h3>
-        <p className="text-sm text-slate-600">Trois étapes pour lancer votre recherche.</p>
+        <p className="text-sm text-ink-muted">Trois étapes pour lancer votre recherche.</p>
       </div>
       <ol className="space-y-2">
         {steps.map((step, i) => (
@@ -99,14 +99,14 @@ export function NewProfileGuide({
             key={i}
             className={`flex items-start gap-3 rounded-md border p-3 ${
               !step.done && i === currentIndex
-                ? "border-indigo-300 bg-white"
-                : "border-transparent bg-white/50"
+                ? "border-brand/30 bg-surface-raised"
+                : "border-transparent bg-surface-raised/50"
             }`}
           >
             <span
               aria-hidden="true"
-              className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${
-                step.done ? "bg-emerald-600" : "bg-indigo-600"
+              className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-on-brand ${
+                step.done ? "bg-success" : "bg-brand"
               }`}
             >
               {step.done ? "✓" : i + 1}
@@ -114,18 +114,18 @@ export function NewProfileGuide({
             <div className="min-w-0 flex-1">
               <p
                 className={`text-sm font-medium ${
-                  step.done ? "text-slate-400 line-through" : "text-slate-800"
+                  step.done ? "text-ink-muted line-through" : "text-ink"
                 }`}
               >
                 {step.title}
               </p>
-              {!step.done && <p className="text-sm text-slate-600">{step.description}</p>}
+              {!step.done && <p className="text-sm text-ink-muted">{step.description}</p>}
             </div>
             {!step.done &&
               ("to" in step.action ? (
                 <Link
                   to={step.action.to}
-                  className="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+                  className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong"
                 >
                   {step.action.label}
                 </Link>
@@ -133,7 +133,7 @@ export function NewProfileGuide({
                 <button
                   type="button"
                   onClick={step.action.onClick}
-                  className="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+                  className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong"
                 >
                   {step.action.label}
                 </button>

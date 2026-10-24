@@ -12,10 +12,10 @@ export function ProfilePage() {
 
   return (
     <section className="space-y-6">
-      <h2 className="text-xl font-semibold text-slate-900">Profil</h2>
+      <h2 className="text-xl font-semibold text-ink">Profil</h2>
 
       {target === "" ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+        <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
           Aucune recherche pour le moment.
         </p>
       ) : (

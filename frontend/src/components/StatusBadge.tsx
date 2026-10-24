@@ -15,10 +15,10 @@ const DECISION_LABELS: Record<DecisionStatus, string> = {
 };
 
 const TONE: Record<string, string> = {
-  approved: "bg-emerald-100 text-emerald-800",
-  rejected: "bg-red-100 text-red-800",
-  pending: "bg-slate-100 text-slate-700",
-  deferred: "bg-amber-100 text-amber-800",
+  approved: "bg-success/15 text-success-text",
+  rejected: "bg-danger/15 text-danger",
+  pending: "bg-ink/5 text-ink",
+  deferred: "bg-warning/15 text-warning-text",
 };
 
 // Ce que chaque badge REPRÉSENTE (OPP-149) : deux registres distincts, rappelés au survol
@@ -38,7 +38,7 @@ export function StatusBadge(props: Props) {
   return (
     <span
       title={KIND_TITLES[props.kind]}
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE[props.value] ?? "bg-slate-100 text-slate-700"}`}
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE[props.value] ?? "bg-ink/5 text-ink"}`}
     >
       {label}
     </span>

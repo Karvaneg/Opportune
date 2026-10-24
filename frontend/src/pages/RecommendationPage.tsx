@@ -39,9 +39,9 @@ const ACTION_LABELS: Record<OfferAction, string> = {
 
 // Boutons de validation humaine (OPP-108) : verbe du contrat back + libellé + ton.
 const VERB_BUTTONS: { verb: DecisionVerb; label: string; tone: string }[] = [
-  { verb: "approve", label: "Approuver", tone: "bg-emerald-600 hover:bg-emerald-700" },
-  { verb: "reject", label: "Rejeter", tone: "bg-red-600 hover:bg-red-700" },
-  { verb: "defer", label: "Reporter", tone: "bg-amber-600 hover:bg-amber-700" },
+  { verb: "approve", label: "Approuver", tone: "bg-success hover:bg-success-strong" },
+  { verb: "reject", label: "Rejeter", tone: "bg-danger hover:bg-danger-strong" },
+  { verb: "defer", label: "Reporter", tone: "bg-warning hover:bg-warning-strong" },
 ];
 
 /**
@@ -62,8 +62,8 @@ export function RecommendationPage() {
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-900">Recommandation</h2>
-        <Link to={backTo} className="text-sm text-slate-500 hover:text-slate-900">
+        <h2 className="text-xl font-semibold text-ink">Recommandation</h2>
+        <Link to={backTo} className="text-sm text-ink-muted hover:text-ink">
           ← Retour
         </Link>
       </div>
@@ -71,7 +71,7 @@ export function RecommendationPage() {
       {isPending && <Loading label="Chargement de la recommandation…" />}
       {is404 && (
         // Message neutre, anti-énumération : inexistant et hors périmètre sont indistincts.
-        <p className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+        <p className="rounded-lg border border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
           Recommandation introuvable ou inaccessible.
         </p>
       )}
@@ -85,19 +85,19 @@ export function RecommendationPage() {
 function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
   return (
     <>
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="rounded-lg border border-border bg-surface-raised p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             {/* title/company peuvent être null (offre disparue) → repli sur offer_id. */}
-            <p className="font-medium text-slate-900">{reco.title || reco.offer_id}</p>
-            <p className="text-sm text-slate-500">{reco.company || "—"}</p>
+            <p className="font-medium text-ink">{reco.title || reco.offer_id}</p>
+            <p className="text-sm text-ink-muted">{reco.company || "—"}</p>
             {/* Lien vers l'annonce d'origine (OPP-112), si l'offre en porte une. */}
             {reco.url && (
               <a
                 href={reco.url}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-1 inline-block text-sm text-slate-400 hover:text-slate-600 hover:underline"
+                className="mt-1 inline-block text-sm text-ink-muted hover:text-ink hover:underline"
                 title="Voir l'offre sur le site"
               >
                 voir sur le site ↗
@@ -111,17 +111,17 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
                 → `kind === null`) : on retombe alors sur un tiret neutre, jamais un vide. */}
             {reco.kind === "formation" ? (
               <span
-                className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"
+                className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand"
                 title="Formation : non évaluée sur l'adéquation (son but est d'acquérir des compétences)"
               >
                 Formation
               </span>
             ) : reco.score === null ? (
-              <span className="text-sm font-semibold text-slate-400" title="Non évalué">
+              <span className="text-sm font-semibold text-ink-muted" title="Non évalué">
                 —
               </span>
             ) : (
-              <span className="text-sm font-semibold text-slate-700">{reco.score}</span>
+              <span className="text-sm font-semibold text-ink">{reco.score}</span>
             )}
             <StatusBadge kind="decision" value={reco.status} />
           </div>
@@ -137,10 +137,10 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         </dl>
 
         {reco.justification && (
-          <p className="mt-4 text-sm text-slate-600">{reco.justification}</p>
+          <p className="mt-4 text-sm text-ink-muted">{reco.justification}</p>
         )}
         {reco.comment && (
-          <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+          <p className="mt-3 rounded-md bg-surface p-3 text-sm text-ink">
             <span className="font-medium">Commentaire : </span>
             {reco.comment}
           </p>
@@ -196,11 +196,11 @@ function DecisionTimeline({
 
   return (
     <div>
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Historique
       </h3>
       {items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+        <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
           Aucun événement.
         </p>
       ) : (
@@ -208,22 +208,22 @@ function DecisionTimeline({
           {items.map((item, i) => (
             <li
               key={i}
-              className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-3"
+              className="flex items-start justify-between gap-4 rounded-lg border border-border bg-surface-raised p-3"
             >
               <div className="flex items-center gap-2">
                 {item.kind === "decision" ? (
                   <>
                     <StatusBadge kind="decision" value={item.status} />
                     {item.comment && (
-                      <span className="text-sm text-slate-600">{item.comment}</span>
+                      <span className="text-sm text-ink-muted">{item.comment}</span>
                     )}
                   </>
                 ) : (
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                       item.kind === "applied"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-indigo-100 text-indigo-800"
+                        ? "bg-success/15 text-success-text"
+                        : "bg-brand/10 text-brand"
                     }`}
                   >
                     {item.kind === "applied"
@@ -232,7 +232,7 @@ function DecisionTimeline({
                   </span>
                 )}
               </div>
-              <span className="shrink-0 text-xs text-slate-400">{formatDate(item.at)}</span>
+              <span className="shrink-0 text-xs text-ink-muted">{formatDate(item.at)}</span>
             </li>
           ))}
         </ol>
@@ -255,18 +255,18 @@ function RescoreOffer({ reco }: { reco: RecommendationDetail }) {
   if (reco.status !== "pending") return null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <div className="rounded-lg border border-border bg-surface-raised p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Re-score
       </h3>
-      <p className="mb-3 text-sm text-slate-600">
+      <p className="mb-3 text-sm text-ink-muted">
         Recalculer le score de cette offre (p. ex. après mise à jour du profil).
       </p>
       <button
         type="button"
         onClick={() => rescore.mutate()}
         disabled={rescore.isPending}
-        className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface disabled:opacity-50"
       >
         {rescore.isPending ? "Re-score en cours…" : "Re-scorer l'offre"}
       </button>
@@ -301,8 +301,8 @@ function RecommendationActions({ recommendationId }: { recommendationId: string 
     );
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <div className="rounded-lg border border-border bg-surface-raised p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Validation
       </h3>
       <textarea
@@ -311,7 +311,7 @@ function RecommendationActions({ recommendationId }: { recommendationId: string 
         placeholder="Commentaire (optionnel)"
         rows={2}
         aria-label="Commentaire"
-        className="w-full rounded-md border border-slate-300 p-2 text-sm"
+        className="w-full rounded-md border border-border p-2 text-sm"
       />
       <div className="mt-3 flex flex-wrap gap-2">
         {VERB_BUTTONS.map(({ verb, label, tone }) => (
@@ -320,7 +320,7 @@ function RecommendationActions({ recommendationId }: { recommendationId: string 
             type="button"
             onClick={() => submit(verb)}
             disabled={validate.isPending}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 ${tone}`}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium text-on-brand disabled:opacity-50 ${tone}`}
           >
             {label}
           </button>
@@ -374,14 +374,14 @@ function ApplicationConfirm({
     application?.applied === true || (markApplied.data != null && !markApplied.isError);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <div className="rounded-lg border border-border bg-surface-raised p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Candidature
       </h3>
 
       {applied ? (
-        <div className="flex items-center justify-between gap-3 rounded-md bg-emerald-100 p-3">
-          <p className="text-sm text-emerald-900">
+        <div className="flex items-center justify-between gap-3 rounded-md bg-success/15 p-3">
+          <p className="text-sm text-success-text">
             🎉 Tu as candidaté à cette offre
             {appliedAt ? ` — le ${formatDay(appliedAt)}` : ""}.
           </p>
@@ -391,22 +391,22 @@ function ApplicationConfirm({
             disabled={unmarkApplied.isPending}
             aria-label="Annuler la candidature"
             title="Annuler la candidature (je n'ai pas candidaté)"
-            className="shrink-0 text-lg font-bold leading-none text-red-600 hover:text-red-700 disabled:opacity-50"
+            className="shrink-0 text-lg font-bold leading-none text-danger hover:text-danger-strong disabled:opacity-50"
           >
             ✕
           </button>
         </div>
       ) : noted ? (
         <>
-          <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+          <p className="rounded-md bg-success/10 p-3 text-sm text-success-text">
             ✅ Tu as noté que tu vas candidater à cette offre
             {notedAt ? ` — le ${formatDate(notedAt)}` : ""}.
-            <span className="mt-1 block text-xs text-emerald-700">
+            <span className="mt-1 block text-xs text-success-text">
               Aucun envoi n'est effectué : Opportune garde la trace de ton suivi.
             </span>
           </p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
-            <label className="text-xs text-slate-600">
+            <label className="text-xs text-ink-muted">
               Date de candidature
               <input
                 type="date"
@@ -414,7 +414,7 @@ function ApplicationConfirm({
                 max={today}
                 onChange={(e) => setAppliedDate(e.target.value)}
                 aria-label="Date de candidature"
-                className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm"
+                className="mt-1 block rounded-md border border-border px-2 py-1 text-sm"
               />
             </label>
             <button
@@ -426,7 +426,7 @@ function ApplicationConfirm({
                 )
               }
               disabled={markApplied.isPending}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
             >
               J'ai candidaté
             </button>
@@ -434,7 +434,7 @@ function ApplicationConfirm({
         </>
       ) : (
         <>
-          <p className="mb-2 text-sm text-slate-600">
+          <p className="mb-2 text-sm text-ink-muted">
             Marque que tu comptes candidater à cette offre. Opportune n'envoie rien à ta
             place : c'est un suivi de ton intention.
           </p>
@@ -442,7 +442,7 @@ function ApplicationConfirm({
             type="button"
             onClick={() => setOpen(true)}
             disabled={confirm.isPending}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
           >
             Je vais candidater
           </button>
@@ -469,10 +469,10 @@ function ApplicationConfirm({
         <div
           role="dialog"
           aria-label="Confirmer l'intention de candidater"
-          className="fixed inset-0 z-10 flex items-center justify-center bg-slate-900/30 p-4"
+          className="fixed inset-0 z-10 flex items-center justify-center bg-ink/30 p-4"
         >
-          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
-            <p className="text-sm text-slate-700">
+          <div className="w-full max-w-sm rounded-lg bg-surface-raised p-5 shadow-lg">
+            <p className="text-sm text-ink">
               Noter que tu as l'intention de candidater à cette offre ? Rien n'est envoyé —
               c'est un suivi. L'action requiert une décision préalablement approuvée.
             </p>
@@ -480,7 +480,7 @@ function ApplicationConfirm({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+                className="rounded-md border border-border px-3 py-1.5 text-sm"
               >
                 Annuler
               </button>
@@ -490,7 +490,7 @@ function ApplicationConfirm({
                 // onSettled : on referme dans tous les cas ; le résultat (succès ou 409)
                 // s'affiche dans le panneau, jamais masqué derrière la modale.
                 onClick={() => confirm.mutate(undefined, { onSettled: () => setOpen(false) })}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
               >
                 Oui, je vais candidater
               </button>
@@ -546,8 +546,8 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
     edit.mutate(draft, { onSuccess: () => setEditing(false) });
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <div className="rounded-lg border border-border bg-surface-raised p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Lettre de motivation
       </h3>
 
@@ -557,7 +557,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
       {/* Aucune lettre encore : proposer la génération. */}
       {(is404 || (!isPending && !isError && !letter)) && (
         <div>
-          <p className="mb-3 text-sm text-slate-600">
+          <p className="mb-3 text-sm text-ink-muted">
             Aucune lettre pour cette recommandation. Générez-en une à partir de l'offre et du
             profil.
           </p>
@@ -565,7 +565,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
             type="button"
             onClick={() => generate.mutate({})}
             disabled={generate.isPending}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
           >
             {generate.isPending ? "Génération en cours…" : "Générer la lettre"}
           </button>
@@ -581,18 +581,18 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
       {letter && !editing && (
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+            <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-muted">
               {LETTER_SOURCE_LABELS[letter.source]}
             </span>
           </div>
-          <p className="whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm text-slate-800">
+          <p className="whitespace-pre-wrap rounded-md bg-surface p-3 text-sm text-ink">
             {letter.body}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={startEditing}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface"
             >
               Éditer
             </button>
@@ -600,7 +600,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
               type="button"
               onClick={() => setConfirmRegen(true)}
               disabled={generate.isPending}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface disabled:opacity-50"
             >
               {generate.isPending ? "Régénération…" : "Régénérer"}
             </button>
@@ -608,7 +608,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
               type="button"
               onClick={() => setConfirmDelete(true)}
               disabled={remove.isPending}
-              className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              className="rounded-md border border-danger/30 px-3 py-1.5 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
             >
               Supprimer
             </button>
@@ -629,21 +629,21 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
             onChange={(e) => setDraft(e.target.value)}
             rows={10}
             aria-label="Corps de la lettre"
-            className="w-full rounded-md border border-slate-300 p-2 text-sm"
+            className="w-full rounded-md border border-border p-2 text-sm"
           />
           <div className="mt-3 flex gap-2">
             <button
               type="button"
               onClick={saveEdit}
               disabled={edit.isPending || draft.trim() === ""}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
             >
               {edit.isPending ? "Enregistrement…" : "Enregistrer"}
             </button>
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              className="rounded-md border border-border px-3 py-1.5 text-sm"
             >
               Annuler
             </button>
@@ -706,22 +706,22 @@ function ConfirmDialog({
     <div
       role="dialog"
       aria-label={label}
-      className="fixed inset-0 z-10 flex items-center justify-center bg-slate-900/30 p-4"
+      className="fixed inset-0 z-10 flex items-center justify-center bg-ink/30 p-4"
     >
-      <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
-        <p className="text-sm text-slate-700">{message}</p>
+      <div className="w-full max-w-sm rounded-lg bg-surface-raised p-5 shadow-lg">
+        <p className="text-sm text-ink">{message}</p>
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-border px-3 py-1.5 text-sm"
           >
             Annuler
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong"
           >
             {confirmLabel}
           </button>
@@ -734,8 +734,8 @@ function ConfirmDialog({
 function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className={`mt-0.5 text-slate-900 ${mono ? "font-mono text-xs" : ""}`}>{value}</dd>
+      <dt className="text-xs uppercase tracking-wide text-ink-muted">{label}</dt>
+      <dd className={`mt-0.5 text-ink ${mono ? "font-mono text-xs" : ""}`}>{value}</dd>
     </div>
   );
 }

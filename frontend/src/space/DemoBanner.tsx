@@ -35,9 +35,9 @@ export function DemoBanner() {
   }
 
   return (
-    <div className="border-b border-amber-200 bg-amber-50">
+    <div className="border-b border-warning/30 bg-warning/10">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm sm:px-6">
-        <span className={error ? "text-red-700" : "text-amber-800"}>
+        <span className={error ? "text-danger" : "text-warning-text"}>
           {error ??
             "Espace démo — un bac à sable isolé, tes vraies données n'y sont jamais touchées."}
         </span>
@@ -47,14 +47,14 @@ export function DemoBanner() {
             onClick={() =>
               run(resetDemo, "Vider la démo pour repartir de zéro ? Les données d'exemple seront effacées.")
             }
-            className="rounded-md px-2 py-1 font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50"
+            className="rounded-md px-2 py-1 font-medium text-warning-text transition-colors hover:bg-warning/15 disabled:opacity-50"
           >
             Repartir de zéro
           </button>
           <button
             disabled={busy}
             onClick={() => run(restoreDemo)}
-            className="rounded-md px-2 py-1 font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50"
+            className="rounded-md px-2 py-1 font-medium text-warning-text transition-colors hover:bg-warning/15 disabled:opacity-50"
           >
             Restaurer l'exemple
           </button>

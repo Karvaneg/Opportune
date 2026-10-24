@@ -53,16 +53,16 @@ export function OffersPage() {
 
   return (
     <section className="space-y-6">
-      <h2 className="text-xl font-semibold text-slate-900">Offres</h2>
+      <h2 className="text-xl font-semibold text-ink">Offres</h2>
 
       <CollectOffers />
 
       {stageFilter && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+          <span className="rounded-full bg-ink/5 px-3 py-1 text-ink">
             Filtré : {FUNNEL_LABELS[stageFilter]}
           </span>
-          <button type="button" onClick={clearFilter} className="text-slate-500 hover:underline">
+          <button type="button" onClick={clearFilter} className="text-ink-muted hover:underline">
             effacer le filtre
           </button>
         </div>
@@ -74,7 +74,7 @@ export function OffersPage() {
       {!isError &&
         data &&
         (data.total === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+          <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
             {stageFilter
               ? `Aucune offre « ${FUNNEL_LABELS[stageFilter]} » pour cette recherche.`
               : isReviewer
@@ -126,21 +126,21 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
     );
 
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <li className="flex flex-col gap-3 rounded-lg border border-border bg-surface-raised p-4 hover:border-border-strong sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         {candidateId ? (
           <button
             type="button"
             onClick={openFiche}
             disabled={evaluate.isPending}
-            className="block w-full truncate text-left font-medium text-slate-900 hover:underline disabled:opacity-60"
+            className="block w-full truncate text-left font-medium text-ink hover:underline disabled:opacity-60"
           >
             {offer.title}
           </button>
         ) : (
-          <p className="truncate font-medium text-slate-900">{offer.title}</p>
+          <p className="truncate font-medium text-ink">{offer.title}</p>
         )}
-        <p className="truncate text-sm text-slate-500">
+        <p className="truncate text-sm text-ink-muted">
           {offer.company} · {offer.location} · {offer.contract_type} ·{" "}
           {formatDate(offer.created_at)}
         </p>
@@ -158,13 +158,13 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
               href={offer.url}
               target="_blank"
               rel="noreferrer"
-              className="text-slate-400 hover:text-slate-600 hover:underline"
+              className="text-ink-muted hover:text-ink hover:underline"
               title="Voir l'offre sur le site"
             >
               voir sur le site ↗
             </a>
           )}
-          <span className="text-slate-400">{offer.source}</span>
+          <span className="text-ink-muted">{offer.source}</span>
         </div>
         <ScoreBadge kind={offer.kind} score={offer.score} action={offer.action} />
       </div>
@@ -174,9 +174,9 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
 
 // Couleur du badge par bande de reco (seuils décidés côté serveur, cf. `RecommendationAction`).
 const SCORE_TONES: Record<RecommendationAction, string> = {
-  postuler: "bg-emerald-100 text-emerald-800",
-  a_etudier: "bg-amber-100 text-amber-800",
-  ignorer: "bg-slate-100 text-slate-600",
+  postuler: "bg-success/15 text-success-text",
+  a_etudier: "bg-warning/15 text-warning-text",
+  ignorer: "bg-ink/5 text-ink-muted",
 };
 
 /**
@@ -196,7 +196,7 @@ function ScoreBadge({
   if (kind === "formation") {
     return (
       <span
-        className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"
+        className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand"
         title="Formation : non évaluée sur l'adéquation (son but est d'acquérir des compétences)"
       >
         Formation
@@ -204,7 +204,7 @@ function ScoreBadge({
     );
   }
   if (score === null || action === null) {
-    return <span className="text-slate-400" title="Non évalué">—</span>;
+    return <span className="text-ink-muted" title="Non évalué">—</span>;
   }
   return (
     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${SCORE_TONES[action]}`}>

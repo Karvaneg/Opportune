@@ -100,19 +100,19 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
   const isEmptyProfile = data.skills.length === 0 && experiences.length === 0;
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-surface-raised p-4">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
           Mon profil
         </h3>
-        <span className="text-xs text-slate-400">
+        <span className="text-xs text-ink-muted">
           {data.name}
           {data.contract_type ? ` · ${data.contract_type}` : ""}
         </span>
       </div>
 
       {isEmptyProfile && (
-        <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+        <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
           Ton profil est encore vide.{" "}
           {isReviewer
             ? "Importe ton CV (PDF) ci-dessous pour reconstituer automatiquement tes compétences et ton parcours."
@@ -122,7 +122,7 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
 
       {isReviewer && (
         <section className="space-y-1">
-          <label className="block text-sm font-medium text-slate-700">
+          <label className="block text-sm font-medium text-ink">
             Importer un CV (PDF)
             <input
               type="file"
@@ -130,10 +130,10 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
               onChange={onCvSelected}
               disabled={upload.isPending}
               aria-label="Importer un CV PDF"
-              className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-slate-50 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-100 disabled:opacity-50"
+              className="mt-1 block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-ink/5 disabled:opacity-50"
             />
           </label>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-ink-muted">
             Le CV est analysé localement pour reconstituer ton profil et ton parcours. Les
             compétences corrigées à la main sont préservées.
           </p>
@@ -141,38 +141,38 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
             // L'analyse est un appel LLM **local synchrone** qui peut durer plusieurs minutes :
             // on l'annonce explicitement (avec un indicateur animé) pour que l'attente ne passe
             // pas pour un gel de l'interface.
-            <div role="status" className="flex items-center gap-2 text-sm text-slate-600">
+            <div role="status" className="flex items-center gap-2 text-sm text-ink-muted">
               <span
                 aria-hidden="true"
-                className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
+                className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border border-t-ink-muted"
               />
               <span>Analyse du CV en cours — l'extraction locale prend 1 à 5 minutes.</span>
             </div>
           )}
           {upload.isSuccess && (
-            <span className="text-sm text-emerald-700">Profil mis à jour depuis le CV.</span>
+            <span className="text-sm text-success-text">Profil mis à jour depuis le CV.</span>
           )}
           {cvError && <ErrorNotice error={cvError} />}
           {upload.isError && <ErrorNotice error={upload.error} />}
         </section>
       )}
 
-      <section className="space-y-2 border-t border-slate-100 pt-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+      <section className="space-y-2 border-t border-border pt-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Compétences
         </h4>
         {skills.length === 0 ? (
           // Sur un profil vierge, l'encart d'orientation dit déjà « profil vide » : on évite de
           // redoubler avec ce libellé et on le réserve au cas « parcours présent, mais 0 skill ».
           !isEmptyProfile && (
-            <p className="text-sm text-slate-500">Aucune compétence déclarée.</p>
+            <p className="text-sm text-ink-muted">Aucune compétence déclarée.</p>
           )
         ) : (
           <ul className="flex flex-wrap gap-2">
             {skills.map((skill) => (
               <li
                 key={skill}
-                className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700"
+                className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-3 py-1 text-sm text-ink"
               >
                 {skill}
                 {isReviewer && (
@@ -180,7 +180,7 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
                     type="button"
                     onClick={() => removeSkill(skill)}
                     aria-label={`Retirer ${skill}`}
-                    className="text-slate-400 hover:text-rose-600"
+                    className="text-ink-muted hover:text-danger"
                   >
                     ×
                   </button>
@@ -205,13 +205,13 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
               }}
               placeholder="Ajouter une compétence (ex. HTML, Agile)…"
               aria-label="Ajouter une compétence"
-              className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
             />
             <button
               type="button"
               onClick={addSkill}
               disabled={draft.trim() === ""}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface disabled:opacity-50"
             >
               Ajouter
             </button>
@@ -221,12 +221,12 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
               type="button"
               onClick={() => update.mutate({ candidateId, skills })}
               disabled={!canSave}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
             >
               {update.isPending ? "Enregistrement…" : "Enregistrer les compétences"}
             </button>
             {update.isSuccess && !dirty && (
-              <span className="text-sm text-emerald-700">Compétences à jour.</span>
+              <span className="text-sm text-success-text">Compétences à jour.</span>
             )}
             {update.isError && <ErrorNotice error={update.error} />}
           </div>

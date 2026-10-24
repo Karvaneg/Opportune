@@ -20,10 +20,13 @@
   --color-brand-strong: var(--brand-strong);
   --color-on-brand: var(--on-brand);
   --color-success: var(--success);
+  --color-success-strong: var(--success-strong);
   --color-success-text: var(--success-text);
   --color-warning: var(--warning);
+  --color-warning-strong: var(--warning-strong);
   --color-warning-text: var(--warning-text);
   --color-danger: var(--danger);
+  --color-danger-strong: var(--danger-strong);
 }
 
 /*

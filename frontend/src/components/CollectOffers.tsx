@@ -60,11 +60,11 @@ export function CollectOffers() {
     );
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-4">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Récupérer de nouvelles offres
       </h3>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-ink-muted">
         Interroge Adzuna et ajoute les offres neuves au catalogue. Le poste recherché est
         prérempli (modifiable) ; précise un lieu pour cibler, ou laisse vide pour toute la France.
       </p>
@@ -75,7 +75,7 @@ export function CollectOffers() {
           onChange={(e) => setWhat(e.target.value)}
           placeholder="Poste recherché (ex. développeur web)"
           aria-label="Poste recherché"
-          className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
         />
         <input
           type="text"
@@ -83,7 +83,7 @@ export function CollectOffers() {
           onChange={(e) => setWhere(e.target.value)}
           placeholder="Lieu (ex. Bordeaux)"
           aria-label="Lieu de recherche"
-          className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
         />
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -91,14 +91,14 @@ export function CollectOffers() {
           type="button"
           onClick={submit}
           disabled={running}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
           {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
         </button>
         {status === "running" && job.data && <CollectProgress progress={job.data.progress} />}
         {status === "done" && job.data?.report && <CollectSummary report={job.data.report} />}
         {status === "failed" && (
-          <span className="text-sm text-rose-700">
+          <span className="text-sm text-danger">
             Collecte échouée : {job.data?.error ?? "erreur inconnue"}
           </span>
         )}
@@ -115,7 +115,7 @@ export function CollectOffers() {
  */
 function CollectProgress({ progress }: { progress: CollectionProgress }) {
   return (
-    <span className="text-sm text-slate-500">
+    <span className="text-sm text-ink-muted">
       Récupération… {progress.collected} collectée{progress.collected > 1 ? "s" : ""} ·{" "}
       {progress.stored} nouvelle{progress.stored > 1 ? "s" : ""} · {progress.duplicates} doublon
       {progress.duplicates > 1 ? "s" : ""}
@@ -131,13 +131,13 @@ function CollectProgress({ progress }: { progress: CollectionProgress }) {
 function CollectSummary({ report }: { report: CollectionReport }) {
   if (report.source_error) {
     return (
-      <span className="text-sm text-rose-700">
+      <span className="text-sm text-danger">
         Collecte impossible : {report.source_error}
       </span>
     );
   }
   return (
-    <span className="text-sm text-emerald-700">
+    <span className="text-sm text-success-text">
       {report.stored} nouvelle{report.stored > 1 ? "s" : ""} offre
       {report.stored > 1 ? "s" : ""} · {report.collected} collectée
       {report.collected > 1 ? "s" : ""} · {report.duplicates} doublon

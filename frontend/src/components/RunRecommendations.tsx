@@ -32,7 +32,7 @@ export function RunRecommendations({ runId }: { runId: string }) {
   return (
     <div className="space-y-3">
       {/* Barre de filtres toujours visible (même sur liste vide → on peut réinitialiser). */}
-      <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+      <div className="flex flex-wrap gap-3 text-sm text-ink-muted">
         <label>
           Pré-évaluation
           <select
@@ -42,7 +42,7 @@ export function RunRecommendations({ runId }: { runId: string }) {
               setAdvisory(e.target.value as AdvisoryStatus | "");
               setPage(1); // un changement de filtre recadre la pagination sur la page 1
             }}
-            className="ml-2 rounded-md border border-slate-300 px-2 py-1"
+            className="ml-2 rounded-md border border-border px-2 py-1"
           >
             <option value="">Toutes</option>
             {ADVISORY_OPTIONS.map((o) => (
@@ -61,7 +61,7 @@ export function RunRecommendations({ runId }: { runId: string }) {
               setDecision(e.target.value as DecisionStatus | "");
               setPage(1);
             }}
-            className="ml-2 rounded-md border border-slate-300 px-2 py-1"
+            className="ml-2 rounded-md border border-border px-2 py-1"
           >
             <option value="">Toutes</option>
             {DECISION_OPTIONS.map((o) => (
@@ -78,37 +78,37 @@ export function RunRecommendations({ runId }: { runId: string }) {
       ) : isError ? (
         <ErrorNotice error={error} />
       ) : data.total === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+        <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
           Aucune recommandation à afficher.
         </p>
       ) : (
         <>
           {/* Légende : chaque offre porte deux badges de registres distincts (OPP-149). */}
-          <p className="text-xs text-slate-400">
-            Pour chaque offre : <span className="text-slate-500">score au moment du run</span>,
-            puis <span className="text-slate-500">pré-évaluation automatique</span> et{" "}
-            <span className="text-slate-500">décision humaine</span>. Le score à jour (recalculé)
+          <p className="text-xs text-ink-muted">
+            Pour chaque offre : <span className="text-ink-muted">score au moment du run</span>,
+            puis <span className="text-ink-muted">pré-évaluation automatique</span> et{" "}
+            <span className="text-ink-muted">décision humaine</span>. Le score à jour (recalculé)
             est visible dans l'onglet Offres et sur le détail de l'offre.
           </p>
           <ul className="space-y-2">
             {data.items.map((item) => (
               <li
                 key={item.recommendation_id}
-                className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4"
+                className="flex items-start justify-between gap-4 rounded-lg border border-border bg-surface-raised p-4"
               >
                 <div>
                   <Link
                     to={`/recommendations/${encodeURIComponent(item.recommendation_id)}`}
                     state={{ from: `/runs/${runId}` }}
-                    className="font-medium text-slate-900 hover:underline"
+                    className="font-medium text-ink hover:underline"
                   >
                     {item.title || item.offer_id}
                   </Link>
-                  <p className="text-sm text-slate-500">{item.company || "—"}</p>
+                  <p className="text-sm text-ink-muted">{item.company || "—"}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <span
-                    className="text-sm font-semibold text-slate-700"
+                    className="text-sm font-semibold text-ink"
                     title="Score au moment du run (figé). Le score à jour est dans l'onglet Offres."
                   >
                     {item.score}
