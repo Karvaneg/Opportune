@@ -13,12 +13,14 @@ const PROFILE = {
 const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
 
-/** fetch factice : /me (périmètre paramétrable), /profile (profil figé). */
+/** fetch factice : /searches (périmètre paramétrable, source du ciblage), /me, /profile (figé). */
 function stub(candidates: string[], role = "reviewer") {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
       const s = String(url);
+      if (s.includes("/searches"))
+        return ok({ items: candidates.map((id) => ({ id, label: id })) });
       if (s.includes("/me"))
         return ok({ id: "u", role, owned_count: candidates.length, owned_candidate_ids: candidates });
       if (s.includes("/profile")) return ok(PROFILE);
@@ -57,19 +59,19 @@ describe("ProfilePage", () => {
     expect(cvImport.compareDocumentPosition(skills) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("propose un sélecteur de candidat quand le périmètre en compte plusieurs", async () => {
+  it("cible la première recherche du périmètre quand il en compte plusieurs (OPP-184)", async () => {
+    // Le sélecteur de recherche est désormais global (cf. SearchBar) ; la page affiche le profil
+    // de la recherche active, par défaut la première du périmètre.
     stub(["cand-1", "cand-2"]);
     renderPage();
 
-    await screen.findByText("React");
-    expect(screen.getByLabelText("Candidat pour le profil")).toBeInTheDocument();
+    expect(await screen.findByText("React")).toBeInTheDocument();
   });
 
-  it("ne montre pas de sélecteur pour un périmètre mono-candidat", async () => {
-    stub(["cand-1"]);
+  it("affiche un message quand le périmètre est vide", async () => {
+    stub([]);
     renderPage();
 
-    await screen.findByText("React");
-    expect(screen.queryByLabelText("Candidat pour le profil")).not.toBeInTheDocument();
+    expect(await screen.findByText(/Aucun candidat dans votre périmètre/)).toBeInTheDocument();
   });
 });

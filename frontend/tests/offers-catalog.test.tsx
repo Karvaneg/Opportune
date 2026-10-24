@@ -35,7 +35,9 @@ function stubFetch(catalogBody: unknown) {
     "fetch",
     vi.fn((url: string) => {
       const s = String(url);
-      const body = s.includes("/me")
+      const body = s.includes("/searches")
+        ? { items: [{ id: "cand-1", label: "Marie" }] }
+        : s.includes("/me")
         ? { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] }
         : s.includes("/rescore")
           ? (calls.push(s), { recommendation_id: "cand-1:b", candidate_id: "cand-1", offer_id: "b" })
@@ -74,8 +76,10 @@ describe("OffersPage", () => {
     stubFetch(CATALOG);
     renderOffers();
 
-    expect(await screen.findByText("Lead Java")).toBeInTheDocument();
-    expect(screen.getByText("Full-stack")).toBeInTheDocument();
+    // Titre ciblé par rôle : il devient un bouton une fois la recherche active résolue (le
+    // sélecteur global passe brièvement par un état vide au montage) — le nœud reste stable.
+    expect(await screen.findByRole("button", { name: "Lead Java" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Full-stack" })).toBeInTheDocument();
     // Score annoté pour le candidat ciblé, coloré selon la bande renvoyée par le serveur
     // (ambre pour `a_etudier`, gris pour `ignorer`) — pas de seuil recalculé côté client.
     expect(screen.getByText("0/100")).toBeInTheDocument();
@@ -121,7 +125,7 @@ describe("OffersPage", () => {
     });
     renderOffers();
 
-    expect(await screen.findByText("Sans score")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sans score" })).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 
@@ -159,6 +163,7 @@ describe("OffersPage", () => {
       "fetch",
       vi.fn((url: string) => {
         const s = String(url);
+        if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         urls.push(s);
@@ -174,14 +179,14 @@ describe("OffersPage", () => {
     // b est « approuvée » → à postuler ; c « pending » → à étudier (indépendant du score algo).
     renderOffers("/?stage=a_postuler");
 
-    expect(await screen.findByText("Full-stack")).toBeInTheDocument(); // b (approuvée)
-    expect(screen.queryByText("Lead Java")).not.toBeInTheDocument();   // c absente du sous-ensemble
+    expect(await screen.findByRole("button", { name: "Full-stack" })).toBeInTheDocument(); // b (approuvée)
+    expect(screen.queryByRole("button", { name: "Lead Java" })).not.toBeInTheDocument(); // c absente du sous-ensemble
     expect(urls.some((u) => u.includes("stage=a_postuler"))).toBe(true); // filtre envoyé au serveur
     // Un chip annonce le filtre actif et offre de l'effacer.
     expect(screen.getByText("Filtré : À postuler")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /effacer le filtre/ }));
     // Filtre levé : la requête repart sans stage, les deux offres réapparaissent.
-    expect(await screen.findByText("Lead Java")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Lead Java" })).toBeInTheDocument();
     expect(urls.some((u) => u.includes("/offers") && !u.includes("stage="))).toBe(true);
   });
 
@@ -209,6 +214,7 @@ describe("OffersPage", () => {
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/collect")) {
           if (options?.method === "POST") {
@@ -257,6 +263,7 @@ describe("OffersPage", () => {
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/collect")) {
           if (options?.method === "POST") return res(202, { job_id: "job-2" });
@@ -287,6 +294,7 @@ describe("OffersPage", () => {
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/collect")) {
           if (options?.method === "POST") {
@@ -320,6 +328,7 @@ describe("OffersPage", () => {
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/collect")) {
           if (options?.method === "POST") return res(202, { job_id: "job-4" });

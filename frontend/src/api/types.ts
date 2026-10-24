@@ -329,6 +329,21 @@ export interface Letter {
   updated_at: string; // ISO 8601
 }
 
+/**
+ * Une recherche du périmètre (`GET /searches`, OPP-184) : son id technique (clé partagée avec
+ * profils / décisions / offres) et son libellé produit. `label` peut être vide pour un candidat
+ * enrôlé sans nom (bootstrap `OPPORTUNE_API_CANDIDATES`) — le front retombe alors sur l'`id`.
+ */
+export interface Search {
+  id: string;
+  label: string;
+}
+
+/** Réponse de `GET /searches` : les recherches de l'espace (OPP-184). */
+export interface SearchesResponse {
+  items: Search[];
+}
+
 /** Identité du porteur du jeton (`GET /me`) — sonde d'authentification. */
 export interface Me {
   id: string | null;

@@ -5,7 +5,6 @@ import type { FunnelStage } from "../api/funnel";
 import type { ActivityEvent } from "../api/types";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { AddOffer } from "../components/AddOffer";
-import { CandidatePicker } from "../components/CandidatePicker";
 import { LaunchRun } from "../components/LaunchRun";
 import { NewProfileGuide } from "../components/NewProfileGuide";
 import { ProfileSummaryCard } from "../components/ProfileSummaryCard";
@@ -19,21 +18,13 @@ import { ErrorNotice, Loading } from "../components/States";
  * par action recommandée. Remplace l'ancien accueil « Runs », désormais sous « Historique ».
  */
 export function CockpitPage() {
-  // Candidat ciblé pour les compteurs. Défaut : le 1er du périmètre (même logique qu'OffersPage).
-  const { candidates, target, setCandidate } = useTargetCandidate();
+  // Recherche active pour les compteurs : sélection partagée (sélecteur global, OPP-184).
+  const { target } = useTargetCandidate();
   const { data, isPending, isError, error } = useCandidateStats(target);
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold text-slate-900">Accueil</h2>
-        <CandidatePicker
-          candidates={candidates}
-          value={target}
-          onChange={setCandidate}
-          ariaLabel="Candidat pour la synthèse"
-        />
-      </div>
+      <h2 className="text-xl font-semibold text-slate-900">Accueil</h2>
 
       {/* Guide d'accueil (OPP-177) : en tête de cockpit tant que la boucle de démarrage
           (CV → offres → analyse) n'est pas complète. Se masque de lui-même ensuite. */}

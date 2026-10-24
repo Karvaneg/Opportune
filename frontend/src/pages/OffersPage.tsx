@@ -1,11 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEvaluateOffer, useOffers } from "../api/offers";
 import { FUNNEL_LABELS, isFunnelStage } from "../api/funnel";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { useIsReviewer } from "../auth/roles";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
-import { CandidatePicker } from "../components/CandidatePicker";
 import { CollectOffers } from "../components/CollectOffers";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
@@ -18,9 +17,9 @@ import { ErrorNotice, Loading } from "../components/States";
  */
 export function OffersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  // Candidat ciblé pour le score : sélection **partagée** avec le reste de l'app (cockpit, profil)
-  // via le contexte — elle suit la navigation, p. ex. depuis une carte-compteur du cockpit.
-  const { candidates, target, setCandidate } = useTargetCandidate();
+  // Recherche active pour le score : sélection **partagée** avec le reste de l'app (sélecteur
+  // global, OPP-184) — elle suit la navigation, p. ex. depuis une carte-compteur du cockpit.
+  const { target } = useTargetCandidate();
   // La curation du pool (collecte Adzuna ci-dessous, ajout depuis l'accueil) est réservée au
   // rôle reviewer : le message de catalogue vide n'oriente vers ces actions que si elles sont
   // réellement disponibles (sinon « ci-dessus » pointerait vers un bloc masqué).
@@ -29,6 +28,9 @@ export function OffersPage() {
   // Filtre par étape d'entonnoir, piloté par l'URL (clic sur une carte du cockpit, OPP-164).
   const rawStage = searchParams.get("stage");
   const stageFilter = isFunnelStage(rawStage) ? rawStage : null;
+  // Bascule de recherche (sélecteur global) : on revient en page 1, sinon on resterait sur une
+  // page hors bornes pour une recherche au catalogue plus court.
+  useEffect(() => setPage(1), [target]);
   // Filtrage **côté serveur** : le pool entier est filtré avant pagination, donc `total` et le
   // Pager concordent avec les compteurs du cockpit même au-delà d'une page.
   const { data, isPending, isError, error, isFetching } = useOffers(
@@ -51,19 +53,7 @@ export function OffersPage() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold text-slate-900">Offres</h2>
-        <CandidatePicker
-          candidates={candidates}
-          value={target}
-          onChange={(c) => {
-            setCandidate(c);
-            setPage(1);
-          }}
-          ariaLabel="Candidat pour le score de match"
-          label="Score pour"
-        />
-      </div>
+      <h2 className="text-xl font-semibold text-slate-900">Offres</h2>
 
       <CollectOffers />
 
