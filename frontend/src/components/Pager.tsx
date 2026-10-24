@@ -15,7 +15,7 @@ export function Pager({
   busy?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between text-sm text-slate-500">
+    <div className="flex items-center justify-between text-sm text-ink-muted">
       <span>
         Page {page} / {Math.max(totalPages, 1)} · {total} au total
       </span>
@@ -23,14 +23,14 @@ export function Pager({
         <button
           onClick={onPrev}
           disabled={page <= 1 || busy}
-          className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
+          className="rounded-md border border-border px-3 py-1 disabled:opacity-40"
         >
           Précédent
         </button>
         <button
           onClick={onNext}
           disabled={page >= totalPages || busy}
-          className="rounded-md border border-slate-300 px-3 py-1 disabled:opacity-40"
+          className="rounded-md border border-border px-3 py-1 disabled:opacity-40"
         >
           Suivant
         </button>

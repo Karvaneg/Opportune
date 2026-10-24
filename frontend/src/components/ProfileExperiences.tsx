@@ -14,25 +14,25 @@ export function ProfileExperiences({ experiences }: { experiences: Experience[] 
 
   return (
     <section className="space-y-3" aria-label="Parcours">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Parcours</h3>
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Parcours</h3>
       <ol className="space-y-3">
         {experiences.map((exp, i) => (
           // Index en clé : le parcours est une liste ordonnée en lecture seule, sans identifiant
           // stable ni réordonnancement — l'index reflète fidèlement la position.
           <li
             key={i}
-            className="rounded-lg border border-slate-200 bg-slate-50/60 p-3"
+            className="rounded-lg border border-border bg-surface/60 p-3"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-              <p className="font-medium text-slate-800">{exp.title}</p>
-              <p className="text-xs text-slate-500">{exp.period}</p>
+              <p className="font-medium text-ink">{exp.title}</p>
+              <p className="text-xs text-ink-muted">{exp.period}</p>
             </div>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-ink-muted">
               {exp.company}
               {exp.location ? ` · ${exp.location}` : ""}
             </p>
             {exp.highlights.length > 0 && (
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink">
                 {exp.highlights.map((h, j) => (
                   <li key={j}>{h}</li>
                 ))}
@@ -45,7 +45,7 @@ export function ProfileExperiences({ experiences }: { experiences: Experience[] 
                 {exp.skills.map((s, k) => (
                   <li
                     key={k}
-                    className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600 ring-1 ring-slate-200"
+                    className="rounded-full bg-surface-raised px-2 py-0.5 text-xs text-ink-muted ring-1 ring-border"
                   >
                     {s}
                   </li>

@@ -19,7 +19,7 @@ export function RunsListPage() {
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <h2 className="text-xl font-semibold text-slate-900">Historique</h2>
+        <h2 className="text-xl font-semibold text-ink">Historique</h2>
         <DirectAccess />
       </div>
 
@@ -31,7 +31,7 @@ export function RunsListPage() {
       {!isError &&
         data &&
         (data.total === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+          <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
             Aucun run pour le moment.
           </p>
         ) : (
@@ -57,17 +57,17 @@ export function RunsListPage() {
 
 function RunRow({ run }: { run: RunSummary }) {
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <li className="flex flex-col gap-3 rounded-lg border border-border bg-surface-raised p-4 hover:border-border-strong sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <Link to={`/runs/${encodeURIComponent(run.run_id)}`} className="min-w-0 flex-1">
-        <p className="truncate font-mono text-sm text-slate-900">{run.run_id}</p>
-        <p className="text-sm text-slate-500">
+        <p className="truncate font-mono text-sm text-ink">{run.run_id}</p>
+        <p className="text-sm text-ink-muted">
           {run.candidate_id} · {formatDate(run.executed_at)}
         </p>
       </Link>
-      <div className="flex shrink-0 items-center gap-3 text-sm text-slate-600">
+      <div className="flex shrink-0 items-center gap-3 text-sm text-ink-muted">
         <span>{run.evaluation_count} offre(s)</span>
         {run.error_count > 0 && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning-text">
             {run.error_count} erreur(s)
           </span>
         )}
@@ -95,7 +95,7 @@ function DeleteRunButton({ runId }: { runId: string }) {
         // Message déjà neutralisé par `apiDelete` (403/404, cf. `messageFor`). Compact et
         // inline plutôt que le bloc `ErrorNotice` : la suppression échoue dans une ligne, pas
         // dans un panneau. Sans ça, un échec repassait à « Supprimer » sans aucun retour.
-        <span role="alert" className="text-xs text-red-700">
+        <span role="alert" className="text-xs text-danger">
           {del.error.message}
         </span>
       )}
@@ -108,14 +108,14 @@ function DeleteRunButton({ runId }: { runId: string }) {
             // un DELETE (404 neutre, mais inutile).
             onClick={() => del.mutate(runId, { onError: () => setConfirming(false) })}
             disabled={del.isPending || del.isSuccess}
-            className="font-medium text-red-700 hover:underline disabled:opacity-50"
+            className="font-medium text-danger hover:underline disabled:opacity-50"
           >
             Confirmer
           </button>
           <button
             type="button"
             onClick={() => setConfirming(false)}
-            className="text-slate-500 hover:underline"
+            className="text-ink-muted hover:underline"
           >
             Annuler
           </button>
@@ -129,7 +129,7 @@ function DeleteRunButton({ runId }: { runId: string }) {
             setConfirming(true);
           }}
           aria-label={`Supprimer le run ${runId}`}
-          className="text-slate-400 hover:text-red-700"
+          className="text-ink-muted hover:text-danger"
         >
           Supprimer
         </button>
@@ -155,12 +155,12 @@ function DirectAccess() {
         value={runId}
         onChange={(e) => setRunId(e.target.value)}
         placeholder="run_id…"
-        className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none sm:w-40 sm:flex-none"
+        className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm focus:border-border-strong focus:outline-none sm:w-40 sm:flex-none"
       />
       <button
         type="submit"
         disabled={runId.trim().length === 0}
-        className="rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
+        className="rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-40"
       >
         Ouvrir
       </button>

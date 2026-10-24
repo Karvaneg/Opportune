@@ -9,10 +9,10 @@ import type { Space } from "./SpaceContext";
  */
 export function WelcomeScreen({ onChoose }: { onChoose: (space: Space) => void }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-slate-50 px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-surface px-4">
       <div className="text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Opportune</h1>
-        <p className="mt-2 max-w-md text-sm text-slate-500">
+        <h1 className="text-2xl font-bold tracking-tight text-ink">Opportune</h1>
+        <p className="mt-2 max-w-md text-sm text-ink-muted">
           Choisis ton espace de travail. La démo est un exemple isolé — tes vraies données n'y
           sont jamais mélangées.
         </p>
@@ -21,12 +21,12 @@ export function WelcomeScreen({ onChoose }: { onChoose: (space: Space) => void }
       <div className="grid w-full max-w-2xl gap-4 sm:grid-cols-2">
         <button
           onClick={() => onChoose("mine")}
-          className="group flex flex-col items-start gap-3 rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-colors hover:border-indigo-300 hover:bg-indigo-50/40"
+          className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-surface-raised p-6 text-left shadow-sm transition-colors hover:border-brand/30 hover:bg-brand/5"
         >
-          <FolderOpen className="h-7 w-7 text-indigo-600" aria-hidden />
+          <FolderOpen className="h-7 w-7 text-brand" aria-hidden />
           <div>
-            <div className="font-semibold text-slate-900">Mon espace</div>
-            <p className="mt-1 text-sm text-slate-500">
+            <div className="font-semibold text-ink">Mon espace</div>
+            <p className="mt-1 text-sm text-ink-muted">
               Mes vraies recherches, offres et candidatures.
             </p>
           </div>
@@ -34,12 +34,12 @@ export function WelcomeScreen({ onChoose }: { onChoose: (space: Space) => void }
 
         <button
           onClick={() => onChoose("demo")}
-          className="group flex flex-col items-start gap-3 rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50/40"
+          className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-surface-raised p-6 text-left shadow-sm transition-colors hover:border-warning/30 hover:bg-warning/5"
         >
-          <FlaskConical className="h-7 w-7 text-amber-600" aria-hidden />
+          <FlaskConical className="h-7 w-7 text-warning" aria-hidden />
           <div>
-            <div className="font-semibold text-slate-900">Démo</div>
-            <p className="mt-1 text-sm text-slate-500">
+            <div className="font-semibold text-ink">Démo</div>
+            <p className="mt-1 text-sm text-ink-muted">
               Un exemple prêt à explorer, sans toucher à tes données.
             </p>
           </div>

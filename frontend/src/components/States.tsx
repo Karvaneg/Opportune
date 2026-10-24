@@ -3,7 +3,7 @@ import { ApiHttpError } from "../api/client";
 /** Indicateur de chargement neutre. */
 export function Loading({ label = "Chargement…" }: { label?: string }) {
   return (
-    <p className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+    <p className="rounded-lg border border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
       {label}
     </p>
   );
@@ -19,7 +19,7 @@ export function ErrorNotice({ error }: { error: unknown }) {
       ? error.message
       : "Une erreur est survenue.";
   return (
-    <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700">
+    <p className="rounded-lg border border-danger/30 bg-danger/10 p-6 text-center text-sm text-danger">
       {message}
     </p>
   );

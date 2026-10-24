@@ -81,10 +81,10 @@ describe("OffersPage", () => {
     expect(await screen.findByRole("button", { name: "Lead Java" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Full-stack" })).toBeInTheDocument();
     // Score annoté pour le candidat ciblé, coloré selon la bande renvoyée par le serveur
-    // (ambre pour `a_etudier`, gris pour `ignorer`) — pas de seuil recalculé côté client.
+    // (warning pour `a_etudier`, neutre pour `ignorer`) — pas de seuil recalculé côté client.
     expect(screen.getByText("0/100")).toBeInTheDocument();
-    expect(screen.getByText("78/100")).toHaveClass("bg-amber-100");
-    expect(screen.getByText("0/100")).toHaveClass("bg-slate-100");
+    expect(screen.getByText("78/100")).toHaveClass("bg-warning/15");
+    expect(screen.getByText("0/100")).toHaveClass("bg-ink/5");
     expect(screen.getByText(/2 au total/)).toBeInTheDocument();
     // Le titre n'est plus un lien externe : c'est un bouton qui ouvre la fiche interne.
     expect(screen.getByRole("button", { name: "Lead Java" })).toBeInTheDocument();

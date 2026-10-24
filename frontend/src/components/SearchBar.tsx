@@ -78,11 +78,11 @@ export function SearchBar() {
     if (!isReviewer) return null;
     return (
       <div className="flex items-center gap-3">
-        <span className="text-sm text-slate-500">Aucune recherche.</span>
+        <span className="text-sm text-ink-muted">Aucune recherche.</span>
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong"
         >
           Nouvelle recherche
         </button>
@@ -97,13 +97,13 @@ export function SearchBar() {
       <div className="flex flex-wrap items-center gap-3">
         {mode === "idle" ? (
           <>
-            <label className="flex items-center gap-2 text-sm text-slate-500">
+            <label className="flex items-center gap-2 text-sm text-ink-muted">
               Recherche
               <select
                 aria-label="Recherche active"
                 value={target}
                 onChange={(e) => setCandidate(e.target.value)}
-                className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+                className="rounded-md border border-border px-2 py-1.5 text-sm text-ink"
               >
                 {searches.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -118,7 +118,7 @@ export function SearchBar() {
                   <button
                     type="button"
                     onClick={openRename}
-                    className="rounded-md px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                    className="rounded-md px-2 py-1.5 text-sm text-ink-muted transition-colors hover:bg-ink/5 hover:text-ink"
                   >
                     Renommer
                   </button>
@@ -126,7 +126,7 @@ export function SearchBar() {
                 <button
                   type="button"
                   onClick={openCreate}
-                  className="rounded-md px-2 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-50"
+                  className="rounded-md px-2 py-1.5 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
                 >
                   Nouvelle recherche
                 </button>
@@ -141,19 +141,19 @@ export function SearchBar() {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Ex. Data Analyst Paris"
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              className="rounded-md border border-border px-2 py-1.5 text-sm"
             />
             <button
               type="submit"
               disabled={pending || draft.trim() === ""}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
             >
               {mode === "creating" ? "Créer" : "Enregistrer"}
             </button>
             <button
               type="button"
               onClick={cancel}
-              className="rounded-md px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-ink/5 hover:text-ink"
             >
               Annuler
             </button>

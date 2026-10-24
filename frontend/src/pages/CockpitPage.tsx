@@ -24,14 +24,14 @@ export function CockpitPage() {
 
   return (
     <section className="space-y-6">
-      <h2 className="text-xl font-semibold text-slate-900">Accueil</h2>
+      <h2 className="text-xl font-semibold text-ink">Accueil</h2>
 
       {/* Guide d'accueil (OPP-177) : en tête de cockpit tant que la boucle de démarrage
           (CV → offres → analyse) n'est pas complète. Se masque de lui-même ensuite. */}
       {target !== "" && <NewProfileGuide candidateId={target} stats={data} />}
 
       {target === "" ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+        <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
           Aucune recherche pour le moment.
         </p>
       ) : (
@@ -50,12 +50,12 @@ export function CockpitPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div
               id="nouvelle-analyse"
-              className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4"
+              className="flex flex-col gap-2 rounded-lg border border-border bg-surface-raised p-4"
             >
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
                 Nouvelle analyse
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-ink-muted">
                 Opportune passe en revue les offres de ton catalogue, les score pour ton profil
                 et met en avant les plus pertinentes à étudier.
               </p>
@@ -88,7 +88,7 @@ function StatCards({
           label="À étudier"
           value={stats.a_etudier}
           stage="a_etudier"
-          tone="bg-amber-50 text-amber-900 hover:border-amber-300"
+          tone="bg-warning/10 text-warning-text hover:border-warning/30"
         />
         {/* Couleurs alignées sur le parcours de candidature de la fiche reco : « à postuler »
             reprend l'indigo de « intention de candidater notée », « postulées » le vert de
@@ -97,16 +97,16 @@ function StatCards({
           label="À postuler"
           value={stats.a_postuler}
           stage="a_postuler"
-          tone="bg-indigo-50 text-indigo-900 hover:border-indigo-300"
+          tone="bg-brand/10 text-brand hover:border-brand/30"
         />
         <StatCard
           label="Postulées"
           value={stats.postule}
           stage="postule"
-          tone="bg-emerald-50 text-emerald-900 hover:border-emerald-300"
+          tone="bg-success/10 text-success-text hover:border-success/30"
         />
       </div>
-      <p className="text-sm text-slate-400">{stats.offres_total} offre(s) au total</p>
+      <p className="text-sm text-ink-muted">{stats.offres_total} offre(s) au total</p>
     </div>
   );
 }
@@ -120,18 +120,18 @@ function ActivityFeed({ candidateId }: { candidateId: string }) {
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Dernières activités
       </h3>
       {isPending && <Loading label="Chargement de l'activité…" />}
       {isError && <ErrorNotice error={error} />}
       {data &&
         (data.items.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center text-sm text-slate-500">
+          <p className="rounded-lg border border-dashed border-border bg-surface-raised p-4 text-center text-sm text-ink-muted">
             Aucune activité récente.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+          <ul className="divide-y divide-border rounded-lg border border-border bg-surface-raised">
             {data.items.map((event, i) => (
               <li key={`${event.target_id}-${event.at}-${i}`} className="px-4 py-2.5">
                 <ActivityRow event={event} />
@@ -153,11 +153,11 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
       <Link
         to={to}
         state={{ from: "/" }}
-        className="min-w-0 flex-1 truncate text-slate-700 hover:text-slate-900 hover:underline"
+        className="min-w-0 flex-1 truncate text-ink hover:underline"
       >
         {event.label}
       </Link>
-      <span className="shrink-0 text-xs text-slate-400">{formatActivityDate(event.at)}</span>
+      <span className="shrink-0 text-xs text-ink-muted">{formatActivityDate(event.at)}</span>
     </div>
   );
 }
@@ -186,7 +186,7 @@ function StatCard({
     <button
       type="button"
       onClick={() => navigate(`/offres?stage=${stage}`)}
-      className={`rounded-lg border border-slate-200 p-4 text-left transition-colors ${tone}`}
+      className={`rounded-lg border border-border p-4 text-left transition-colors ${tone}`}
     >
       <p className="text-3xl font-semibold">{value}</p>
       <p className="mt-1 text-sm font-medium">{label}</p>
