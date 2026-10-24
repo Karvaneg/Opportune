@@ -1,5 +1,6 @@
 import { FlaskConical, FolderOpen } from "lucide-react";
 import type { Space } from "./SpaceContext";
+import { Logo } from "../components/Logo";
 
 /**
  * Écran d'accueil (OPP-182) : à l'ouverture, choisir **« Mon espace »** (vraies données) ou
@@ -11,8 +12,13 @@ export function WelcomeScreen({ onChoose }: { onChoose: (space: Space) => void }
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-surface px-4">
       <div className="text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-ink">Opportune</h1>
-        <p className="mt-2 max-w-md text-sm text-ink-muted">
+        {/* Signature au lieu du mot : le `<h1>` reste le titre de la page (texte en sr-only pour
+            les lecteurs d'écran), le logo n'est que décoratif. */}
+        <h1 className="flex justify-center">
+          <span className="sr-only">Opportune</span>
+          <Logo height={40} />
+        </h1>
+        <p className="mt-4 max-w-md text-sm text-ink-muted">
           Choisis ton espace de travail. La démo est un exemple isolé — tes vraies données n'y
           sont jamais mélangées.
         </p>
