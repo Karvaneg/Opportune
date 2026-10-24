@@ -8,8 +8,7 @@
     "demo": "node src/demo.js",
     "test": "node --test"
   },
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT",
   "dependencies": {
     "@notionhq/client": "^5.26.0",
     "dotenv": "^17.4.2"

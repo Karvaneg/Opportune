@@ -1,9 +1,16 @@
 # ADR 0002 — Authentification frontend : jeton en localStorage validé par `/me`
 
-- **Statut** : Accepté — **en vigueur**
+- **Statut** : ⚠️ **Remplacé** par [`ADR 0003`](0003-auth-local-first-sans-jeton.md) (OPP-181)
 - **Date** : 2026-09-04
 - **Contexte ticket** : OPP-100 / OPP-103 (Epic E9 — Consultation Hermes) ; OPP-102 différé
 - **Décideurs** : équipe Opportune
+
+> **Note (OPP-181, 2026-10) :** cet ADR décrit l'authentification par **jeton porteur en
+> `localStorage`**, abandonnée depuis. Opportune étant devenu **local-first et
+> mono-utilisateur** (API sur `localhost`, sans login ni jeton), ce mécanisme — et le fichier
+> `frontend/src/auth/authStorage.ts` qu'il citait — **n'existent plus**. Voir
+> [`ADR 0003`](0003-auth-local-first-sans-jeton.md). Le texte ci-dessous est **conservé comme
+> enregistrement historique** de la décision d'origine.
 
 ## Contexte
 

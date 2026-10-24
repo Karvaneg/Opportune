@@ -36,9 +36,8 @@ Le projet est en **migration V1 → V2** :
 python/         Back V2 : métier, orchestrateur Hermes, API HTTP, persistance SQLite
 frontend/       Front V2 : dashboard React/Vite (runs, offres scorées, lettres, décisions)
 docs/           Vision, definition of done, décisions d'architecture (ADR)
-scripts/        Scripts utilitaires (dont la recette E9)
-handoffs/       Passations de contexte entre sessions
-src/ index.js   V1 Node.js (historique — voir « Legacy V1 » plus bas)
+scripts/        Scripts utilitaires (serveur API, contexte IA)
+src/            V1 Node.js (historique — voir « Legacy V1 » plus bas)
 ```
 
 Chaque brique V2 a son propre README détaillé :
@@ -51,7 +50,7 @@ Chaque brique V2 a son propre README détaillé :
 ```
   ┌────────────┐   HTTP  /api   ┌──────────────┐        ┌───────────────┐
   │  frontend/ │ ─────────────▶ │  API Python  │ ─────▶ │ Hermes +      │
-  │ React/Vite │  Bearer token  │ (python/api) │        │ métier + LLM  │
+  │ React/Vite │  même machine  │ (python/api) │        │ métier + LLM  │
   └────────────┘                └──────────────┘        └───────┬───────┘
                                         │                        │
                                         ▼                        ▼
@@ -64,8 +63,11 @@ Chaque brique V2 a son propre README détaillé :
 - Le frontend consomme l'API via un proxy `/api` (cf. [`frontend/README.md`](frontend/README.md)) :
   consultation (runs, recommandations, catalogue d'offres) **et** actions validées —
   décision humaine, génération/édition/suppression de lettre, ajout d'offre.
-- Auth : jeton porteur validé par `GET /me`, persisté côté client — voir
-  [`docs/adr/0002-auth-frontend-localstorage-me.md`](docs/adr/0002-auth-frontend-localstorage-me.md).
+- Auth : **aucune** — local-first et mono-utilisateur (OPP-181). L'API n'écoute que sur
+  `localhost` et démarre sans jeton ; au lancement, le frontend fait un simple `GET /me` pour
+  identifier l'unique utilisateur local (plus de login ni de jeton porteur). Historique de cette
+  décision : [`docs/adr/0003-auth-local-first-sans-jeton.md`](docs/adr/0003-auth-local-first-sans-jeton.md)
+  (remplace l'ADR 0002).
 
 ## Prérequis
 
@@ -114,18 +116,7 @@ Cible du proxy surchargeable via `API_PROXY_TARGET` (ex. réseau Docker).
 ### Démo Docker de bout en bout
 
 Front et API sur un réseau bridge partagé, ports publiés vers l'hôte (host-networking
-inopérant sous Docker Desktop/WSL2). La recette ci-dessous s'appuie sur cette démo.
-
-## Recette
-
-Recette de bout en bout de l'Epic E9 (login → `/me`, liste, pagination, détail,
-recommandations, erreurs 401/404, accès direct par ID) :
-
-```bash
-bash scripts/recette-e9.sh
-# ou en ciblant directement l'API :
-BASE=http://localhost:8000 TOKEN=mon-jeton bash scripts/recette-e9.sh
-```
+inopérant sous Docker Desktop/WSL2).
 
 ## Tests
 
