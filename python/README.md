@@ -34,22 +34,50 @@ src/
 
 ### Endpoints exposés
 
+Côté interface, « recherche » (vocabulaire produit, OPP-184) ; côté API/technique, le
+périmètre reste porté par l'identifiant historique `candidate_id` (routes `/candidates/...`,
+inchangées par décision).
+
 | Méthode & route | Rôle |
 |---|---|
-| `GET /me` | Sonde d'authentification + identité (`{id, role, owned_count}`) |
-| `GET /runs` | Listing paginé des runs du périmètre (candidats possédés) |
+| `GET /me` | Sonde d'amorçage + identité locale (`{id, role, owned_count}`) |
+| `GET /searches` | Liste les recherches de l'espace (OPP-184) |
+| `POST /searches` | Crée une recherche nommée (rôle `reviewer`) |
+| `PUT /searches/{search_id}` | Renomme une recherche (rôle `reviewer`) |
+| `GET /runs` | Listing paginé des runs du périmètre |
 | `GET /runs/{run_id}` | Détail d'un run (évaluations, erreurs) |
 | `GET /runs/{run_id}/recommendations` | Recommandations paginées + filtres `advisory_status`/`decision_status` |
 | `POST /candidates/{candidate_id}/recommendations` | Lance une recommandation |
+| `GET /candidates/{candidate_id}/stats` | Agrégats de décision du périmètre (OPP-163) |
+| `GET /candidates/{candidate_id}/activity` | Flux d'activité récente — lettres, décisions, ajouts (OPP-165) |
+| `GET /candidates/{candidate_id}/profile` | Lecture du profil candidat |
+| `POST /candidates/{candidate_id}/profile` | Création / mise à jour du profil |
+| `POST /candidates/{candidate_id}/profile/cv` | Import d'un CV PDF → extraction + profil (OPP-174, LLM) |
+| `POST /candidates/{candidate_id}/offers/{offer_id}/rescore` | Recalcule le score d'une offre |
 | `GET /recommendations/{recommendation_id}` | Détail d'une recommandation |
 | `POST /recommendations/{recommendation_id}/decision` | Validation humaine (rôle `reviewer`) |
+| `GET /recommendations/{recommendation_id}/letter` | Lettre de motivation courante (si générée) |
+| `POST /recommendations/{recommendation_id}/letter` | Génère la lettre (LLM, rôle `reviewer`) |
+| `PUT /recommendations/{recommendation_id}/letter` | Édite la lettre (rôle `reviewer`) |
+| `DELETE /recommendations/{recommendation_id}/letter` | Supprime la lettre (rôle `reviewer`) |
+| `GET /offers` | Catalogue du pool d'offres, annoté du score de match |
+| `POST /offers` | Intake d'une offre par texte collé (OPP-145) ou URL (OPP-148) |
+| `POST /collect` | Lance une collecte asynchrone (job de fond, OPP-170) |
+| `GET /collect/{job_id}` | Sonde la progression d'un job de collecte |
 | `POST /applications/{recommendation_id}/confirm` | Action sensible : candidature (confirmation explicite + décision `approved` + rôle `reviewer`) |
+| `POST /applications/{recommendation_id}/applied` | Suivi : « j'ai candidaté » (date optionnelle) |
+| `DELETE /applications/{recommendation_id}/applied` | Annule la candidature déclarée |
 | `POST /messages/{contact_id}/confirm` | Action sensible : message (mêmes gardes) |
 
-Gardes de sécurité communes : `Authorization: Bearer` valide (401 sinon), puis
-**propriété** de la ressource et, pour les actions réservées, **rôle `reviewer`** (403).
-Les 404 sont **neutres** : « inexistant » et « hors périmètre » sont indistinguables
-(anti-énumération).
+Certaines routes ne sont **montées que si leur service est câblé** (profil, lettre, intake
+`POST /offers`, `/collect`, actions sensibles) ; sinon elles répondent **404 neutre**.
+
+Gardes de sécurité (OPP-181, local-first) : l'API est **mono-utilisateur sur `localhost` et
+sans jeton** — toute requête est servie comme l'unique utilisateur local (pas de 401 en
+fonctionnement normal ; un filet 401 subsiste si un fournisseur d'auth strict était câblé).
+Restent la **propriété** de la ressource (sinon **404**) et, pour les actions réservées, le
+**rôle `reviewer`** (**403**). Les 404 sont **neutres** : « inexistant » et « hors périmètre »
+sont indistinguables (anti-énumération).
 
 ## Prérequis
 
@@ -97,14 +125,14 @@ lance `python -m api.server` (venv s'il existe, sinon `python3`). Renseigner au 
 
 ```bash
 cd python
-export OPPORTUNE_API_CANDIDATES=cand-marie    # périmètre : candidats possédés (CSV)
+export OPPORTUNE_API_CANDIDATES=ma-recherche  # périmètre : recherches amorcées (CSV)
 export OPPORTUNE_DB_PATH=data/opportune.db     # base SQLite (défaut : data/opportune.db)
 
 python -m api.server                           # écoute sur http://127.0.0.1:8000
 ```
 
 Le frontend React (`../frontend`) consomme cette API via un proxy `/api` (cf.
-`frontend/README.md`). Recette de bout en bout : `bash ../scripts/recette-e9.sh`.
+`frontend/README.md`).
 
 ### Ajouter une offre (texte collé ou URL)
 
@@ -163,6 +191,19 @@ assert healthcheck(conn)    # SELECT 1
 conn.close()
 ```
 
+### Deux espaces isolés — « Mon espace » / « Démo » (OPP-182)
+
+L'API sert **deux bases SQLite séparées** : les vraies données (« Mon espace »,
+`OPPORTUNE_DB_PATH`, défaut `data/opportune.db`) et un **exemple isolé** (« Démo »,
+`OPPORTUNE_DEMO_DB_PATH`, défaut `data/opportune-demo.db`, semé automatiquement au premier
+démarrage). Un `SpaceRouter` (`api.space_router`) aiguille **chaque requête** vers l'espace
+porté par l'en-tête HTTP **`X-Opportune-Space`** (`mine` ou `demo`) — **défaut `mine`** : on
+ne bascule sur la démo que sur demande explicite du front, jamais par accident. Les deux
+bases ne se mélangent jamais.
+
+Le routeur porte aussi deux **commandes réservées à la démo**, interceptées avant le routage :
+`POST /demo/reset` (vider l'espace démo) et `POST /demo/restore` (restaurer la vitrine).
+
 ## LLM local — Ollama / Ministral
 
 Accès au modèle via un client minimal (`app.llm` / `app.llm_client`) qui parle l'API HTTP
@@ -201,6 +242,12 @@ ollama pull ministral-3:3b   # télécharge le modèle (une fois)
   pare-feu Windows.
 
 ## Validation humaine — revue Discord (push-to-triage)
+
+> ⚠️ **Interface historique (MVP).** La validation courante se fait désormais dans le
+> **frontend web** (cf. [`frontend/README.md`](../frontend/README.md)). Le chemin Discord
+> ci-dessous — ainsi que la boucle push plus bas — reste **fonctionnel et testé**, mais n'est
+> plus l'interface de référence ; il est conservé comme option et pour l'historique
+> (cf. `docs/vision.md`).
 
 Quand un dossier est prêt (offre + lettre générée), il est **poussé** dans un salon
 Discord avec trois boutons Approuver / Rejeter / Différer ; le clic est routé vers la
@@ -258,7 +305,7 @@ testés en aval ; le runner ne fait que les câbler et lire l'environnement.
 ```bash
 export DISCORD_BOT_TOKEN=...                    # requis (transport Discord)
 export DISCORD_CHANNEL_ID=123456789            # requis : salon où poster les cartes
-export OPPORTUNE_CANDIDATE_ID=cand-marie        # requis : candidat ciblé
+export OPPORTUNE_CANDIDATE_ID=ma-recherche      # requis : recherche ciblée
 export OPPORTUNE_LLM_TIMEOUT=300                # timeout LLM (s) — défaut 300, généreux
 # export OPPORTUNE_OFFER_SOURCE=collée          # optionnel : provenance de l'offre
 # OLLAMA_HOST / OLLAMA_MODEL / OPPORTUNE_DB_PATH : cf. sections dédiées
