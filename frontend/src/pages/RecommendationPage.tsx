@@ -127,10 +127,10 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
           </div>
         </div>
 
-        {/* Action · Candidat · Offre · Ajoutée le sur une seule ligne (4 colonnes dès sm). */}
+        {/* Action · Recherche · Offre · Ajoutée le sur une seule ligne (4 colonnes dès sm). */}
         <dl className="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
           <Meta label="Action" value={ACTION_LABELS[reco.action]} />
-          <Meta label="Candidat" value={reco.candidate_id} mono />
+          <Meta label="Recherche" value={reco.candidate_id} mono />
           <Meta label="Offre" value={reco.offer_id} mono />
           {/* Date d'ingestion de l'offre dans Opportune (OPP-112), si connue. */}
           {reco.created_at && <Meta label="Ajoutée le" value={formatDay(reco.created_at)} />}

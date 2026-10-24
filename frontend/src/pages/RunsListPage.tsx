@@ -32,7 +32,7 @@ export function RunsListPage() {
         data &&
         (data.total === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-            Aucun run dans votre périmètre.
+            Aucun run pour le moment.
           </p>
         ) : (
           <div className="space-y-3">
