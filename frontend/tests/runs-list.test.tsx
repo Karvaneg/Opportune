@@ -98,7 +98,7 @@ describe("RunsListPage", () => {
     stubFetch({ items: [], page: 1, page_size: 20, total: 0, total_pages: 0 });
     renderList();
 
-    expect(await screen.findByText(/Aucun run dans votre périmètre/)).toBeInTheDocument();
+    expect(await screen.findByText(/Aucun run pour le moment/)).toBeInTheDocument();
   });
 
   it("lance un run pour le candidat du périmètre (POST /candidates/{id}/recommendations)", async () => {

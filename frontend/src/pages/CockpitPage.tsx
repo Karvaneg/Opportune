@@ -32,7 +32,7 @@ export function CockpitPage() {
 
       {target === "" ? (
         <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-          Aucun candidat dans votre périmètre.
+          Aucune recherche pour le moment.
         </p>
       ) : (
         <>

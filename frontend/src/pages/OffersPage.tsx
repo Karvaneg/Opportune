@@ -76,7 +76,7 @@ export function OffersPage() {
         (data.total === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
             {stageFilter
-              ? `Aucune offre « ${FUNNEL_LABELS[stageFilter]} » pour ce candidat.`
+              ? `Aucune offre « ${FUNNEL_LABELS[stageFilter]} » pour cette recherche.`
               : isReviewer
                 ? "Aucune offre dans le catalogue. Récupère-en de nouvelles ci-dessus, ou ajoute-en une depuis l'accueil."
                 : "Aucune offre dans le catalogue pour le moment."}

@@ -72,6 +72,6 @@ describe("ProfilePage", () => {
     stub([]);
     renderPage();
 
-    expect(await screen.findByText(/Aucun candidat dans votre périmètre/)).toBeInTheDocument();
+    expect(await screen.findByText(/Aucune recherche pour le moment/)).toBeInTheDocument();
   });
 });

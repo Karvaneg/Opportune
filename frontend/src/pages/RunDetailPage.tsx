@@ -34,7 +34,7 @@ export function RunDetailPage() {
       {data && (
         <>
           <dl className="grid grid-cols-2 gap-4 rounded-lg border border-slate-200 bg-white p-4 text-sm sm:grid-cols-3">
-            <Meta label="Candidat" value={data.candidate_id} mono />
+            <Meta label="Recherche" value={data.candidate_id} mono />
             <Meta label="Exécuté le" value={formatDate(data.executed_at)} />
             <Meta label="Offres évaluées" value={String(data.evaluations.length)} />
           </dl>
