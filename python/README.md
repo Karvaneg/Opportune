@@ -191,6 +191,19 @@ assert healthcheck(conn)    # SELECT 1
 conn.close()
 ```
 
+### Deux espaces isolés — « Mon espace » / « Démo » (OPP-182)
+
+L'API sert **deux bases SQLite séparées** : les vraies données (« Mon espace »,
+`OPPORTUNE_DB_PATH`, défaut `data/opportune.db`) et un **exemple isolé** (« Démo »,
+`OPPORTUNE_DEMO_DB_PATH`, défaut `data/opportune-demo.db`, semé automatiquement au premier
+démarrage). Un `SpaceRouter` (`api.space_router`) aiguille **chaque requête** vers l'espace
+porté par l'en-tête HTTP **`X-Opportune-Space`** (`mine` ou `demo`) — **défaut `mine`** : on
+ne bascule sur la démo que sur demande explicite du front, jamais par accident. Les deux
+bases ne se mélangent jamais.
+
+Le routeur porte aussi deux **commandes réservées à la démo**, interceptées avant le routage :
+`POST /demo/reset` (vider l'espace démo) et `POST /demo/restore` (restaurer la vitrine).
+
 ## LLM local — Ollama / Ministral
 
 Accès au modèle via un client minimal (`app.llm` / `app.llm_client`) qui parle l'API HTTP
@@ -229,6 +242,12 @@ ollama pull ministral-3:3b   # télécharge le modèle (une fois)
   pare-feu Windows.
 
 ## Validation humaine — revue Discord (push-to-triage)
+
+> ⚠️ **Interface historique (MVP).** La validation courante se fait désormais dans le
+> **frontend web** (cf. [`frontend/README.md`](../frontend/README.md)). Le chemin Discord
+> ci-dessous — ainsi que la boucle push plus bas — reste **fonctionnel et testé**, mais n'est
+> plus l'interface de référence ; il est conservé comme option et pour l'historique
+> (cf. `docs/vision.md`).
 
 Quand un dossier est prêt (offre + lettre générée), il est **poussé** dans un salon
 Discord avec trois boutons Approuver / Rejeter / Différer ; le clic est routé vers la
