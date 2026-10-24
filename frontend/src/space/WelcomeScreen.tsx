@@ -12,16 +12,18 @@ export function WelcomeScreen({ onChoose }: { onChoose: (space: Space) => void }
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-surface px-4">
       <div className="text-center">
-        {/* Signature au lieu du mot : le `<h1>` reste le titre de la page (texte en sr-only pour
-            les lecteurs d'écran), le logo n'est que décoratif. */}
-        <h1 className="flex justify-center">
-          <span className="sr-only">Opportune</span>
-          <Logo height={40} />
-        </h1>
-        <p className="mt-4 max-w-md text-sm text-ink-muted">
-          Choisis ton espace de travail. La démo est un exemple isolé — tes vraies données n'y
-          sont jamais mélangées.
-        </p>
+        {/* Lockup signature + baseline : le bloc est centré dans la page, mais la baseline s'aligne
+            sous le DÉBUT du mot (bord gauche), comme la couverture de la charte — pas centrée sous
+            la signature. `inline-flex` prend la largeur du logo ; `items-start` cale la baseline à
+            gauche. `ml-0.5` reprend le léger retrait de la charte (margin-left 4px, ~proportionnel).
+            Le `<h1>` reste le titre de page (« Opportune » en sr-only), le logo étant décoratif. */}
+        <div className="inline-flex flex-col items-start">
+          <h1 className="flex">
+            <span className="sr-only">Opportune</span>
+            <Logo height={48} />
+          </h1>
+          <p className="-mt-1 ml-0 text-base text-ink-muted">Saisir l'occasion au vol.</p>
+        </div>
       </div>
 
       <div className="grid w-full max-w-2xl gap-4 sm:grid-cols-2">
