@@ -85,9 +85,9 @@ export function RunRecommendations({ runId }: { runId: string }) {
         <>
           {/* Légende : chaque offre porte deux badges de registres distincts (OPP-149). */}
           <p className="text-xs text-ink-muted">
-            Pour chaque offre : <span className="text-ink-muted">score au moment du run</span>,
-            puis <span className="text-ink-muted">pré-évaluation automatique</span> et{" "}
-            <span className="text-ink-muted">décision humaine</span>. Le score à jour (recalculé)
+            Pour chaque offre : <span className="text-ink">score au moment du run</span>,
+            puis <span className="text-ink">pré-évaluation automatique</span> et{" "}
+            <span className="text-ink">décision humaine</span>. Le score à jour (recalculé)
             est visible dans l'onglet Offres et sur le détail de l'offre.
           </p>
           <ul className="space-y-2">

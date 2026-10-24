@@ -153,7 +153,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
       <Link
         to={to}
         state={{ from: "/" }}
-        className="min-w-0 flex-1 truncate text-ink-muted hover:text-ink hover:underline"
+        className="min-w-0 flex-1 truncate text-ink hover:underline"
       >
         {event.label}
       </Link>

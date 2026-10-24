@@ -1,13 +1,26 @@
 <!doctype html>
-<!-- `data-theme="light"` force le clair tant que la migration des écrans et le sélecteur de
-     thème (tranche 3) ne sont pas livrés ; il sera piloté par le toggle (clair/sombre/auto). -->
-<html lang="fr" data-theme="light">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Favicon adaptatif (bascule clair/sombre tout seul) + repli PNG 32px. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <!-- Thème résolu AVANT le rendu (anti-flash). Le choix stocké (« clair »/« sombre »)
+         prime ; sinon « auto » (clé absente) est résolu ici via prefers-color-scheme. On pose
+         TOUJOURS un data-theme explicite : tokens.css n'a donc qu'un seul bloc par thème, sans
+         media query. Piloté ensuite par le ThemeToggle (même clé, écouteur système pour l'auto). -->
+    <script>
+      try {
+        var t = localStorage.getItem("opportune.theme");
+        if (t !== "light" && t !== "dark") {
+          t = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
     <title>Opportune</title>
   </head>
   <body>

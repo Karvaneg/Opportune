@@ -10,6 +10,7 @@ import { WelcomeScreen } from "./space/WelcomeScreen";
 import { DemoBanner } from "./space/DemoBanner";
 import { SearchBar } from "./components/SearchBar";
 import { Logo } from "./components/Logo";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { CockpitPage } from "./pages/CockpitPage";
 import { OffersPage } from "./pages/OffersPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -157,6 +158,7 @@ function AuthenticatedApp() {
                   >
                     Changer d'espace
                   </button>
+                  <ThemeToggle />
                 </div>
               </div>
             </header>
