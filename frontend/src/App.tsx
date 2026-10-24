@@ -9,6 +9,7 @@ import { useSpace } from "./space/SpaceContext";
 import { WelcomeScreen } from "./space/WelcomeScreen";
 import { DemoBanner } from "./space/DemoBanner";
 import { SearchBar } from "./components/SearchBar";
+import { Logo } from "./components/Logo";
 import { CockpitPage } from "./pages/CockpitPage";
 import { OffersPage } from "./pages/OffersPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -126,8 +127,8 @@ function AuthenticatedApp() {
             <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
               <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
                 <div className="flex items-center gap-8">
-                  <Link to="/" className="text-lg font-bold tracking-tight text-slate-900">
-                    Opportune
+                  <Link to="/" aria-label="Opportune, accueil" className="flex items-center">
+                    <Logo height={32} />
                   </Link>
                   {/* Nav dans le header en desktop uniquement ; sur mobile elle passe en barre du bas. */}
                   <nav className="hidden items-center gap-1 text-sm sm:flex">

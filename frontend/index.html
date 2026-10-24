@@ -1,9 +1,14 @@
 <!doctype html>
-<html lang="fr">
+<!-- `data-theme="light"` force le clair tant que la migration des écrans et le sélecteur de
+     thème (tranche 3) ne sont pas livrés ; il sera piloté par le toggle (clair/sombre/auto). -->
+<html lang="fr" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Opportune — Hermes</title>
+    <!-- Favicon adaptatif (bascule clair/sombre tout seul) + repli PNG 32px. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <title>Opportune</title>
   </head>
   <body>
     <div id="root"></div>

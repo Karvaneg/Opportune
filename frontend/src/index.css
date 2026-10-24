@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+/* Jetons de marque Opportune (charte E12) : couleurs clair+sombre, typo, espacements, rayons. */
+@import "./styles/tokens.css";
+
+/*
+ * Mapping des jetons sémantiques de la charte sur le thème Tailwind.
+ * `inline` fait émettre `var(--surface)` directement dans les utilitaires (`bg-surface`…),
+ * si bien qu'ils suivent la bascule clair/sombre portée par `tokens.css` sans variante `dark:`.
+ * Les couleurs `success`/`warning`/`danger` restent strictement sémantiques (jamais la marque).
+ */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-on-brand: var(--on-brand);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-danger: var(--danger);
+}
+
 /*
  * Tailwind v4 ne force plus `cursor: pointer` sur les boutons (changement de preflight).
  * On le rétablit globalement pour tout élément cliquable actif — les `<a>`/`<Link>` ont déjà
