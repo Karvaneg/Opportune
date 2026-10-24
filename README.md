@@ -21,14 +21,36 @@
 
 ---
 
+> 🚧 **Bientôt : une application à installer en un clic.** Aujourd'hui, mettre en place
+> Opportune demande un environnement technique (Python, Node ou Docker, plus Ollama) —
+> c'est réservé à un public à l'aise avec ces outils. Une **application de bureau
+> Windows/Mac**, installable par **double-clic et sans terminal** (LLM embarqué), est en
+> préparation : c'est le palier **Opportune 1.0**. Voir la [feuille de route](#feuille-de-route).
+
+## Sommaire
+
+- [Migration V1 → V2](#migration-v1--v2)
+- [Cartographie du dépôt](#cartographie-du-dépôt-monorepo)
+- [Architecture V2](#architecture-v2-vue-densemble)
+- [Prérequis](#prérequis)
+- [Démarrage (V2)](#démarrage-v2)
+- [Sources d'offres](#sources-doffres--pourquoi-adzuna-par-défaut)
+- [Tests](#tests)
+- [Configuration](#configuration)
+- [Feuille de route](#feuille-de-route)
+- [Documentation](#documentation)
+- [Legacy V1 (Node.js)](#legacy-v1-nodejs)
+
+## Migration V1 → V2
+
 Le projet est en **migration V1 → V2** :
 
 - **V2 (Python) — active.** Le moteur métier, l'orchestrateur **Hermes**, l'API HTTP et
   un **frontend web de consultation** (React/Vite). C'est là que se fait le développement
   courant. Code sous `python/` et `frontend/`.
 - **V1 (Node.js) — historique.** Le MVP CLI d'origine (intégration Notion, stockage JSON)
-  vit encore à la racine (`src/`, `index.js`, `package.json`). Conservé comme référence le
-  temps de la migration ; il n'est plus la cible produit.
+  vit encore à la racine (`src/`, `package.json`). Conservé comme référence le temps de la
+  migration ; il n'est plus la cible produit.
 
 ## Cartographie du dépôt (monorepo)
 
@@ -145,6 +167,24 @@ Détails et variantes (venv local, lint, build) dans les READMEs respectifs.
 
 Les variables sensibles se placent dans un `.env.local` (gitignoré, jamais commité).
 Voir `.env.example` et les READMEs de chaque brique pour la liste complète.
+
+## Feuille de route
+
+**Opportune 1.0 — installation grand public.** La prochaine étape vise à rendre Opportune
+installable par **n'importe quelle personne en recherche d'emploi**, sans compétences
+techniques :
+
+- 📦 **Application de bureau** (Windows/Mac) packagée avec **Tauri** : un **installeur à
+  double-clic**, aucune ligne de commande. Le moteur Python et le dashboard web sont embarqués
+  dans l'application.
+- 🧠 **LLM clé en main** : l'application installe et pilote **Ollama** et télécharge le modèle
+  au premier lancement — plus rien à configurer à la main, et le **tout-local** est préservé.
+- ⚙️ **Configuration dans l'app** : un écran de bienvenue remplace l'édition de fichiers
+  `.env` ; l'app est utilisable immédiatement (espace démo + RSS), la clé Adzuna devient
+  optionnelle.
+
+En attendant, l'installation décrite plus haut (environnement Python/Node ou Docker) reste la
+voie pour les profils techniques et les contributeurs.
 
 ## Documentation
 
