@@ -1,5 +1,4 @@
 import { useTargetCandidate } from "../auth/useTargetCandidate";
-import { CandidatePicker } from "../components/CandidatePicker";
 import { ProfilePanel } from "../components/ProfilePanel";
 
 /**
@@ -9,19 +8,11 @@ import { ProfilePanel } from "../components/ProfilePanel";
  * qu'une carte résumé (cf. ProfileSummaryCard).
  */
 export function ProfilePage() {
-  const { candidates, target, setCandidate } = useTargetCandidate();
+  const { target } = useTargetCandidate();
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold text-slate-900">Profil</h2>
-        <CandidatePicker
-          candidates={candidates}
-          value={target}
-          onChange={setCandidate}
-          ariaLabel="Candidat pour le profil"
-        />
-      </div>
+      <h2 className="text-xl font-semibold text-slate-900">Profil</h2>
 
       {target === "" ? (
         <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">

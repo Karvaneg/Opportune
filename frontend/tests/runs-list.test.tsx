@@ -28,7 +28,11 @@ function stubFetch(runsBody: unknown) {
         status: 200,
         json: () =>
           Promise.resolve(
-            String(url).includes("/me") ? { id: "u", role: "reviewer", owned_count: 1 } : runsBody,
+            String(url).includes("/searches")
+              ? { items: [{ id: "cand-1", label: "Marie" }] }
+              : String(url).includes("/me")
+                ? { id: "u", role: "reviewer", owned_count: 1 }
+                : runsBody,
           ),
       } as Response),
     ),
@@ -47,7 +51,11 @@ function stubPaginatedFetch(pages: Record<number, unknown>) {
         status: 200,
         json: () =>
           Promise.resolve(
-            s.includes("/me") ? { id: "u", role: "reviewer", owned_count: 1 } : pages[page],
+            s.includes("/searches")
+              ? { items: [{ id: "cand-1", label: "Marie" }] }
+              : s.includes("/me")
+                ? { id: "u", role: "reviewer", owned_count: 1 }
+                : pages[page],
           ),
       } as Response);
     }),
@@ -101,6 +109,7 @@ describe("RunsListPage", () => {
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/candidates/") && init?.method === "POST") {
@@ -127,6 +136,7 @@ describe("RunsListPage", () => {
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/candidates/") && init?.method === "POST")
@@ -151,6 +161,7 @@ describe("RunsListPage", () => {
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/candidates/") && init?.method === "POST")
@@ -176,6 +187,7 @@ describe("RunsListPage", () => {
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/runs/") && init?.method === "DELETE") {
@@ -205,6 +217,7 @@ describe("RunsListPage", () => {
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
         const s = String(url);
+        if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/runs/") && init?.method === "DELETE")

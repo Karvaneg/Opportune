@@ -32,6 +32,8 @@ function stubFetch(statsBody: unknown = STATS, role = "reviewer", activityBody: 
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
+      // Source du ciblage (OPP-184) : une recherche « cand-1 » dans le périmètre.
+      if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
       if (s.includes("/me"))
         return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/activity")) return ok(activityBody);

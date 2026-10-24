@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Briefcase, History, Home, User, type LucideIcon } from "lucide-react";
 import { createQueryClient } from "./api/queryClient";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
@@ -8,6 +8,7 @@ import { TargetCandidateProvider } from "./auth/useTargetCandidate";
 import { useSpace } from "./space/SpaceContext";
 import { WelcomeScreen } from "./space/WelcomeScreen";
 import { DemoBanner } from "./space/DemoBanner";
+import { SearchBar } from "./components/SearchBar";
 import { CockpitPage } from "./pages/CockpitPage";
 import { OffersPage } from "./pages/OffersPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -22,6 +23,24 @@ const NAV_ITEMS: { to: string; label: string; end: boolean; icon: LucideIcon }[]
   { to: "/offres", label: "Offres", end: false, icon: Briefcase },
   { to: "/historique", label: "Historique", end: false, icon: History },
 ];
+
+/**
+ * N'affiche le sélecteur global que sur les pages du périmètre (accueil, profil, offres,
+ * historique) — là où `target` pilote réellement l'affichage. Le masquer sur le détail d'un run
+ * ou d'une recommandation (keyés par l'URL, pas par `target`) évite un sélecteur sans effet visible.
+ */
+function ScopeSearchBar() {
+  const { pathname } = useLocation();
+  const onScopePage =
+    pathname === "/" ||
+    ["/profil", "/offres", "/historique"].some((p) => pathname.startsWith(p));
+  if (!onScopePage) return null;
+  return (
+    <div className="mb-6">
+      <SearchBar />
+    </div>
+  );
+}
 
 /** Style d'un onglet du header (desktop) en « pill » : fond accent quand actif. */
 function navClass({ isActive }: { isActive: boolean }): string {
@@ -144,6 +163,9 @@ function AuthenticatedApp() {
             {space === "demo" && <DemoBanner />}
             {/* Padding bas sur mobile pour que le contenu ne passe pas sous la barre d'onglets fixe. */}
             <main className="mx-auto max-w-5xl px-4 pb-24 pt-6 sm:px-6 sm:pb-8 sm:pt-8">
+              {/* Sélecteur global de recherche (OPP-184) : basculer / créer / renommer, partagé par
+                  les pages du périmètre via le contexte de ciblage. En tête du contenu, sous la nav. */}
+              <ScopeSearchBar />
               <Routes>
                 <Route path="/" element={<CockpitPage />} />
                 <Route path="/offres" element={<OffersPage />} />

@@ -4,38 +4,25 @@ import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { ErrorNotice } from "./States";
 
 /**
- * Lance un run d'analyse pour un candidat du périmètre (OPP-143). Un seul candidat →
- * bouton direct ; plusieurs → sélecteur. Au succès, on navigue vers le run créé (et la
- * liste est invalidée pour l'afficher en tête). Rien à lancer si le périmètre est vide.
+ * Lance un run d'analyse pour la recherche active (OPP-143). La bascule de recherche se fait
+ * désormais via le sélecteur global (OPP-184) ; ce raccourci agit donc sur `target`. Au succès,
+ * on navigue vers le run créé (et la liste est invalidée pour l'afficher en tête). Rien à lancer
+ * sans recherche active.
  *
  * Raccourci partagé entre le cockpit (OPP-164) et l'Historique.
  */
 export function LaunchRun() {
   const navigate = useNavigate();
-  // `target` reste toujours un candidat du périmètre même si `identity` est re-fetchée (cf.
-  // useTargetCandidate), garantissant que le <select> et le POST ciblent une valeur valide.
-  const { candidates, target, setCandidate } = useTargetCandidate();
+  // `target` reste toujours une recherche du périmètre (cf. useTargetCandidate), donc le POST
+  // cible une valeur valide.
+  const { target } = useTargetCandidate();
   const launch = useLaunchRun();
 
-  if (candidates.length === 0) return null;
+  if (target === "") return null;
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        {candidates.length > 1 && (
-          <select
-            aria-label="Candidat à analyser"
-            value={target}
-            onChange={(e) => setCandidate(e.target.value)}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            {candidates.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        )}
         <button
           type="button"
           onClick={() =>
