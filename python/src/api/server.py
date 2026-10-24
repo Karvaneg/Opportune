@@ -87,12 +87,17 @@ def create_server(
     return HTTPServer((host, port), make_handler(api))
 
 
-def assemble_api(conn, auth: "LocalAuthProvider") -> HermesApi:
+def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
     """Compose l'API **de production** : orchestrateur + actions + **identité locale**.
 
     ``auth`` est **obligatoire** : le point d'entrée réseau ne sert jamais l'API en mode
     ouvert (``auth=None`` est réservé aux tests/compatibilité). Fonction isolée pour être
     testable — vérifier qu'elle produit bien une API portant une identité.
+
+    ``searches`` (OPP-184) est le **registre du périmètre** de cet espace : le même que celui
+    dont ``auth`` dérive le périmètre, pour que le CRUD « recherche » (/searches) et l'auth
+    partagent une seule source de vérité. Optionnel pour rester compatible avec les appelants
+    existants ; ``main`` le fournit toujours.
     """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
@@ -236,6 +241,7 @@ def assemble_api(conn, auth: "LocalAuthProvider") -> HermesApi:
         collections=collections,
         profiles=profile_service,
         cv_intake=cv_intake,
+        searches=searches,
     )
 
 
@@ -273,7 +279,9 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     mine_registry = CandidateRegistry(mine_conn)
     env_ids = [c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c]
     mine_registry.ensure([*env_ids, *ProfileStore(mine_conn).list_ids()])
-    mine = assemble_api(mine_conn, build_local_auth(mine_registry.list_ids))
+    mine = assemble_api(
+        mine_conn, build_local_auth(mine_registry.list_ids), searches=mine_registry
+    )
 
     # Espace démo (OPP-182) : une base d'exemple **séparée** (jamais mélangée au réel). On la
     # seede au **tout premier lancement seulement** (fichier absent) : ainsi un « repartir de
@@ -298,7 +306,9 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     # « repartir de zéro » qui conserve le slot vide pour l'onboarding.
     demo_registry = CandidateRegistry(demo_conn)
     demo_registry.ensure([DEMO_CANDIDATE_ID])
-    demo = assemble_api(demo_conn, build_local_auth(demo_registry.list_ids))
+    demo = assemble_api(
+        demo_conn, build_local_auth(demo_registry.list_ids), searches=demo_registry
+    )
 
     # Commandes d'espace démo (OPP-182), portées par le routeur donc toujours ciblées sur la
     # base démo : « repartir de zéro » (vider) et « restaurer l'exemple » (vitrine canonique).
