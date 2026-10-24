@@ -125,7 +125,7 @@ lance `python -m api.server` (venv s'il existe, sinon `python3`). Renseigner au 
 
 ```bash
 cd python
-export OPPORTUNE_API_CANDIDATES=cand-marie    # périmètre : candidats possédés (CSV)
+export OPPORTUNE_API_CANDIDATES=ma-recherche  # périmètre : recherches amorcées (CSV)
 export OPPORTUNE_DB_PATH=data/opportune.db     # base SQLite (défaut : data/opportune.db)
 
 python -m api.server                           # écoute sur http://127.0.0.1:8000
@@ -305,7 +305,7 @@ testés en aval ; le runner ne fait que les câbler et lire l'environnement.
 ```bash
 export DISCORD_BOT_TOKEN=...                    # requis (transport Discord)
 export DISCORD_CHANNEL_ID=123456789            # requis : salon où poster les cartes
-export OPPORTUNE_CANDIDATE_ID=cand-marie        # requis : candidat ciblé
+export OPPORTUNE_CANDIDATE_ID=ma-recherche      # requis : recherche ciblée
 export OPPORTUNE_LLM_TIMEOUT=300                # timeout LLM (s) — défaut 300, généreux
 # export OPPORTUNE_OFFER_SOURCE=collée          # optionnel : provenance de l'offre
 # OLLAMA_HOST / OLLAMA_MODEL / OPPORTUNE_DB_PATH : cf. sections dédiées

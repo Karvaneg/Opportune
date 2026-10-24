@@ -96,7 +96,7 @@ Renseigner au minimum `OPPORTUNE_API_CANDIDATES` dans `python/.env`
 **Démarrage manuel** (variables à l'ancienne) — depuis `python/` :
 
 ```bash
-export OPPORTUNE_API_CANDIDATES=cand-marie    # périmètre : candidats possédés (CSV)
+export OPPORTUNE_API_CANDIDATES=ma-recherche  # périmètre : recherches amorcées (CSV)
 export OPPORTUNE_DB_PATH=data/opportune.db     # base SQLite (défaut : data/opportune.db)
 
 python -m api.server                           # écoute sur http://127.0.0.1:8000
