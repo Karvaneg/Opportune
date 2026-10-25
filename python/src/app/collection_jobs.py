@@ -193,8 +193,11 @@ class CollectionJobRegistry:
         except Exception as exc:  # noqa: BLE001 — consigné dans le job, jamais avalé
             self._finish(job_id, status=FAILED, error=f"{type(exc).__name__}: {exc}")
             return
-        # Arrêt demandé et atteint → ``cancelled`` (bilan partiel conservé) ; sinon ``done``.
-        status = CANCELLED if cancel_event.is_set() else DONE
+        # Issue décidée d'après ce que le runner a **réellement** fait (``report.cancelled``),
+        # non d'après une relecture du drapeau : une annulation qui arrive une fois la dernière
+        # offre traitée ne tronque rien → le job reste ``done`` (bilan complet), jamais figé à
+        # tort en ``cancelled`` (course fin-de-passe / ``cancel`` concurrent, OPP-209).
+        status = CANCELLED if report.cancelled else DONE
         self._finish(job_id, status=status, report=report)
 
     def _finish(

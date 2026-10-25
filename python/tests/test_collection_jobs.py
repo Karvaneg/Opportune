@@ -113,7 +113,8 @@ def test_cancel_marks_job_cancelled_and_sets_flag():
         while not should_cancel():
             if release.wait(0.01):  # garde-fou anti-blocage du test
                 break
-        return _report(collected=1, stored=1)
+        # Comme un vrai runner : ``cancelled`` reflète que la passe a été tronquée par le flag.
+        return _report(collected=1, stored=1, cancelled=should_cancel())
 
     registry = CollectionJobRegistry(
         runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start()
@@ -132,6 +133,38 @@ def test_cancel_marks_job_cancelled_and_sets_flag():
     finally:
         release.set()
     assert registry.get(job_id).report.stored == 1  # bilan partiel conservé
+
+
+def test_late_cancel_keeps_job_done_when_pass_completed():
+    # Course fin-de-passe (OPP-209) : le ``cancel`` est accepté pendant que le job est encore
+    # ``running``, mais le runner a déjà mené la passe à terme (``report.cancelled`` faux). Le
+    # job doit rester ``done`` avec son bilan complet — jamais figé à tort en ``cancelled`` —
+    # même si ``cancel_requested`` reste vrai (la demande a bien eu lieu, trop tard).
+    release = threading.Event()
+    started = threading.Event()
+
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
+        started.set()
+        release.wait(timeout=5)  # bloque jusqu'à ce que le test ait posé le cancel
+        return _report(collected=2, stored=2)  # passe menée à terme : cancelled implicitement faux
+
+    registry = CollectionJobRegistry(
+        runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start()
+    )
+    job_id = registry.start(what="", where="", max_offers=5)
+    assert started.wait(timeout=5)
+    assert registry.cancel(job_id) is True  # accepté : le job est encore running
+    release.set()
+    for _ in range(500):
+        if registry.get(job_id).status != RUNNING:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("le job ne s'est pas terminé")
+    job = registry.get(job_id)
+    assert job.status == DONE  # passe complète → done, pas cancelled
+    assert job.report.stored == 2  # bilan complet conservé
+    assert job.cancel_requested is True  # la demande d'arrêt a bien été enregistrée
 
 
 def test_cancel_unknown_or_terminated_returns_false():

@@ -82,6 +82,12 @@ class CollectionReport:
     ``enriched_recovered`` = parmi elles, combien ont **effectivement** gagné des compétences
     après ré-analyse. Ce sont des sous-comptes de ``stored`` (``enriched_recovered`` ≤
     ``enriched`` ≤ ``stored``).
+
+    ``cancelled`` (OPP-209) vaut ``True`` quand la passe a été **effectivement** tronquée par
+    ``should_cancel`` (arrêt entre deux offres), par opposition à une passe menée à terme. Il
+    décrit ce qui s'est réellement produit — à ne pas confondre avec la *demande* d'arrêt : une
+    annulation qui arrive une fois la dernière offre déjà traitée laisse ``cancelled`` à
+    ``False`` (rien n'a été tronqué). Reste interne au back (non sérialisé vers le front).
     """
 
     collected: int
@@ -91,6 +97,7 @@ class CollectionReport:
     source_error: str | None = None
     enriched: int = 0
     enriched_recovered: int = 0
+    cancelled: bool = False
 
 
 def collect_offers(
@@ -135,6 +142,7 @@ def collect_offers(
     failures: list[CollectionFailure] = []
     seen: set[str] = set()
     source_error: str | None = None
+    cancelled = False
 
     def _emit() -> None:
         if on_progress is not None:
@@ -161,7 +169,10 @@ def collect_offers(
     while True:
         # Arrêt coopératif (OPP-209) : vérifié entre deux offres, jamais pendant un intake LLM
         # en cours. Le bilan déjà accumulé est rendu tel quel (offres persistées conservées).
+        # ``cancelled`` ne passe à vrai que si l'on rompt **ici** : une annulation posée après
+        # la dernière offre ne tronque rien et laisse la passe se terminer normalement.
         if should_cancel is not None and should_cancel():
+            cancelled = True
             break
         try:
             raw = next(iterator)
@@ -208,4 +219,5 @@ def collect_offers(
         source_error=source_error,
         enriched=enriched,
         enriched_recovered=enriched_recovered,
+        cancelled=cancelled,
     )
