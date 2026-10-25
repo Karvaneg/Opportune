@@ -273,7 +273,47 @@ def test_collect_routes_absent_without_registry():
 
 
 def test_collect_unsupported_method_405():
-    assert _api(lambda **k: _report()).dispatch("GET", "/collect", None, None).status == 405
+    # GET /collect est désormais le suivi global (OPP-208) ; une méthode d'écriture autre
+    # que POST reste non supportée.
+    assert _api(lambda **k: _report()).dispatch("PUT", "/collect", None, None).status == 405
+
+
+def test_get_active_collect_none_when_idle():
+    # Aucune collecte lancée → suivi global vide (OPP-208).
+    resp = _api(lambda **k: _report()).dispatch("GET", "/collect", None, None)
+    assert resp.status == 200
+    assert resp.body == {"job": None}
+
+
+def test_get_active_collect_reflects_running_job():
+    # Un job maintenu « running » par un Event est visible via le suivi global, sans job_id.
+    release = threading.Event()
+    started = threading.Event()
+
+    def runner(*, what, where, max_offers, on_progress):
+        started.set()
+        release.wait(timeout=5)
+        return _report()
+
+    api = _api(runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start())
+    try:
+        start = api.dispatch("POST", "/collect", {}, None)
+        assert start.status == 202
+        assert started.wait(timeout=5)
+        active = api.dispatch("GET", "/collect", None, None)
+        assert active.status == 200
+        assert active.body["job"] is not None
+        assert active.body["job"]["job_id"] == start.body["job_id"]
+        assert active.body["job"]["status"] == "running"
+    finally:
+        release.set()
+    # Une fois terminé, le job n'est plus « actif » : le suivi global redevient vide.
+    for _ in range(200):
+        if api.dispatch("GET", "/collect", None, None).body["job"] is None:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("le job est resté « actif » après sa fin")
 
 
 def test_collect_requires_reviewer_role():
@@ -284,6 +324,7 @@ def test_collect_requires_reviewer_role():
     )
     assert viewer.dispatch("POST", "/collect", {}).status == 403
     assert viewer.dispatch("GET", "/collect/n-importe", None).status == 403
+    assert viewer.dispatch("GET", "/collect", None).status == 403  # suivi global aussi réservé
     # Avec le rôle : la passe démarre (202) et le sondage répond (200).
     reviewer = _api(
         lambda **k: _report(),

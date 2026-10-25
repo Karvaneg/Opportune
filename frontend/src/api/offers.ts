@@ -75,6 +75,10 @@ export const collectJobKeys = {
   job: (jobId: string) => ["collect-job", jobId] as const,
 };
 
+// Suivi **global** de la collecte (OPP-208) : clé unique (pas de job_id), pour un indicateur
+// persistant qui survit au changement de page.
+export const activeCollectKey = ["collect-active"] as const;
+
 /**
  * Démarre une passe de collecte réelle (Adzuna) : `POST /collect` → `202 { job_id }` (OPP-170).
  * Reviewer uniquement (curation du pool partagé, comme `useAddOffer`). La collecte est
@@ -103,6 +107,22 @@ export function useCollectJob(jobId: string | null) {
     enabled: Boolean(jobId),
     refetchInterval: (query) =>
       query.state.data?.status === "running" ? COLLECT_POLL_INTERVAL_MS : false,
+  });
+}
+
+/**
+ * Suit la collecte **active** sans connaître son `job_id` : `GET /collect` → `{ job | null }`
+ * (OPP-208). Source d'un indicateur **global persistant** — contrairement à `useCollectJob`
+ * (lié à un `job_id` local, perdu en changeant de page), il retrouve une passe en cours au
+ * (re)montage de n'importe quel écran. Sonde tant qu'un job `running` existe, s'arrête sinon
+ * (un job terminé n'est plus « actif » : son bilan reste du ressort de la page Offres).
+ */
+export function useActiveCollectJob() {
+  return useQuery({
+    queryKey: activeCollectKey,
+    queryFn: () => apiFetch<{ job: CollectionJob | null }>("/collect"),
+    refetchInterval: (query) =>
+      query.state.data?.job?.status === "running" ? COLLECT_POLL_INTERVAL_MS : false,
   });
 }
 

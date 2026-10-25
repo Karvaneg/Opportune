@@ -8,6 +8,7 @@ import { TargetCandidateProvider } from "./auth/useTargetCandidate";
 import { useSpace } from "./space/SpaceContext";
 import { WelcomeScreen } from "./space/WelcomeScreen";
 import { DemoBanner } from "./space/DemoBanner";
+import { CollectionBanner } from "./components/CollectionBanner";
 import { SearchBar } from "./components/SearchBar";
 import { Logo } from "./components/Logo";
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -164,6 +165,8 @@ function AuthenticatedApp() {
             </header>
             {/* Bandeau démo (OPP-182) : repartir de zéro / restaurer l'exemple, espace démo uniquement. */}
             {space === "demo" && <DemoBanner />}
+            {/* Indicateur global de collecte en cours (OPP-208) : persiste d'un écran à l'autre. */}
+            <CollectionBanner />
             {/* Padding bas sur mobile pour que le contenu ne passe pas sous la barre d'onglets fixe. */}
             <main className="mx-auto max-w-5xl px-4 pb-24 pt-6 sm:px-6 sm:pb-8 sm:pt-8">
               {/* Sélecteur global de recherche (OPP-184) : basculer / créer / renommer, partagé par

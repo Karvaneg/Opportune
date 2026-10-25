@@ -125,6 +125,16 @@ class CollectionJobRegistry:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def active_job(self) -> CollectionJob | None:
+        """Instantané du job **actif** (``running``), ou ``None`` si aucune collecte en cours.
+
+        Source du suivi **global** (OPP-208) : le front interroge l'état courant sans connaître
+        de ``job_id`` (il le perd en changeant de page). Seul le job actif est rendu — un job
+        terminé n'est plus « actif » (son bilan final reste lisible par ``get(job_id)``).
+        """
+        with self._lock:
+            return self._jobs.get(self._active) if self._active is not None else None
+
     def _prune_locked(self) -> None:
         """Borne la map à ``_MAX_RETAINED_JOBS`` en évinçant les terminés les plus anciens.
 

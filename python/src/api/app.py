@@ -441,6 +441,10 @@ class HermesApi:
             # Montée uniquement si le registre est câblé (sinon 404 neutre, comme /offers POST).
             if self.collections is None:
                 raise self._not_found(user, "collecte d'offres non disponible")
+            # GET /collect (OPP-208) : état du job **actif** (suivi global, sans job_id) ;
+            # POST /collect : démarre une passe.
+            if method.upper() == "GET":
+                return self._get_active_collect(user)
             self._require(method, "POST", path)
             return self._post_collect(body, user)
 
@@ -1074,6 +1078,19 @@ class HermesApi:
         except CollectionAlreadyRunning as exc:
             raise ApiError(409, str(exc)) from exc
         return Response(202, {"job_id": job_id})
+
+    def _get_active_collect(self, user: User | None) -> Response:
+        """Job de collecte **actif** (OPP-208), pour un suivi global indépendant du ``job_id``.
+
+        Réservé au ``reviewer`` (cohérent avec le démarrage et le sondage). Rend
+        ``{"job": <job>}`` avec le job en cours sérialisé (même forme que GET /collect/{id}),
+        ou ``{"job": null}`` si aucune collecte ne tourne — le front en dérive un indicateur
+        global persistant, qui survit au changement de page (OPP-208).
+        """
+        self._guard_reviewer(user)
+        assert self.collections is not None  # garanti par le dispatch (404 sinon)
+        job = self.collections.active_job()
+        return Response(200, {"job": self._serialize_job(job) if job is not None else None})
 
     def _get_collect_job(self, job_id: str, user: User | None) -> Response:
         """État d'un job de collecte (OPP-170) : statut, progression, bilan final ou erreur.
