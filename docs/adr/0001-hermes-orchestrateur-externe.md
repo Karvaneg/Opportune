@@ -1,9 +1,15 @@
 # ADR 0001 — Hermes comme orchestrateur externe (cadrage, non intégré)
 
-- **Statut** : Proposé — **différé** (documenté maintenant, pas intégré)
+- **Statut** : **Remplacé** par [`ADR 0005`](0005-hermes-orchestrateur-integre.md)
 - **Date** : 2026-09-03
 - **Contexte ticket** : OPP-079 (Epic E7 — Infrastructure et sécurité)
 - **Décideurs** : équipe Opportune
+
+> ℹ️ **Périmé (2026-10-25).** Ce cadrage différait Hermes et l'imaginait **externe**. Hermes a
+> depuis été **intégré** (Epic E9), mais comme une **couche in-process** (sans protocole
+> d'échange), pas comme un service externe. La décision effective est actée dans
+> [`ADR 0005`](0005-hermes-orchestrateur-integre.md) ; le contenu ci-dessous est conservé pour
+> l'historique de la réflexion.
 
 ## Contexte
 
