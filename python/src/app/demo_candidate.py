@@ -39,8 +39,8 @@ from app.recommendation_service import RecommendationService
 from hermes.models import HermesRun, OfferEvaluation
 from hermes.run_store import RunStore
 
-# Identité du candidat démo — un id dédié, jamais celui de prod (``cand-marie``). À ajouter à
-# ``OPPORTUNE_API_CANDIDATES`` pour qu'il apparaisse dans le périmètre de l'app.
+# Identité du candidat démo — un id dédié, jamais celui d'une vraie recherche. Vit dans l'espace
+# démo isolé (base séparée), semé au premier lancement (cf. ``api.server``).
 DEMO_CANDIDATE_ID = "cand-demo"
 DEMO_CANDIDATE_NAME = "Alex Démo"
 

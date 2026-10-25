@@ -119,14 +119,14 @@ bash scripts/serve-api.sh      # depuis la racine du dépôt
 Le script lit toute la configuration depuis `python/.env` (**source unique** — plus de
 variables à retaper à chaque lancement), **auto-détecte `OLLAMA_HOST`** sous WSL (passerelle
 de l'adaptateur WSL, dont l'IP peut changer entre reboots) quand il n'est pas fixé, puis
-lance `python -m api.server` (venv s'il existe, sinon `python3`). Renseigner au minimum
-`OPPORTUNE_API_CANDIDATES` dans `python/.env` (modèle : [`.env.example`](.env.example)).
+lance `python -m api.server` (venv s'il existe, sinon `python3`). La première **recherche** se
+crée ensuite directement **depuis l'app** (barre de recherche) ; modèle de configuration :
+[`.env.example`](.env.example).
 
 ### Démarrage manuel (variables à l'ancienne)
 
 ```bash
 cd python
-export OPPORTUNE_API_CANDIDATES=ma-recherche  # périmètre : recherches amorcées (CSV)
 export OPPORTUNE_DB_PATH=data/opportune.db     # base SQLite (défaut : data/opportune.db)
 
 python -m api.server                           # écoute sur http://127.0.0.1:8000

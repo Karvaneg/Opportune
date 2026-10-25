@@ -34,7 +34,7 @@ def intake_profile(
     ``contract_type`` (obligatoire) et ``preferences`` (target_salary, mobility, remote,
     availability, constraints…) sont fournis par l'appelant — un CV ne les porte pas. Un
     ``id`` explicite permet de **remplacer** un profil existant (upsert : p. ex. écraser le
-    seed ``cand-marie`` par le vrai profil). Si ce profil porte des faits verrouillés par une
+    seed d'une recherche par le vrai profil). Si ce profil porte des faits verrouillés par une
     correction humaine (``locked_fields``, OPP-138), ils sont **préservés** : le ré-intake ne
     réécrase pas une valeur rectifiée à la main. Propage ``ValueError`` (CV vide),
     ``ProfileAnalysisError`` (analyse non conforme), ``ProfileValidationError`` (préférence

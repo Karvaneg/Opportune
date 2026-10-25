@@ -26,9 +26,9 @@ def test_invalid_or_missing_contract_type_raises(env):
 
 def test_reads_candidate_id():
     _, candidate_id, _ = resolve_intake_preferences(
-        {"OPPORTUNE_CONTRACT_TYPE": "freelance", "OPPORTUNE_CANDIDATE_ID": "cand-marie"}
+        {"OPPORTUNE_CONTRACT_TYPE": "freelance", "OPPORTUNE_CANDIDATE_ID": "cand-test"}
     )
-    assert candidate_id == "cand-marie"
+    assert candidate_id == "cand-test"
 
 
 def test_parses_optional_preferences():

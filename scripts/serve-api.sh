@@ -9,8 +9,8 @@
 # Usage :
 #   bash scripts/serve-api.sh
 #
-# Prérequis : `python/.env` renseigné (au minimum OPPORTUNE_API_CANDIDATES). Modèle de
-# configuration versionné : `python/.env.example`.
+# Prérequis : `python/.env` renseigné. Modèle de configuration versionné :
+# `python/.env.example`. La première recherche se crée ensuite depuis l'app.
 #
 set -euo pipefail
 
@@ -47,13 +47,6 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   export "$key=$value"
 done < "$ENV_FILE"
 
-# Local-first (OPP-181) : aucun jeton requis. Sans candidat, l'API démarre mais ne peut agir
-# sur rien. Non bloquant (le serveur le tolère), mais on prévient — c'est presque toujours une
-# config incomplète. Voir README « au minimum OPPORTUNE_API_CANDIDATES ».
-if [ -z "${OPPORTUNE_API_CANDIDATES:-}" ]; then
-  echo "⚠ OPPORTUNE_API_CANDIDATES vide : l'identité locale ne possédera aucun candidat." >&2
-fi
-
 # Auto-détection de l'hôte Ollama sous WSL : l'Ollama natif Windows est joignable via
 # la passerelle (gateway) de l'adaptateur WSL, dont l'IP peut changer entre reboots.
 # On ne détecte que si OLLAMA_HOST n'est pas déjà fixé dans .env (une valeur explicite prime).
@@ -89,7 +82,6 @@ if ! "$PYTHON" -c "import importlib.util, sys; sys.exit(0 if importlib.util.find
   exit 1
 fi
 
-echo "• Candidats possédés : ${OPPORTUNE_API_CANDIDATES:-<aucun>}"
 echo "• Base SQLite        : ${OPPORTUNE_DB_PATH:-data/opportune.db (défaut)}"
 echo "• Ollama             : ${OLLAMA_HOST:-http://localhost:11434 (défaut)}"
 echo "→ Démarrage de l'API…"

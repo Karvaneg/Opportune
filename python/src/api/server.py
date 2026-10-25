@@ -250,8 +250,8 @@ def build_local_auth(owned_provider) -> LocalAuthProvider:
 
     Mono-utilisateur, sans jeton (OPP-181). Périmètre dérivé de la base (OPP-183) :
     ``owned_provider`` est un callable rappelé **à chaque requête** qui rend les ids du
-    périmètre courant (registre des candidats) — fini le ``frozenset`` figé au boot depuis
-    ``OPPORTUNE_API_CANDIDATES``. Isolé de ``main`` pour être testable sans démarrer de serveur.
+    périmètre courant (registre des candidats), et non un ``frozenset`` figé au boot. Isolé
+    de ``main`` pour être testable sans démarrer de serveur.
     """
     user = User(id="moi", role=REVIEWER, owned_candidates=frozenset())
     return LocalAuthProvider(user, owned_provider=owned_provider)
@@ -268,17 +268,14 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from app.profile_store import ProfileStore
     from api.space_router import SpaceRouter
 
-    # Périmètre dynamique en base (OPP-183) : « Mon espace » dérive ses candidats du registre,
-    # recalculé à chaque requête. À chaque boot on **réunit** (insert-or-ignore, idempotent) le
-    # périmètre connu depuis l'env ``OPPORTUNE_API_CANDIDATES`` ∪ les profils déjà présents : ainsi
-    # l'env reste un moyen d'enrôler un candidat (migration d'une install en place, mais aussi
-    # ajout d'une recherche par redémarrage) tant qu'OPP-184 n'offre pas la création à chaud.
-    # Additif seulement : le registre conserve les candidats enrôlés au runtime — l'env ne retire
-    # jamais rien.
+    # Périmètre dynamique en base (OPP-183/184) : « Mon espace » dérive ses candidats du registre,
+    # recalculé à chaque requête. À chaque boot on **réunit** (insert-or-ignore, idempotent) les
+    # profils déjà présents, pour qu'une install antérieure au registre retrouve ses recherches
+    # sans intervention. L'enrôlement courant passe par la **création à chaud** (``POST /searches``,
+    # OPP-184) — l'ancien bootstrap par ``OPPORTUNE_API_CANDIDATES`` a été retiré (OPP-188).
     mine_conn = connect()
     mine_registry = CandidateRegistry(mine_conn)
-    env_ids = [c for c in os.environ.get("OPPORTUNE_API_CANDIDATES", "").split(",") if c]
-    mine_registry.ensure([*env_ids, *ProfileStore(mine_conn).list_ids()])
+    mine_registry.ensure(ProfileStore(mine_conn).list_ids())
     mine = assemble_api(
         mine_conn, build_local_auth(mine_registry.list_ids), searches=mine_registry
     )

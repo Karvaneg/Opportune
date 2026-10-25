@@ -75,7 +75,7 @@ _ALIASES: dict[str, str] = {
 #
 # Les frameworks front impliquent HTML/CSS (OPP-158) : on ne construit pas d'interface React /
 # Vue / Angular / Svelte sans écrire de HTML et de CSS — ce sont des basiques réellement maîtrisés
-# qui manquent souvent aux `skills` d'un profil (ex. cand-marie full-stack sans « HTML5/CSS3 »
+# qui manquent souvent aux `skills` d'un profil (ex. un profil full-stack sans « HTML5/CSS3 »
 # déclarés sous-scorait l'offre Capgemini). Reste conservateur : Node (JS serveur) n'implique PAS
 # HTML/CSS, et aucune techno n'implique Agile/Scrum (méthodo, non déductible d'un framework —
 # cela relève d'une déclaration dans le profil, cf. édition des compétences OPP-158).

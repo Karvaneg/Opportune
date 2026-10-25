@@ -84,7 +84,7 @@ def main() -> None:  # pragma: no cover - utilitaire CLI (touche la base sur dis
     from app.db import connect
     from app.offer_store import OfferStore
 
-    candidate_id = os.environ.get("OPPORTUNE_CANDIDATE_ID", "cand-marie")
+    candidate_id = os.environ.get("OPPORTUNE_CANDIDATE_ID", "ma-recherche")
     conn = connect()
     profile, offer = seed_demo(
         ProfileStore(conn), OfferStore(conn), candidate_id=candidate_id
