@@ -119,3 +119,35 @@ def test_commande_demo_cible_la_demo_meme_avec_header_mine(router):
     response = router.dispatch("POST", "/demo/reset", {}, {SPACE_HEADER: "mine"})
     assert response.status == 200
     assert OfferStore(demo_conn).count() == 0
+
+
+def test_commande_demo_interrompue_ne_fige_pas_la_connexion_demo():
+    """OPP-212 : une commande démo interrompue entre un ordre SQL et son commit ne doit pas
+    laisser la connexion démo épinglée sur un vieux snapshot (lectures périmées). ``SpaceRouter``
+    referme la transaction en fin de commande, comme ``dispatch`` le fait pour les routes.
+    """
+    mine_conn = connect(":memory:")
+    mine = assemble_api(mine_conn, build_local_auth(lambda: [MINE_CANDIDATE_ID]))
+    demo_db = ":memory:"  # base dédiée à ce test (sur fichier non nécessaire : une seule conn)
+    demo_conn = connect(demo_db)
+    OfferStore(demo_conn)  # crée la table offers (+ commit) ; connexion propre
+    demo = assemble_api(demo_conn, build_local_auth(lambda: []))
+
+    def _poisoning_command() -> Response:
+        # Ouvre une transaction de lecture (épingle un snapshot WAL) puis échoue avant commit.
+        demo_conn.execute("BEGIN")
+        demo_conn.execute("SELECT COUNT(*) FROM offers").fetchone()
+        raise RuntimeError("interruption avant commit")
+
+    router = SpaceRouter(
+        mine=mine, demo=demo, demo_commands={"/demo/boom": _poisoning_command}
+    )
+
+    with pytest.raises(RuntimeError):
+        router.dispatch("POST", "/demo/boom", {}, {})
+
+    # Invariant OPP-212 : plus aucune transaction ouverte sur la connexion démo partagée.
+    assert demo_conn.in_transaction is False
+
+    mine_conn.close()
+    demo_conn.close()
