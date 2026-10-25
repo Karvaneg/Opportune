@@ -44,7 +44,7 @@ def test_intake_analyzes_merges_and_persists():
         contract_type="CDI",
         client=MockLLMClient([VALID_RESPONSE]),
         store=store,
-        id="cand-marie",
+        id="cand-test",
     )
     assert profile.name == "Marie"
     assert profile.contract_type == "CDI"  # préférence saisie
@@ -52,7 +52,7 @@ def test_intake_analyzes_merges_and_persists():
     assert profile.total_experience_years == 6.0
     # skills atomisés (OPP-135) : le bloc « Back-end (Python, SQL) » est éclaté
     assert profile.skills == ["Back-end", "Python", "SQL", "React"]
-    assert store.get("cand-marie") == profile
+    assert store.get("cand-test") == profile
 
 
 def test_intake_propagates_experiences_to_profile():
@@ -76,7 +76,7 @@ def test_intake_propagates_experiences_to_profile():
         }
     )
     profile = intake_profile(
-        "CV", contract_type="CDI", client=MockLLMClient([response]), store=store, id="cand-marie"
+        "CV", contract_type="CDI", client=MockLLMClient([response]), store=store, id="cand-test"
     )
     assert profile.experiences == [
         {
@@ -86,7 +86,7 @@ def test_intake_propagates_experiences_to_profile():
             "highlights": ["Refonte du front React"],
         }
     ]
-    assert store.get("cand-marie").experiences == profile.experiences
+    assert store.get("cand-test").experiences == profile.experiences
 
 
 def test_intake_carries_supplied_preferences():
@@ -107,9 +107,9 @@ def test_intake_carries_supplied_preferences():
 def test_intake_upserts_on_explicit_id():
     store = FakeProfileStore()
     client = MockLLMClient([VALID_RESPONSE, VALID_RESPONSE])
-    first = intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-marie")
-    second = intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-marie")
-    assert first.id == second.id == "cand-marie"
+    first = intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-test")
+    second = intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-test")
+    assert first.id == second.id == "cand-test"
     assert len(store.profiles) == 1  # remplace le profil, pas de doublon
 
 
@@ -117,16 +117,16 @@ def test_reintake_preserves_locked_fields():
     # OPP-138 : un fait corrigé à la main (verrouillé) survit à une ré-extraction du CV.
     store = FakeProfileStore()
     client = MockLLMClient([VALID_RESPONSE, VALID_RESPONSE])
-    intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-marie")
+    intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-test")
 
     # Correction humaine : l'expérience réelle est 2 ans, pas les 6 extraits.
     from app.profile_correction_service import correct_profile
 
-    correct_profile("cand-marie", store=store, total_experience_years=2)
+    correct_profile("cand-test", store=store, total_experience_years=2)
 
     # Ré-intake du même CV : le LLM re-dit 6, mais le verrou préserve 2.
     reintaken = intake_profile(
-        "CV", contract_type="CDI", client=client, store=store, id="cand-marie"
+        "CV", contract_type="CDI", client=client, store=store, id="cand-test"
     )
     assert reintaken.total_experience_years == 2.0  # fait verrouillé préservé
     assert reintaken.locked_fields == ["total_experience_years"]  # verrou conservé
@@ -145,11 +145,11 @@ def test_reintake_locked_fact_survives_degraded_extraction():
     client = MockLLMClient([VALID_RESPONSE, empty])
     from app.profile_correction_service import correct_profile
 
-    intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-marie")
-    correct_profile("cand-marie", store=store, skills=["Rust", "Go"])  # verrouille skills
+    intake_profile("CV", contract_type="CDI", client=client, store=store, id="cand-test")
+    correct_profile("cand-test", store=store, skills=["Rust", "Go"])  # verrouille skills
 
     reintaken = intake_profile(
-        "CV", contract_type="CDI", client=client, store=store, id="cand-marie"
+        "CV", contract_type="CDI", client=client, store=store, id="cand-test"
     )
     assert reintaken.skills == ["Rust", "Go"]  # fait verrouillé préservé malgré extraction vide
     assert reintaken.locked_fields == ["skills"]

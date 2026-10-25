@@ -23,7 +23,7 @@ from app.recommendation_service import RecommendationService
 from hermes.models import HermesRecommendation
 from hermes.orchestrator import HermesOrchestrator
 
-CANDIDATE_ID = "cand-marie"
+CANDIDATE_ID = "cand-exemple"
 
 # Offres de démonstration, de la plus récente à la plus ancienne (``created_at`` décroissant) :
 # l'affichage trie par date (OPP-152), et ici la plus récente est aussi la mieux notée.

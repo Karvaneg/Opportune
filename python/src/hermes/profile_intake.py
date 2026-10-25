@@ -3,7 +3,7 @@
 Rend dogfoodable la chaîne d'OPP-136 : ``python -m hermes.profile_intake ton_cv.pdf`` lit
 le PDF, en extrait le texte (OPP-137), l'analyse (``analyze_cv``, OPP-136), fusionne les
 **préférences** lues dans l'environnement et **persiste** le profil — en écrasant le seed
-``cand-marie`` (upsert par id) pour que la boucle push tourne enfin sur un profil réel.
+d'une recherche (upsert par id) pour que la boucle push tourne enfin sur un profil réel.
 
 ``main`` touche le réseau (Ollama), le disque (PDF) et SQLite : non testé (pragma). Le
 cœur **pur** — ``resolve_intake_preferences`` — lit et valide l'environnement et se teste
@@ -70,7 +70,7 @@ def main() -> None:  # pragma: no cover - point d'entrée IO (PDF + Ollama + SQL
     """Entrée CLI : ``python -m hermes.profile_intake <cv.pdf>`` (ou ``OPPORTUNE_CV_PATH``).
 
     Variables : ``OPPORTUNE_CONTRACT_TYPE`` (obligatoire), ``OPPORTUNE_CANDIDATE_ID``
-    (profil à écraser, p. ex. ``cand-marie``), préférences optionnelles (cf.
+    (profil à écraser, p. ex. ``ma-recherche``), préférences optionnelles (cf.
     ``_OPTIONAL_PREFERENCES``), ``OPPORTUNE_LLM_TIMEOUT`` et ``OLLAMA_*`` (via ``app.llm``).
     """
     import sys

@@ -4,7 +4,8 @@ Jusqu'ici le périmètre (``owned_candidates``) était un ``frozenset`` figé au
 variable d'environnement ``OPPORTUNE_API_CANDIDATES`` (cf. ``api.server``). OPP-183 le rend
 **dynamique et stocké en base** : ce registre liste les candidats de l'espace courant, et l'auth
 en dérive le périmètre à chaque requête. OPP-184 lui ajoute un **libellé** (nommer une recherche)
-et la **création / renommage à chaud** depuis l'app — l'env n'est plus l'unique moyen d'enrôler.
+et la **création / renommage à chaud** depuis l'app — désormais l'**unique** voie d'enrôlement,
+le bootstrap par ``OPPORTUNE_API_CANDIDATES`` ayant été retiré (OPP-188).
 
 Un candidat du registre existe **indépendamment de son profil** : il peut être enrôlé sans CV
 encore (état « nouveau profil »), ce qui laisse le cockpit afficher le guide d'accueil plutôt

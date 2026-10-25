@@ -331,8 +331,8 @@ export interface Letter {
 
 /**
  * Une recherche du périmètre (`GET /searches`, OPP-184) : son id technique (clé partagée avec
- * profils / décisions / offres) et son libellé produit. `label` peut être vide pour un candidat
- * enrôlé sans nom (bootstrap `OPPORTUNE_API_CANDIDATES`) — le front retombe alors sur l'`id`.
+ * profils / décisions / offres) et son libellé produit. `label` peut être vide pour une
+ * recherche amorcée depuis un profil en base (sans nom) — le front retombe alors sur l'`id`.
  */
 export interface Search {
   id: string;
