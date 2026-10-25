@@ -54,6 +54,6 @@ Motifs du choix Python :
 
 - [`legacy/README.md`](../../legacy/README.md) — la V1 Node.js archivée
 - OPP-200 — archivage de la V1 sous `legacy/`
-- [`ADR 0001`](0001-hermes-orchestrateur-externe.md) — Hermes comme orchestrateur
+- [`ADR 0005`](0005-hermes-orchestrateur-integre.md) — Hermes, orchestrateur intégré
 - [`ADR 0003`](0003-auth-local-first-sans-jeton.md) — local-first sans jeton
 - [`docs/vision.md`](../vision.md)
