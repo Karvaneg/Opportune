@@ -48,7 +48,8 @@ python -m hermes.discord_gateway            # se connecte et écoute les clics
 ```
 
 Voie B tranchée vs endpoint HTTP signé (A) : pas d'exposition machine ni de migration de
-persistance. Vercel + base hébergée reste la cible produit ultérieure.
+persistance — cohérent avec la direction **local-first** (tout tourne sur la machine de
+l'utilisateur, aucune donnée hébergée ; cf. [`ADR 0003`](../../docs/adr/0003-auth-local-first-sans-jeton.md)).
 
 **Mise en route pas à pas** (création du bot, intents/permissions minimaux, `.env`,
 lancement) : voir [`runbook-bot-discord.md`](runbook-bot-discord.md). Le gabarit
