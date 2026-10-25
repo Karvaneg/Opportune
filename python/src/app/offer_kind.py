@@ -7,8 +7,10 @@ et la fait chuter à 0 à tort. On distingue donc deux types (``emploi`` par dé
 ``formation``) pour **ne pas** scorer les formations comme des emplois.
 
 La classification est une **heuristique déterministe** sur le titre et le texte brut :
-- un marqueur de **titre** (« formation », « bootcamp », « cursus »…) suffit (le titre
-  annonce la nature de l'offre) ;
+- le titre qui **s'ouvre** sur « formation » (« Formation développeur… »), ou qui contient un
+  marqueur spécifique (« bootcamp », « cursus », « certifiante »…), suffit — le titre annonce
+  alors la nature de l'offre. Le mot « formation » **ailleurs** dans le titre est ambigu
+  (« organisme de formation », « responsable formation » = des emplois) : ignoré hors tête (OPP-206) ;
 - sinon, au moins deux **marqueurs structurels forts** (tournures propres à un programme
   de formation : « POE », « programme de formation », « éligible au financement »…), qui
   n'apparaissent quasiment jamais dans une offre d'emploi ordinaire. Le seuil à deux évite
@@ -28,9 +30,14 @@ FORMATION = "formation"
 OFFER_KINDS = (EMPLOI, FORMATION)
 DEFAULT_KIND = EMPLOI
 
-# Marqueurs de **titre** : si le titre les contient, l'offre annonce elle-même une formation.
+# Le mot « formation » **en tête de titre** annonce une formation (« Formation développeur… »).
+# Ailleurs il est ambigu (« organisme de formation », « responsable formation » = des emplois) :
+# on ne le retient donc que s'il **ouvre** le titre (OPP-206). ``formations`` (pluriel) toléré.
+_LEADING_TITLE_RE = re.compile(r"^formations?\b")
+
+# Marqueurs de **titre** spécifiques (non ambigus) : s'ils apparaissent dans le titre — où que
+# ce soit — l'offre annonce elle-même une formation.
 _TITLE_MARKERS = (
-    "formation",
     "bootcamp",
     "cursus",
     "certifiante",
@@ -84,11 +91,13 @@ def _contains_word(haystack: str, needle: str) -> bool:
 def classify_kind(title: str, text: str) -> str:
     """Classe l'offre en ``formation`` ou ``emploi`` à partir du titre et du texte brut.
 
-    ``formation`` si un marqueur de titre est présent, ou si le texte porte au moins
-    ``_STRONG_THRESHOLD`` marqueurs structurels forts distincts ; ``emploi`` sinon
-    (défaut prudent : on ne requalifie que sur un signal explicite).
+    ``formation`` si le titre s'ouvre sur « formation », s'il contient un marqueur de titre
+    spécifique, ou si le texte porte au moins ``_STRONG_THRESHOLD`` marqueurs structurels forts
+    distincts ; ``emploi`` sinon (défaut prudent : on ne requalifie que sur un signal explicite).
     """
     normalized_title = _normalize(title)
+    if _LEADING_TITLE_RE.match(normalized_title.lstrip()):
+        return FORMATION
     if any(_contains_word(normalized_title, marker) for marker in _TITLE_MARKERS):
         return FORMATION
 

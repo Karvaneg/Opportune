@@ -44,6 +44,23 @@ def test_bootcamp_title_is_formation():
     assert classify_kind("Bootcamp Data Analyst", "Douze semaines intensives.") == FORMATION
 
 
+def test_formation_as_employer_complement_stays_emploi():
+    # Cas réel (OPP-206) : « formation » qualifie l'employeur, pas la nature de l'offre.
+    # Un seul marqueur fort (« organisme de formation ») ne suffit pas à basculer.
+    text = "CDI à Toulouse. Vous pilotez les projets d'un organisme de formation."
+    assert classify_kind("Chef de projet organisme de formation", text) == EMPLOI
+
+
+def test_formation_as_function_complement_stays_emploi():
+    # « responsable formation » est un métier RH, pas une formation.
+    assert classify_kind("Responsable formation", "CDI, management d'une équipe.") == EMPLOI
+
+
+def test_leading_formation_in_title_is_formation():
+    # « formation » en tête annonce bien une formation (non-régression du cas légitime).
+    assert classify_kind("Formation : Chef de projet", "Devenez chef de projet.") == FORMATION
+
+
 def test_structural_markers_make_formation_despite_jobbish_title():
     # Le cas ISTQB : titre qui ressemble à un poste, mais le corps accumule les marqueurs.
     assert classify_kind(ISTQB_TITLE, ISTQB_TEXT) == FORMATION
