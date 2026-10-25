@@ -270,6 +270,7 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         profiles=profile_service,
         cv_intake=cv_intake,
         searches=searches,
+        conn=conn,
     )
 
 

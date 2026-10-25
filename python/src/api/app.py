@@ -59,6 +59,8 @@ from typing import TYPE_CHECKING, Protocol
 from urllib.parse import parse_qs, unquote
 
 if TYPE_CHECKING:
+    import sqlite3
+
     from app.candidate_profile import CandidateProfile
     from app.candidate_registry import CandidateRegistry
     from app.collection_jobs import CollectionJob, CollectionJobRegistry
@@ -246,6 +248,7 @@ class HermesApi:
         profiles: "ProfileService | None" = None,
         cv_intake: "CvIntake | None" = None,
         searches: "CandidateRegistry | None" = None,
+        conn: "sqlite3.Connection | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -283,6 +286,12 @@ class HermesApi:
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
         # subit le contrôle propriété/rôle (404/403).
         self.auth = auth
+        # Connexion SQLite partagée de cet espace (OPP-212). Sert à **refermer toute transaction
+        # pendante en fin de requête** : sans elle, une requête interrompue entre un ordre SQL et
+        # son commit laisserait la connexion « empoisonnée » (lectures figées sur un vieux snapshot
+        # WAL, écritures suivantes en échec) jusqu'au redémarrage. ``None`` toléré (API assemblée
+        # sans connexion réelle : tests / mode ouvert) → la remise à zéro est alors un no-op.
+        self.conn = conn
 
     def dispatch(
         self,
@@ -307,6 +316,34 @@ class HermesApi:
             # Toute erreur inattendue devient un 500 propre plutôt qu'une exception non
             # gérée qui remonterait jusqu'au socket (réponse absente / connexion tuée).
             return Response(500, {"error": "erreur interne"})
+        finally:
+            # OPP-212 : la connexion SQLite est partagée pour toute la vie du serveur. On
+            # garantit qu'elle ne porte **jamais** de transaction ouverte d'une requête à la
+            # suivante. Sans ça, une requête interrompue entre un ordre SQL et son commit (le
+            # 500 ci-dessus) la laisserait épinglée sur un vieux snapshot WAL — lectures
+            # périmées (offres de collecte invisibles, même après rechargement) et écritures
+            # suivantes en échec, jusqu'au redémarrage. Exécuté sur **tous** les chemins
+            # (succès comme erreur) : no-op dans le cas nominal (les stores committent).
+            self.reset_connection()
+
+    def reset_connection(self) -> None:
+        """Referme toute transaction pendante sur la connexion partagée (OPP-212).
+
+        Appelée en fin de **chaque** requête (``dispatch``) ; et aussi par ``SpaceRouter`` autour
+        des commandes démo, qui agissent sur cette connexion hors du ``dispatch`` — donc hors du
+        filet — et doivent profiter du même garde-fou. Dans le cas nominal c'est un no-op (les stores
+        committent après écriture, une lecture simple ne garde pas de transaction) ; mais après
+        une erreur survenue entre un ordre SQL et son commit, le ``rollback`` est indispensable :
+        il évite de figer la connexion (lectures sur un snapshot WAL périmé + écritures en échec)
+        jusqu'au redémarrage. Tolère ``conn=None`` (API assemblée sans connexion réelle).
+
+        On ne ``rollback`` que si une transaction est **réellement** en cours : inutile de toucher
+        la connexion pour une requête qui ne lit même pas la base (p. ex. ``GET /me``).
+        ``in_transaction`` se lit sans contrainte de thread ; et s'il est vrai, c'est qu'une store
+        a déjà écrit sur la connexion dans ce thread — le rollback y est donc légitime (serveur
+        séquentiel, cf. ``create_server``)."""
+        if self.conn is not None and self.conn.in_transaction:
+            self.conn.rollback()
 
     def _authenticate(self, headers: dict) -> User | None:
         """Résout l'utilisateur courant : ``None`` en mode ouvert, sinon l'utilisateur local.

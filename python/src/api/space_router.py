@@ -59,7 +59,16 @@ class SpaceRouter:
         if method.upper() == "POST":
             command = self._demo_commands.get(path_only)
             if command is not None:
-                return command()
+                try:
+                    return command()
+                finally:
+                    # OPP-212 : les commandes démo écrivent directement sur la connexion de
+                    # l'espace démo, **hors** du ``dispatch`` de ``HermesApi`` — donc hors de son
+                    # filet qui referme les transactions pendantes. Une commande interrompue entre
+                    # deux ordres SQL et son commit (p. ex. un ``reset_demo`` qui échoue en plein
+                    # vidage) laisserait sinon cette connexion épinglée sur un vieux snapshot WAL
+                    # (lectures périmées). On rejoue donc ici le même garde-fou.
+                    self._apis[SPACE_DEMO].reset_connection()
         space = self._resolve_space(headers or {})
         return self._apis[space].dispatch(method, path, body, headers)
 
