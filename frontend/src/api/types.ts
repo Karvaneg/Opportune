@@ -305,6 +305,8 @@ export interface CollectionJob {
   progress: CollectionProgress;
   report: CollectionReport | null;
   error: string | null;
+  /** Arrêt coopératif demandé (OPP-209) : vrai tant que le runner n'a pas atteint son point de contrôle. */
+  cancel_requested: boolean;
 }
 
 /** Réponse du démarrage d'une collecte (`POST /collect` → 202, OPP-170). */

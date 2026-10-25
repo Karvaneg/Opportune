@@ -101,6 +101,7 @@ def collect_offers(
     fetch: Callable[[str], HtmlDocument] = fetch_html,
     extract: Callable[[str], str] = extract_offer_text,
     on_progress: Callable[[CollectionProgress], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> CollectionReport:
     """Collecte, dédoublonne, analyse et persiste les offres d'une ``source``.
 
@@ -119,6 +120,12 @@ def collect_offers(
     ``CollectionProgress`` après le traitement de chaque offre (neuve, doublon ou échec) —
     de quoi publier l'avancement d'un job de fond pendant la passe. Les exceptions levées
     par le callback ne sont pas interceptées (c'est au job de les contenir).
+
+    **Annulation coopérative (OPP-209).** Si ``should_cancel`` est fourni, il est consulté
+    **au début de chaque tour**, avant de consommer l'offre suivante : s'il rend vrai, la
+    passe s'arrête proprement et rend le bilan **partiel**. L'offre en cours de traitement
+    (l'appel LLM, étape longue) n'est jamais interrompue en plein vol, et tout ce qui est
+    déjà persisté le reste — c'est un arrêt **entre** offres, pas un `kill`.
     """
     collected = 0
     stored = 0
@@ -152,6 +159,10 @@ def collect_offers(
         return CollectionReport(0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}")
 
     while True:
+        # Arrêt coopératif (OPP-209) : vérifié entre deux offres, jamais pendant un intake LLM
+        # en cours. Le bilan déjà accumulé est rendu tel quel (offres persistées conservées).
+        if should_cancel is not None and should_cancel():
+            break
         try:
             raw = next(iterator)
         except StopIteration:

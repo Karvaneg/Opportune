@@ -27,15 +27,21 @@ def run_collection(
     llm_client: LLMClient,
     store: OfferRepository,
     on_progress: Callable[[CollectionProgress], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> CollectionReport:
     """Lance une passe de collecte sur une source assemblée ; retourne le bilan.
 
     Fine enveloppe autour de ``collect_offers`` : présente pour offrir un point d'injection
     testable (source/LLM/dépôt factices) partagé par tous les runners concrets. ``on_progress``
-    (OPP-170) est transmis tel quel pour la publication d'avancement d'un job de fond.
+    (OPP-170) est transmis tel quel pour la publication d'avancement d'un job de fond ;
+    ``should_cancel`` (OPP-209) permet l'arrêt coopératif d'une passe de fond.
     """
     return collect_offers(
-        source, client=llm_client, store=store, on_progress=on_progress
+        source,
+        client=llm_client,
+        store=store,
+        on_progress=on_progress,
+        should_cancel=should_cancel,
     )
 
 

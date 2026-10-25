@@ -12,6 +12,7 @@ import time
 import pytest
 
 from app.collection_jobs import (
+    CANCELLED,
     DONE,
     FAILED,
     RUNNING,
@@ -35,7 +36,7 @@ def _sync_spawn(target):
 
 
 def test_start_runs_job_and_marks_done_with_report():
-    def runner(*, what, where, max_offers, on_progress):
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=3, stored=3)
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
@@ -51,7 +52,7 @@ def test_start_runs_job_and_marks_done_with_report():
 def test_start_forwards_criteria_to_runner():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress):
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where, max_offers=max_offers)
         return _report()
 
@@ -66,7 +67,7 @@ def test_progress_callback_updates_job_snapshot():
         collected=4, stored=2, duplicates=1, failures=1, enriched=1, enriched_recovered=1
     )
 
-    def runner(*, what, where, max_offers, on_progress):
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
         on_progress(progress)
         return _report()
 
@@ -76,7 +77,7 @@ def test_progress_callback_updates_job_snapshot():
 
 
 def test_runner_exception_marks_job_failed():
-    def runner(*, what, where, max_offers, on_progress):
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
         raise RuntimeError("kaboom")
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
@@ -90,7 +91,7 @@ def test_runner_exception_marks_job_failed():
 
 def test_source_error_report_keeps_job_done():
     # Une panne de source est rendue DANS le bilan ; le job reste ``done`` (pas ``failed``).
-    def runner(*, what, where, max_offers, on_progress):
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=0, stored=0, source_error="AdzunaAuthError: nope")
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
@@ -99,6 +100,46 @@ def test_source_error_report_keeps_job_done():
     job = registry.get(job_id)
     assert job.status == DONE
     assert job.report.source_error == "AdzunaAuthError: nope"
+
+
+def test_cancel_marks_job_cancelled_and_sets_flag():
+    # Annulation coopérative (OPP-209) : le runner tourne jusqu'à ce que should_cancel soit vrai,
+    # puis le job passe ``cancelled`` en conservant son bilan partiel.
+    release = threading.Event()
+    started = threading.Event()
+
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
+        started.set()
+        while not should_cancel():
+            if release.wait(0.01):  # garde-fou anti-blocage du test
+                break
+        return _report(collected=1, stored=1)
+
+    registry = CollectionJobRegistry(
+        runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start()
+    )
+    job_id = registry.start(what="", where="", max_offers=5)
+    try:
+        assert started.wait(timeout=5)
+        assert registry.cancel(job_id) is True
+        assert registry.get(job_id).cancel_requested is True
+        for _ in range(500):
+            if registry.get(job_id).status == CANCELLED:
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("le job ne s'est pas arrêté après cancel")
+    finally:
+        release.set()
+    assert registry.get(job_id).report.stored == 1  # bilan partiel conservé
+
+
+def test_cancel_unknown_or_terminated_returns_false():
+    registry = CollectionJobRegistry(lambda **k: _report(), spawn=_sync_spawn)
+    assert registry.cancel("inconnu") is False
+    job_id = registry.start(what="", where="", max_offers=1)  # spawn synchrone → déjà terminé
+    assert registry.get(job_id).status == DONE
+    assert registry.cancel(job_id) is False  # rien à annuler sur un job terminé
 
 
 def test_get_unknown_job_returns_none():
@@ -139,7 +180,7 @@ def test_second_start_while_running_raises_then_slot_frees():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress):
+    def runner(*, what, where, max_offers, on_progress, should_cancel):
         started.set()
         release.wait(timeout=5)
         return _report()

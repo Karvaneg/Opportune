@@ -33,6 +33,7 @@ from app.offer_collection import CollectionProgress, CollectionReport
 RUNNING = "running"
 DONE = "done"
 FAILED = "failed"
+CANCELLED = "cancelled"
 
 ProgressCallback = Callable[[CollectionProgress], None]
 
@@ -68,6 +69,7 @@ class CollectionRunner(Protocol):
         where: str,
         max_offers: int,
         on_progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
     ) -> CollectionReport: ...
 
 
@@ -80,6 +82,9 @@ class CollectionJob:
     progress: CollectionProgress
     report: CollectionReport | None = None
     error: str | None = None
+    # Arrêt coopératif demandé (OPP-209) : vrai dès qu'un ``cancel`` a été accepté, tant que le
+    # runner n'a pas atteint son prochain point de contrôle — de quoi afficher « arrêt en cours ».
+    cancel_requested: bool = False
 
 
 class CollectionJobRegistry:
@@ -98,6 +103,9 @@ class CollectionJobRegistry:
         self._lock = threading.Lock()
         self._jobs: dict[str, CollectionJob] = {}
         self._active: str | None = None
+        # Drapeau d'arrêt coopératif par job (OPP-209) : posé par ``cancel``, consulté par le
+        # runner via ``should_cancel``. Retiré à la fin du job (``_finish``).
+        self._cancel_events: dict[str, threading.Event] = {}
 
     def start(self, *, what: str, where: str, max_offers: int) -> str:
         """Enregistre un job ``running`` et lance la passe en fond ; rend son ``job_id``.
@@ -114,11 +122,30 @@ class CollectionJobRegistry:
                 id=job_id, status=RUNNING, progress=_EMPTY_PROGRESS
             )
             self._active = job_id
+            cancel_event = threading.Event()
+            self._cancel_events[job_id] = cancel_event
             self._prune_locked()
 
         params = {"what": what, "where": where, "max_offers": max_offers}
-        self._spawn(lambda: self._run(job_id, params))
+        self._spawn(lambda: self._run(job_id, params, cancel_event))
         return job_id
+
+    def cancel(self, job_id: str) -> bool:
+        """Demande l'arrêt coopératif d'un job **actif** ; rend ``True`` si pris en compte (OPP-209).
+
+        Pose le drapeau que le runner consulte entre deux offres : l'arrêt est effectif au
+        prochain point de contrôle (l'intake en cours n'est pas interrompu). Marque le job
+        ``cancel_requested`` pour un retour « arrêt en cours » côté front. Rend ``False`` si le
+        job est inconnu ou déjà terminé (rien à annuler). Idempotent.
+        """
+        with self._lock:
+            event = self._cancel_events.get(job_id)
+            job = self._jobs.get(job_id)
+            if event is None or job is None or job.status != RUNNING:
+                return False
+            event.set()
+            self._jobs[job_id] = replace(job, cancel_requested=True)
+            return True
 
     def get(self, job_id: str) -> CollectionJob | None:
         """Instantané courant du job, ou ``None`` s'il est inconnu."""
@@ -150,7 +177,7 @@ class CollectionJobRegistry:
             else:  # plus rien à évincer (ne reste que le job actif)
                 break
 
-    def _run(self, job_id: str, params: dict) -> None:
+    def _run(self, job_id: str, params: dict, cancel_event: threading.Event) -> None:
         """Corps exécuté dans le thread du job : lance le runner, publie progression et issue."""
 
         def on_progress(progress: CollectionProgress) -> None:
@@ -160,11 +187,15 @@ class CollectionJobRegistry:
                     self._jobs[job_id] = replace(job, progress=progress)
 
         try:
-            report = self._runner(on_progress=on_progress, **params)
+            report = self._runner(
+                on_progress=on_progress, should_cancel=cancel_event.is_set, **params
+            )
         except Exception as exc:  # noqa: BLE001 — consigné dans le job, jamais avalé
             self._finish(job_id, status=FAILED, error=f"{type(exc).__name__}: {exc}")
             return
-        self._finish(job_id, status=DONE, report=report)
+        # Arrêt demandé et atteint → ``cancelled`` (bilan partiel conservé) ; sinon ``done``.
+        status = CANCELLED if cancel_event.is_set() else DONE
+        self._finish(job_id, status=status, report=report)
 
     def _finish(
         self,
@@ -183,6 +214,7 @@ class CollectionJobRegistry:
                 )
             if self._active == job_id:
                 self._active = None
+            self._cancel_events.pop(job_id, None)
 
 
 def _spawn_daemon(target: Callable[[], None]) -> None:
