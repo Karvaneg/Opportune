@@ -126,6 +126,19 @@ export function useActiveCollectJob() {
   });
 }
 
+/**
+ * Demande l'arrêt coopératif d'une collecte en cours : `POST /collect/{job_id}/cancel` → 202
+ * (OPP-209). Reviewer uniquement. L'arrêt est effectif au prochain point de contrôle du runner
+ * (l'intake en cours n'est pas interrompu) ; on invalide le suivi global pour refléter l'état
+ * « arrêt en cours » sans attendre le prochain sondage.
+ */
+export function useCancelCollect() {
+  return useApiMutation<{ status: string }, string>({
+    mutationFn: (jobId) => apiPost<{ status: string }>(`/collect/${jobId}/cancel`, {}),
+    invalidateKeys: () => [activeCollectKey],
+  });
+}
+
 export interface EvaluateOfferVariables {
   candidateId: string;
   offerId: string;

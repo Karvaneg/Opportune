@@ -217,7 +217,12 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
     job_db_path = database_path(conn)
 
     def collection_runner(
-        *, what: str, where: str, max_offers: int, on_progress: ProgressCallback
+        *,
+        what: str,
+        where: str,
+        max_offers: int,
+        on_progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
     ) -> CollectionReport:
         filters = {k: v for k, v in (("what", what), ("where", where)) if v}
         job_conn = connect(job_db_path)
@@ -236,6 +241,7 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
                 llm_client=llm_client,
                 store=job_offers,
                 on_progress=on_progress,
+                should_cancel=should_cancel,
             )
         finally:
             job_conn.close()

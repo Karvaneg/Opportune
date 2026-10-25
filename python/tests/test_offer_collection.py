@@ -70,6 +70,31 @@ def test_collects_normalizes_and_persists_new_offers():
     assert len(store.offers) == 2
 
 
+def test_cancel_stops_between_offers_with_partial_report():
+    # Arrêt coopératif (OPP-209) : should_cancel vrai au 2e tour → seule la 1re offre est
+    # traitée, les suivantes ne sont pas consommées, et ce qui est persisté reste.
+    store = FakeOfferStore()
+    client = MockLLMClient([_response("A"), _response("B"), _response("C")])
+    source = ListSource(
+        [
+            RawOffer(source="indeed", raw_text="offre A", url="https://x.com/a"),
+            RawOffer(source="indeed", raw_text="offre B", url="https://x.com/b"),
+            RawOffer(source="indeed", raw_text="offre C", url="https://x.com/c"),
+        ]
+    )
+    calls = {"n": 0}
+
+    def should_cancel() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 1  # False au 1er tour, True ensuite
+
+    report = collect_offers(source, client=client, store=store, should_cancel=should_cancel)
+
+    assert report.collected == 1  # une seule offre consommée avant l'arrêt
+    assert report.stored == 1
+    assert len(store.offers) == 1  # l'offre déjà persistée est conservée
+
+
 def test_on_progress_emitted_once_per_offer_with_running_counts():
     # OPP-170 : le callback de progression est appelé après CHAQUE offre (neuve ou doublon),
     # avec les compteurs courants ; le dernier instantané reflète le bilan final.

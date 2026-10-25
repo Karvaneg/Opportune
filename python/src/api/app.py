@@ -168,6 +168,7 @@ _APPLICATION_APPLIED = re.compile(r"^/applications/(?P<rid>[^/]+)/applied$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
 _OFFERS = re.compile(r"^/offers$")
 _COLLECT = re.compile(r"^/collect$")
+_COLLECT_JOB_CANCEL = re.compile(r"^/collect/(?P<job_id>[^/]+)/cancel$")
 _COLLECT_JOB = re.compile(r"^/collect/(?P<job_id>[^/]+)$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
@@ -447,6 +448,13 @@ class HermesApi:
                 return self._get_active_collect(user)
             self._require(method, "POST", path)
             return self._post_collect(body, user)
+
+        cancel_match = _COLLECT_JOB_CANCEL.match(path)
+        if cancel_match:
+            if self.collections is None:
+                raise self._not_found(user, "collecte d'offres non disponible")
+            self._require(method, "POST", path)
+            return self._post_collect_cancel(unquote(cancel_match["job_id"]), user)
 
         match = _COLLECT_JOB.match(path)
         if match:
@@ -1079,6 +1087,20 @@ class HermesApi:
             raise ApiError(409, str(exc)) from exc
         return Response(202, {"job_id": job_id})
 
+    def _post_collect_cancel(self, job_id: str, user: User | None) -> Response:
+        """Demande l'arrêt **coopératif** d'une collecte en cours (OPP-209).
+
+        Réservé au ``reviewer`` (cohérent avec démarrage/sondage). Pose le drapeau d'annulation ;
+        l'arrêt est effectif au prochain point de contrôle du runner (l'intake en cours n'est pas
+        interrompu), d'où un **202** « acceptée ». 404 neutre si le job est inconnu ou déjà
+        terminé (rien à annuler, anti-énumération comme les autres ressources).
+        """
+        self._guard_reviewer(user)
+        assert self.collections is not None  # garanti par le dispatch (404 sinon)
+        if not self.collections.cancel(job_id):
+            raise self._not_found(user, "collecte introuvable ou déjà terminée")
+        return Response(202, {"status": "cancelling"})
+
     def _get_active_collect(self, user: User | None) -> Response:
         """Job de collecte **actif** (OPP-208), pour un suivi global indépendant du ``job_id``.
 
@@ -1171,6 +1193,7 @@ class HermesApi:
             },
             "report": cls._serialize_report(job.report) if job.report is not None else None,
             "error": job.error,
+            "cancel_requested": job.cancel_requested,
         }
 
     def _delete_run(self, run_id: str, user: User | None) -> Response:

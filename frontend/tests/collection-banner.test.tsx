@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -45,6 +46,7 @@ describe("CollectionBanner (OPP-208)", () => {
       },
       report: null,
       error: null,
+      cancel_requested: false,
     });
     const { container } = renderBanner();
 
@@ -53,6 +55,40 @@ describe("CollectionBanner (OPP-208)", () => {
     expect(container.textContent).toContain("Collecte d'offres en cours");
     expect(container.textContent).toContain("5 collectées");
     expect(container.textContent).toContain("3 nouvelles");
+    expect(screen.getByRole("button", { name: "Arrêter" })).toBeEnabled();
+  });
+
+  it("déclenche l'annulation au clic sur « Arrêter » (OPP-209)", async () => {
+    const runningJob = {
+      job_id: "j1",
+      status: "running",
+      progress: {
+        collected: 2,
+        stored: 1,
+        duplicates: 0,
+        failures: 0,
+        enriched: 0,
+        enriched_recovered: 0,
+      },
+      report: null,
+      error: null,
+      cancel_requested: false,
+    };
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        calls.push(`${options?.method ?? "GET"} ${String(url)}`);
+        const body = String(url).includes("/cancel") ? { status: "cancelling" } : { job: runningJob };
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+      }),
+    );
+    renderBanner();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Arrêter" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.startsWith("POST") && c.includes("/collect/j1/cancel"))).toBe(true),
+    );
   });
 
   it("ne rend rien quand aucune collecte n'est active", async () => {
