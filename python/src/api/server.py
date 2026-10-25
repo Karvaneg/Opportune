@@ -10,6 +10,8 @@ Exécution : ``python -m api.server`` (base SQLite via ``OPPORTUNE_DB_PATH``).
 from __future__ import annotations
 
 import json
+import sqlite3
+import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from api.app import HermesApi
@@ -40,8 +42,28 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
             # Les en-têtes portent l'authentification (Authorization: Bearer …) ; on les
             # transmet au dispatcher (clé insensible à la casse, gérée en aval).
             headers = {key: value for key, value in self.headers.items()}
-            response = api.dispatch(method, self.path, body, headers)
-            self._write(response.status, response.body)
+            # Filet transport (OPP-207) : une exception du dispatcher ne doit JAMAIS remonter à
+            # http.server, qui fermerait la connexion sans réponse (« empty reply » opaque côté
+            # client). On rend toujours une réponse JSON — en journalisant la traceback serveur.
+            try:
+                response = api.dispatch(method, self.path, body, headers)
+            except sqlite3.OperationalError as exc:
+                # Verrou SQLite (p. ex. écriture concurrente d'une collecte de fond) : erreur
+                # **transitoire**, pas un plantage → 503, pour que le client invite à réessayer.
+                if "locked" in str(exc).lower():
+                    self._write(
+                        503,
+                        {"error": "Service occupé (opération concurrente en cours). "
+                                  "Réessaie dans un instant."},
+                    )
+                else:
+                    traceback.print_exc()
+                    self._write(500, {"error": "Erreur interne du serveur."})
+            except Exception:
+                traceback.print_exc()
+                self._write(500, {"error": "Erreur interne du serveur."})
+            else:
+                self._write(response.status, response.body)
 
         def do_GET(self) -> None:  # noqa: N802 - nom imposé par http.server
             self._dispatch("GET")
