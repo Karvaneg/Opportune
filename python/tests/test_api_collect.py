@@ -270,7 +270,8 @@ def test_cancel_running_job_returns_202_then_job_cancelled():
         while not should_cancel():
             if release.wait(0.01):
                 break
-        return _report()
+        # Comme un vrai runner : ``cancelled`` reflète que la passe a été tronquée par le flag.
+        return _report(cancelled=should_cancel())
 
     api = _api(runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start())
     try:
