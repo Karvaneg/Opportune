@@ -9,6 +9,7 @@ import {
 } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
 import type { CollectionProgress, CollectionReport } from "../api/types";
+import { CollectCounts } from "./CollectCounts";
 import { ErrorNotice } from "./States";
 
 /**
@@ -133,9 +134,7 @@ export function CollectOffers() {
 function CollectProgress({ progress }: { progress: CollectionProgress }) {
   return (
     <span className="text-sm text-ink-muted">
-      Récupération… {progress.collected} collectée{progress.collected > 1 ? "s" : ""} ·{" "}
-      {progress.stored} nouvelle{progress.stored > 1 ? "s" : ""} · {progress.duplicates} doublon
-      {progress.duplicates > 1 ? "s" : ""}
+      Récupération… <CollectCounts progress={progress} />
     </span>
   );
 }
