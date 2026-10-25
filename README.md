@@ -57,6 +57,11 @@ Le projet est en **migration V1 → V2** :
   est archivé sous [`legacy/`](legacy/). Conservé comme référence ; il n'est plus la cible
   produit.
 
+**Pourquoi ce pivot ?** Node a permis de **valider vite** la boucle produit ; Python porte
+mieux le cœur réel d'Opportune (LLM local, extraction de CV, scoring) et prépare le
+**packaging desktop**. Le MVP a fait son travail — prouver la valeur — avant d'investir dans
+l'architecture V2. Détail : [`docs/adr/0004-pivot-node-python.md`](docs/adr/0004-pivot-node-python.md).
+
 ## Cartographie du dépôt (monorepo)
 
 ```
