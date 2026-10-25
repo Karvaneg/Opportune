@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { offerKeys, useCollectJob, useStartCollect } from "../api/offers";
+import {
+  activeCollectKey,
+  offerKeys,
+  useActiveCollectJob,
+  useCollectJob,
+  useStartCollect,
+} from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
 import type { CollectionProgress, CollectionReport } from "../api/types";
 import { ErrorNotice } from "./States";
@@ -29,6 +35,9 @@ export function CollectOffers() {
   const [jobId, setJobId] = useState<string | null>(null);
   const start = useStartCollect();
   const job = useCollectJob(jobId);
+  // Suivi global (OPP-208) : une collecte peut tourner même si elle a été lancée depuis un autre
+  // écran (le `jobId` local serait alors nul). On s'en sert pour verrouiller le bouton.
+  const active = useActiveCollectJob();
   const queryClient = useQueryClient();
   // Mémorise le job déjà pris en compte pour n'invalider le catalogue qu'une fois à sa fin.
   const invalidatedFor = useRef<string | null>(null);
@@ -39,7 +48,9 @@ export function CollectOffers() {
   // fenêtre et un second clic déclencherait un `POST /collect` → 409 (unicité) affiché à côté
   // du job légitime qui progresse.
   const running =
-    start.isPending || (jobId !== null && status !== "done" && status !== "failed");
+    start.isPending ||
+    active.data?.job?.status === "running" ||
+    (jobId !== null && status !== "done" && status !== "failed");
 
   // À la complétion d'un job ayant persisté des offres, rafraîchir le catalogue — une seule
   // fois par job (une passe de doublons ou en échec de source ne change rien au catalogue).
@@ -56,7 +67,13 @@ export function CollectOffers() {
   const submit = () =>
     start.mutate(
       { what: what.trim(), where: where.trim() },
-      { onSuccess: (data) => setJobId(data.job_id) },
+      {
+        onSuccess: (data) => {
+          setJobId(data.job_id);
+          // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
+          queryClient.invalidateQueries({ queryKey: activeCollectKey });
+        },
+      },
     );
 
   return (

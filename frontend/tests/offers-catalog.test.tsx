@@ -267,6 +267,9 @@ describe("OffersPage", () => {
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/collect")) {
           if (options?.method === "POST") return res(202, { job_id: "job-2" });
+          // Suivi global (GET /collect sans id, OPP-208) : neutre ici, ne consomme pas la
+          // séquence du sondage par id qui pilote l'affichage « Récupération… ».
+          if (s.split("?")[0].endsWith("/collect")) return res(200, { job: null });
           getCalls += 1;
           return res(200, getCalls === 1 ? running : done); // 1er sondage en cours, puis terminé
         }
