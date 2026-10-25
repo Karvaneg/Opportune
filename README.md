@@ -54,8 +54,8 @@ Le projet est en **migration V1 → V2** :
   un **frontend web de consultation** (React/Vite). C'est là que se fait le développement
   courant. Code sous `python/` et `frontend/`.
 - **V1 (Node.js) — historique.** Le MVP CLI d'origine (intégration Notion, stockage JSON)
-  vit encore à la racine (`src/`, `package.json`). Conservé comme référence le temps de la
-  migration ; il n'est plus la cible produit.
+  est archivé sous [`legacy/`](legacy/). Conservé comme référence ; il n'est plus la cible
+  produit.
 
 ## Cartographie du dépôt (monorepo)
 
@@ -64,7 +64,7 @@ python/         Back V2 : métier, orchestrateur Hermes, API HTTP, persistance S
 frontend/       Front V2 : dashboard React/Vite (runs, offres scorées, lettres, décisions)
 docs/           Vision, definition of done, décisions d'architecture (ADR)
 scripts/        Scripts utilitaires (serveur API, contexte IA)
-src/            V1 Node.js (historique — voir « Legacy V1 » plus bas)
+legacy/         V1 Node.js (MVP CLI historique — voir « Legacy V1 » plus bas)
 ```
 
 Chaque brique V2 a son propre README détaillé :
@@ -204,7 +204,9 @@ Détails et variantes (venv local, lint, build) dans les READMEs respectifs.
 ## Configuration
 
 Les variables sensibles se placent dans un `.env.local` (gitignoré, jamais commité).
-Voir `.env.example` et les READMEs de chaque brique pour la liste complète.
+La config de l'application se trouve dans [`python/.env.example`](python/.env.example) (back)
+et le README du front ; le `.env.example` à la racine ne concerne que les skills de workflow
+`/start-ticket` et `/ship`.
 
 ## Feuille de route
 
@@ -232,16 +234,17 @@ voie pour les profils techniques et les contributeurs.
 
 ## Legacy V1 (Node.js)
 
-Le MVP CLI d'origine reste exécutable depuis la racine (récupère les tickets Notion et
-suggère le prochain à traiter). Il n'est plus la cible produit ; la logique métier migre
-vers `python/`.
+Le MVP CLI d'origine est archivé sous [`legacy/`](legacy/) (récupère les tickets Notion et
+suggère le prochain à traiter). Il n'est plus la cible produit ; la logique métier a migré
+vers `python/`. Il reste exécutable depuis son dossier :
 
 ```bash
+cd legacy
 npm install
 cp .env.example .env.local   # renseigner NOTION_TOKEN, NOTION_DATABASE_ID, NOTION_DATA_SOURCE_ID…
 npm start                    # affiche le prochain ticket recommandé
 npm test                     # suite V1 via node --test
 ```
 
-Les données locales V1 sont stockées en JSON sous `data/` (gitignoré) et ne quittent pas
-votre machine.
+Détails dans [`legacy/README.md`](legacy/README.md). Les données locales V1 sont stockées
+en JSON sous `data/` (gitignoré) et ne quittent pas votre machine.

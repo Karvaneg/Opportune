@@ -22,7 +22,7 @@ l'utilisateur, API sur `localhost`, sans login ni jeton — cf. `docs/adr/0003`)
   [`python/README.md`](python/README.md).
 - **Front** (`frontend/`) : dashboard React 19 + Vite + TypeScript + Tailwind v4 + TanStack
   Query. Détail : [`frontend/README.md`](frontend/README.md).
-- **V1 Node.js** (racine `src/`, `package.json`) : MVP CLI historique, conservé pour
+- **V1 Node.js** (archivée sous `legacy/`) : MVP CLI historique, conservé pour
   référence — plus la cible produit.
 
 **Tests** — back : `cd python && docker compose run --rm app pytest -q` (ou
