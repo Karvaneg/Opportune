@@ -2,6 +2,7 @@
 
 from app.offer_normalization import (
     drop_non_skills,
+    drop_unanchored_skills,
     normalize_contract,
     normalize_location,
     normalize_skills,
@@ -130,3 +131,40 @@ def test_drop_non_skills_preserves_order_and_case():
 def test_drop_non_skills_removes_enumeration_filler():
     # OPP-157 : le petit LLM clôt souvent une énumération par « etc. » / « … ».
     assert drop_non_skills(["React", "etc.", "Node.js", "...", "…"]) == ["React", "Node.js"]
+
+
+# --- Ancrage au texte réel (OPP-213) ----------------------------------------
+
+
+def test_drop_unanchored_keeps_only_skills_present_in_text():
+    # Cas réel observé : le modèle invente une stack plausible à partir d'un titre.
+    text = "Lead Développeur React.js — agence digitale spécialisée en React."
+    skills = ["React.js", "JavaScript", "AWS", "Docker"]
+    assert drop_unanchored_skills(skills, text) == ["React.js"]
+
+
+def test_drop_unanchored_is_accent_and_case_insensitive():
+    # « Développé en PYTHON » doit ancrer « Python » malgré casse et accents alentour.
+    assert drop_unanchored_skills(["Python"], "Projet développé en PYTHON") == ["Python"]
+
+
+def test_drop_unanchored_tolerates_surrounding_punctuation():
+    # Node.js suivi d'une ponctuation dans l'annonce reste ancré (la ponctuation est
+    # réduite à un séparateur des deux côtés).
+    assert drop_unanchored_skills(["Node.js"], "Stack : Node.js, Express.") == ["Node.js"]
+
+
+def test_drop_unanchored_requires_word_boundary():
+    # Un token court ne doit pas matcher l'intérieur d'un autre mot (« Go » dans « Google »).
+    assert drop_unanchored_skills(["Go"], "Nous utilisons Google Workspace") == []
+
+
+def test_drop_unanchored_empty_when_text_has_no_skill():
+    # Laïus corporate sans techno : aucune compétence ancrée → liste vide (et non inventée).
+    text = "Agence internationale dédiée à l'expérience digitale et au Commerce Omnicanal."
+    assert drop_unanchored_skills(["Python", "AWS", "Docker"], text) == []
+
+
+def test_drop_unanchored_preserves_order_and_original_casing():
+    text = "Compétences : python, react, sql"
+    assert drop_unanchored_skills(["React", "SQL", "Python"], text) == ["React", "SQL", "Python"]

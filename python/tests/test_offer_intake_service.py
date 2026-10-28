@@ -70,11 +70,36 @@ class FakeOfferStore:
 def test_intake_analyzes_normalizes_and_persists():
     store = FakeOfferStore()
     offer = intake_offer(
-        "texte brut", source="indeed", url="http://x", client=MockLLMClient([VALID_RESPONSE]), store=store
+        "Développeur Python backend",
+        source="indeed", url="http://x", client=MockLLMClient([VALID_RESPONSE]), store=store,
     )
     assert offer.contract_type == "CDI"  # normalisé
-    assert offer.skills == ["Python"]  # dédoublonné
+    assert offer.skills == ["Python"]  # dédoublonné (et ancré au texte)
     assert store.get(offer.id) == offer  # bien persistée
+
+
+def test_intake_drops_skills_absent_from_text():
+    # Garde-fou anti-invention (OPP-213) : une compétence que le LLM renvoie mais qui
+    # n'apparaît pas dans le texte de l'offre est écartée à la persistance.
+    store = FakeOfferStore()
+    hallucinated = json.dumps(
+        {
+            "title": "Lead Développeur React",
+            "company": "SQLI",
+            "location": "Paris",
+            "seniority": "Senior",
+            "contract_type": "cdi",
+            "summary": "Agence digitale.",
+            # Seul « React » figure dans le texte ; le reste est inventé par le modèle.
+            "skills": ["React", "JavaScript", "AWS", "Docker"],
+            "attention_points": [],
+        }
+    )
+    offer = intake_offer(
+        "Lead Développeur React — agence digitale spécialisée en React.",
+        source="adzuna", url="http://x", client=MockLLMClient([hallucinated]), store=store,
+    )
+    assert offer.skills == ["React"]  # seule la compétence réellement présente survit
 
 
 def test_intake_upserts_existing_offer():
@@ -142,17 +167,38 @@ def test_enriched_fetches_full_text_when_no_skills():
     store = FakeOfferStore()
     client = MockLLMClient([NO_SKILLS_RESPONSE, VALID_RESPONSE])
     fetch = _fetcher()
-    extract = lambda html: "texte complet et riche de l'offre"  # noqa: E731
+    extract = lambda html: "texte complet et riche en Python de l'offre"  # noqa: E731
     result = intake_offer_enriched(
         "snippet maigre", source="adzuna", url="http://x/offre",
         client=client, store=store, fetch=fetch, extract=extract,
     )
     assert result.offer.skills == ["Python"]  # issu de la ré-analyse du texte complet
-    assert result.offer.raw_text == "texte complet et riche de l'offre"
+    assert result.offer.raw_text == "texte complet et riche en Python de l'offre"
     assert result.enrichment_attempted is True
     assert result.enrichment_recovered is True
     assert fetch.calls == ["http://x/offre"]
     assert len(client.calls) == 2  # deux passes : snippet puis texte enrichi
+
+
+def test_enriched_fetches_full_text_when_skills_all_unanchored():
+    # OPP-213 : le snippet produit des compétences, mais toutes inventées (absentes du texte) →
+    # l'ancrage les écarte → l'offre se retrouve sans skill ancrée, ce qui doit déclencher
+    # l'enrichissement au même titre qu'une analyse sans aucune compétence (et non persister
+    # une offre silencieusement vidée).
+    store = FakeOfferStore()
+    client = MockLLMClient([VALID_RESPONSE, VALID_RESPONSE])
+    fetch = _fetcher()
+    extract = lambda html: "texte complet et riche en Python de l'offre"  # noqa: E731
+    result = intake_offer_enriched(
+        # Le snippet ne mentionne pas « Python » : les skills du 1ᵉ passage ne s'ancrent pas.
+        "snippet maigre sans techno", source="adzuna", url="http://x/offre",
+        client=client, store=store, fetch=fetch, extract=extract,
+    )
+    assert result.offer.skills == ["Python"]  # récupérées via la page complète
+    assert result.enrichment_attempted is True
+    assert result.enrichment_recovered is True
+    assert fetch.calls == ["http://x/offre"]
+    assert len(client.calls) == 2  # la 2ᵉ passe a bien été déclenchée malgré des skills bruts
 
 
 def test_enriched_skips_fetch_when_skills_present():
@@ -161,7 +207,7 @@ def test_enriched_skips_fetch_when_skills_present():
     client = MockLLMClient([VALID_RESPONSE])
     fetch = _fetcher()
     result = intake_offer_enriched(
-        "snippet suffisant", source="adzuna", url="http://x/offre",
+        "snippet suffisant mentionnant Python", source="adzuna", url="http://x/offre",
         client=client, store=store, fetch=fetch, extract=lambda h: "ignoré",
     )
     assert result.offer.skills == ["Python"]

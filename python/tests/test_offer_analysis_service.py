@@ -52,6 +52,14 @@ def test_prompt_excludes_non_skills():
     assert "Optimisation de calculs" in prompt  # contre-exemple de tâche
 
 
+def test_prompt_forbids_inventing_skills():
+    # OPP-213 : la consigne interdit explicitement d'inventer des compétences absentes
+    # de l'offre (cause principale du delta observé entre offre réelle et stack extraite).
+    prompt = build_analysis_prompt("Offre XYZ")
+    assert "N'INVENTE RIEN" in prompt
+    assert "liste skills VIDE" in prompt  # mieux vaut vide que supposé
+
+
 def test_prompt_trims_and_rejects_empty():
     assert build_analysis_prompt("  Offre  ").endswith("Offre")
     with pytest.raises(ValueError):
@@ -77,6 +85,14 @@ def test_analyze_offer_constrains_decoding_with_schema():
     client = MockLLMClient([VALID_RESPONSE])
     analyze_offer("Texte de l'offre", client)
     assert client.calls[0]["fmt"] is OFFER_ANALYSIS_SCHEMA
+
+
+def test_analyze_offer_uses_zero_temperature():
+    # OPP-213 : l'intake fixe la température à 0 pour une extraction déterministe, sans
+    # laisser le défaut serveur (~0.8) pousser le modèle à inventer une stack.
+    client = MockLLMClient([VALID_RESPONSE])
+    analyze_offer("Texte de l'offre", client)
+    assert client.calls[0]["temperature"] == 0.0
 
 
 def test_analyze_offer_rejects_invalid_json():

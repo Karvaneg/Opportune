@@ -66,7 +66,12 @@ class LLMClient(Protocol):
     """
 
     def generate(
-        self, prompt: str, *, model: str | None = None, fmt: object | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        fmt: object | None = None,
+        temperature: float | None = None,
     ) -> LLMResponse: ...
 
 
@@ -98,7 +103,12 @@ class OllamaLLMClient:
         self._transport = transport or llm.default_transport(timeout=self.timeout)
 
     def generate(
-        self, prompt: str, *, model: str | None = None, fmt: object | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        fmt: object | None = None,
+        temperature: float | None = None,
     ) -> LLMResponse:
         url, payload = llm.build_generate_request(
             prompt,
@@ -106,6 +116,7 @@ class OllamaLLMClient:
             host=self.host,
             fmt=fmt,
             num_predict=self.num_predict,
+            temperature=temperature,
         )
         logger.debug("Génération LLM (modèle=%s, url=%s)", payload["model"], url)
         try:
@@ -153,14 +164,26 @@ class MockLLMClient:
         self.calls: list[dict] = []
 
     def generate(
-        self, prompt: str, *, model: str | None = None, fmt: object | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        fmt: object | None = None,
+        temperature: float | None = None,
     ) -> LLMResponse:
         # Valide le prompt comme le fait le vrai client (via build_generate_request).
         if not isinstance(prompt, str) or prompt.strip() == "":
             raise ValueError("Le prompt est requis")
-        # ``fmt`` est enregistré (et non consommé) pour que les tests vérifient que le métier
-        # transmet bien le schéma attendu au client réel.
-        self.calls.append({"prompt": prompt, "model": model or self.model, "fmt": fmt})
+        # ``fmt``/``temperature`` sont enregistrés (et non consommés) pour que les tests
+        # vérifient que le métier transmet bien le schéma et le réglage attendus au client réel.
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "model": model or self.model,
+                "fmt": fmt,
+                "temperature": temperature,
+            }
+        )
         if self.error is not None:
             raise self.error
         if not self._responses:

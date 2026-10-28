@@ -129,7 +129,7 @@ def test_run_ingests_then_pushes(conn):
     # Aucune offre en stock : l'offre collée est analysée, persistée, puis poussée.
     runner, transport = _build(conn, intake=MockLLMClient([_analysis()]))
 
-    outcome = runner.run(["texte d'offre collé"], "cand-1", source="collée")
+    outcome = runner.run(["Développeur backend Python SQL"], "cand-1", source="collée")
 
     assert runner.offers.count() == 1
     assert len(outcome.reviewed) == 1

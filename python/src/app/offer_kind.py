@@ -23,7 +23,8 @@ Déterministe, sans LLM ni I/O : exploitable tel quel pour re-typer la base exis
 from __future__ import annotations
 
 import re
-import unicodedata
+
+from app.offer_normalization import strip_accents
 
 EMPLOI = "emploi"
 FORMATION = "formation"
@@ -76,8 +77,7 @@ _STRONG_THRESHOLD = 2
 
 def _normalize(text: str) -> str:
     """Minuscule + sans accents, pour des marqueurs robustes (« diplômante » → « diplomante »)."""
-    decomposed = unicodedata.normalize("NFD", text.lower())
-    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return strip_accents(text.lower())
 
 
 def _contains_word(haystack: str, needle: str) -> bool:

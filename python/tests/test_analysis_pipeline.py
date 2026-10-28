@@ -53,7 +53,7 @@ def _strong_profile():
 def test_pipeline_produces_full_dossier_and_persists(store):
     client = MockLLMClient([_analysis()])
     dossier = run_pipeline(
-        "texte offre", source="indeed", url="http://x",
+        "Développeur Python SQL senior", source="indeed", url="http://x",
         profile=_strong_profile(), client=client, store=store,
     )
     assert isinstance(dossier, DecisionDossier)
@@ -73,7 +73,9 @@ def test_pipeline_weak_match_recommends_ignorer(store):
         name="Bob", skills=["Java"], contract_type="freelance",
         location="Lyon", total_experience_years=1,
     )
-    dossier = run_pipeline("texte", source="indeed", profile=weak, client=client, store=store)
+    dossier = run_pipeline(
+        "Développeur Python SQL", source="indeed", profile=weak, client=client, store=store
+    )
     # Garde-fou métier (OPP-162) : Bob (skills « Java ») n'a aucune compétence en commun avec
     # l'offre → couverture 0 → le facteur compétences écrase le score à 0, même si la séniorité
     # est partiellement créditée. Offre d'un autre métier = 0, pas « un peu de points via le reste ».
@@ -109,8 +111,8 @@ def test_pipeline_custom_thresholds_shift_recommendation(store):
     # skills 1/2 → score 78 ; avec high=80 la reco bascule de postuler à a_etudier.
     client = MockLLMClient([_analysis(skills=["Python", "Rust"])])
     dossier = run_pipeline(
-        "texte", source="indeed", profile=_strong_profile(), client=client, store=store,
-        high=80, medium=50,
+        "Développeur Python Rust", source="indeed", profile=_strong_profile(),
+        client=client, store=store, high=80, medium=50,
     )
     assert dossier.explanation.score == 78
     assert dossier.recommendation.action == "a_etudier"
