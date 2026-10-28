@@ -139,6 +139,9 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         {reco.justification && (
           <p className="mt-4 text-sm text-ink-muted">{reco.justification}</p>
         )}
+
+        <OfferSkills skills={reco.skills} url={reco.url} />
+
         {reco.comment && (
           <p className="mt-3 rounded-md bg-surface p-3 text-sm text-ink">
             <span className="font-medium">Commentaire : </span>
@@ -157,6 +160,49 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
 
       <DecisionTimeline history={reco.history} application={reco.application} />
     </>
+  );
+}
+
+/**
+ * Compétences extraites de l'offre (OPP-214). Opportune n'affiche **que** les compétences
+ * réellement présentes dans l'annonce (ancrage OPP-213) : quand la liste est vide — extraction
+ * trop pauvre sur un extrait tronqué, ou offre disparue — on ne meuble pas avec une stack
+ * supposée. On invite plutôt à consulter l'annonce d'origine (« Voir l'offre »), ou, à défaut
+ * d'URL, on l'indique sobrement. Mieux vaut juste que riche (cf. arbitrage produit OPP-213).
+ */
+function OfferSkills({ skills, url }: { skills: string[]; url: string | null }) {
+  return (
+    <div className="mt-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Compétences</h3>
+      {skills.length > 0 ? (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {skills.map((skill) => (
+            <li
+              key={skill}
+              className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink"
+            >
+              {skill}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-ink-muted">
+          Aucune compétence détectée dans l'annonce.{" "}
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-brand underline hover:text-brand-strong"
+            >
+              Voir l'offre
+            </a>
+          ) : (
+            "Consulte l'annonce d'origine pour le détail."
+          )}
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -115,6 +115,8 @@ def test_get_recommendation_returns_decision(env):
     # OPP-112 : le détail porte désormais title/company, résolus depuis l'offre d'origine.
     assert resp.body["title"] == "App"
     assert resp.body["company"] == "Acme"
+    # OPP-214 : les compétences de l'offre sont exposées pour affichage sur la fiche.
+    assert resp.body["skills"] == ["Python", "SQL"]
     assert [ev["status"] for ev in resp.body["history"]] == ["pending"]
 
 
@@ -134,6 +136,7 @@ def test_get_recommendation_title_company_fallback_when_offer_gone(env):
     assert resp.status == 200
     assert resp.body["title"] is None
     assert resp.body["company"] is None
+    assert resp.body["skills"] == []  # OPP-214 : offre disparue → aucune compétence
     assert resp.body["offer_id"] == "off-app"  # fallback possible côté front
 
 

@@ -14,6 +14,7 @@ const DETAIL = {
   score: 100,
   title: "Développeur Full-Stack",
   company: "Holis",
+  skills: [],
   justification: "Score 100/100.",
   status: "approved",
   comment: null,
