@@ -9,6 +9,7 @@ import { useSpace } from "./space/SpaceContext";
 import { WelcomeScreen } from "./space/WelcomeScreen";
 import { DemoBanner } from "./space/DemoBanner";
 import { CollectionBanner } from "./components/CollectionBanner";
+import { LlmSetupGate } from "./components/LlmSetupGate";
 import { SearchBar } from "./components/SearchBar";
 import { Logo } from "./components/Logo";
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -123,6 +124,10 @@ function AuthenticatedApp() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* Porte de 1er lancement (OPP-193) : bloque l'app tant que le modèle local n'est pas prêt
+          (téléchargement + barre de progression), puis laisse passer. Sous le QueryClientProvider
+          pour le sondage, au-dessus du reste car la disponibilité du LLM conditionne l'usage. */}
+      <LlmSetupGate>
       <TargetCandidateProvider>
         <BrowserRouter>
           <div className="min-h-screen bg-surface text-ink">
@@ -194,6 +199,7 @@ function AuthenticatedApp() {
           </div>
         </BrowserRouter>
       </TargetCandidateProvider>
+      </LlmSetupGate>
     </QueryClientProvider>
   );
 }

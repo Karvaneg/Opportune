@@ -315,6 +315,14 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         redacteur=LLMRedacteur(llm_client),
     )
 
+    # Mise en route du LLM local au 1er lancement (OPP-193) : statut Ollama/modèle/RAM et
+    # téléchargement du modèle suivi par sondage. Même hôte/modèle que le client de génération
+    # (OLLAMA_HOST / OLLAMA_MODEL, cf. app.llm) pour viser exactement le LLM que le métier utilise.
+    from app.llm import DEFAULT_MODEL, DEFAULT_OLLAMA_HOST
+    from app.llm_setup_service import LLMSetupService
+
+    llm_setup = LLMSetupService(model=DEFAULT_MODEL, host=DEFAULT_OLLAMA_HOST)
+
     return HermesApi(
         orchestrator,
         actions,
@@ -326,6 +334,7 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         profiles=profile_service,
         cv_intake=cv_intake,
         searches=searches,
+        llm_setup=llm_setup,
         conn=conn,
     )
 
