@@ -7,3 +7,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+
+# Sorties de build PyInstaller (binaire autonome, OPP-190)
+build/
+dist/
