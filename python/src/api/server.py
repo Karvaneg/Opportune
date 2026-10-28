@@ -313,7 +313,11 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     # seede au **tout premier lancement seulement** (fichier absent) : ainsi un « repartir de
     # zéro » (vidage) n'est pas annulé par un redémarrage. Le seed est sans réseau ni LLM
     # (cf. ``app.demo_candidate``). L'utilisateur démo ne possède que le candidat démo.
-    demo_db = os.environ.get("OPPORTUNE_DEMO_DB_PATH", "data/opportune-demo.db")
+    from app.paths import user_data_dir
+
+    demo_db = os.environ.get("OPPORTUNE_DEMO_DB_PATH") or str(
+        user_data_dir() / "opportune-demo.db"
+    )
     demo_is_new = demo_db == ":memory:" or not Path(demo_db).exists()
     demo_conn = connect(demo_db)
     if demo_is_new:
