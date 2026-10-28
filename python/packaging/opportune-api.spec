@@ -16,8 +16,11 @@ Choix structurants :
   imports cachés. L'extra ``discord`` est **exclu** : la gateway Discord est un
   process séparé, pas servie par l'API HTTP, et ``discord.py`` alourdirait le
   binaire pour rien.
-- Pas de ``datas`` : le schéma SQLite est créé en code (``CREATE TABLE IF NOT
-  EXISTS``) et le seed démo est du Python pur — aucun fichier externe à joindre.
+- **Front compilé embarqué** (OPP-191) : ``frontend/dist`` est joint sous
+  ``frontend_dist``, et l'API le sert en statique (un binaire = app complète).
+  Le ``dist`` doit exister avant le build (``npm run build`` ; fait par
+  ``build-api.sh``). Le schéma SQLite est créé en code et le seed démo est du
+  Python pur : aucun autre fichier externe à joindre.
 """
 
 import os
@@ -29,6 +32,7 @@ from PyInstaller.utils.hooks import collect_submodules
 # collecte des sous-modules trouvent les packages du cœur.
 SRC_DIR = os.path.join(SPECPATH, "..", "src")
 ENTRY = os.path.join(SPECPATH, "api_entry.py")
+FRONTEND_DIST = os.path.normpath(os.path.join(SPECPATH, "..", "..", "frontend", "dist"))
 
 hiddenimports = (
     collect_submodules("app", on_error="ignore")
@@ -37,11 +41,21 @@ hiddenimports = (
     + ["bs4", "soupsieve", "pypdf"]
 )
 
+# Front compilé embarqué sous « frontend_dist » (cf. api.frontend_assets). Absent, le
+# build échoue tôt avec un message clair plutôt qu'un binaire sans front servi.
+if not os.path.isdir(FRONTEND_DIST):
+    raise SystemExit(
+        f"✗ Front compilé introuvable : {FRONTEND_DIST}\n"
+        "  Construire le front d'abord : (cd frontend && npm run build)"
+    )
+
+datas = [(FRONTEND_DIST, "frontend_dist")]
+
 a = Analysis(
     [ENTRY],
     pathex=[SRC_DIR],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

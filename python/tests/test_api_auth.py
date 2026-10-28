@@ -264,11 +264,12 @@ def test_assemble_api_refuses_open_mode():
 
 
 def test_server_serves_me_over_http():
-    """Bout-en-bout : le serveur HTTP réel route ``GET /me`` et renvoie l'identité locale.
+    """Bout-en-bout : le serveur HTTP réel route ``GET /api/me`` et renvoie l'identité locale.
 
-    ``/me`` ne touche pas SQLite → sûr depuis le thread serveur (``check_same_thread`` interdit
-    le chemin base cross-thread, couvert au niveau dispatch). Valide que l'adaptateur transmet
-    la requête et que l'identité est bien servie **sans jeton**.
+    Depuis OPP-191 l'API sert aussi le front : les appels de données sont préfixés ``/api``
+    (les requêtes nues relèvent du front / des routes client). ``/me`` ne touche pas SQLite →
+    sûr depuis le thread serveur. Valide que l'adaptateur retire le préfixe, transmet la
+    requête, et que l'identité est bien servie **sans jeton**.
     """
     conn = connect(":memory:")
     _profile(conn)
@@ -279,9 +280,57 @@ def test_server_serves_me_over_http():
     try:
         host, port = server.server_address
         client = http.client.HTTPConnection(host, port, timeout=5)
-        client.request("GET", "/me")
+        client.request("GET", "/api/me")
         resp = client.getresponse()
         assert resp.status == 200
+        client.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    conn.close()
+
+
+def test_server_serves_front_and_routes_api(tmp_path):
+    """OPP-191 : avec un ``static_dir``, le serveur sert le front à la racine et route ``/api``.
+
+    - ``GET /`` → index.html (200, text/html) ;
+    - ``GET /runs/42`` (route client, sans extension) → fallback SPA sur index.html ;
+    - ``GET /api/me`` → dispatcher (200, JSON) : le préfixe cohabite avec le statique.
+    """
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>Opportune</title>")
+
+    conn = connect(":memory:")
+    _profile(conn)
+    server = create_server(
+        assemble_api(conn, LocalAuthProvider(OWNER)), port=0, static_dir=dist
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        client = http.client.HTTPConnection(host, port, timeout=5)
+
+        client.request("GET", "/")
+        root = client.getresponse()
+        root_body = root.read()
+        assert root.status == 200
+        assert root.getheader("Content-Type").startswith("text/html")
+        assert b"Opportune" in root_body
+
+        client.request("GET", "/runs/42")
+        spa = client.getresponse()
+        assert spa.status == 200
+        assert b"Opportune" in spa.read()
+
+        client.request("GET", "/api/me")
+        me = client.getresponse()
+        assert me.status == 200
+        assert me.getheader("Content-Type").startswith("application/json")
+        me.read()
+
         client.close()
     finally:
         server.shutdown()

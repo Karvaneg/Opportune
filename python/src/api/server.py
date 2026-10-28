@@ -13,13 +13,41 @@ import json
 import sqlite3
 import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 from api.app import HermesApi
+from api.frontend_assets import content_type_for, resolve_static_file
 from app.auth import REVIEWER, LocalAuthProvider, User
 
+# Préfixe des appels de données (cf. front : ``src/api/client.ts``). En mode packagé,
+# l'API sert aussi le front : on route ``/api/*`` vers le dispatcher et le reste vers les
+# assets statiques. Le front envoie toujours ce préfixe ; on le retire avant dispatch, car
+# les routes du dispatcher sont à la racine (``/offers``, pas ``/api/offers``).
+_API_PREFIX = "/api"
 
-def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
-    """Construit un handler HTTP branché sur ``api`` (le dispatcher porte la logique)."""
+
+def _strip_api_prefix(path: str) -> str:
+    """Retire un éventuel préfixe ``/api`` du chemin avant dispatch.
+
+    ``/api/offers`` → ``/offers`` ; ``/api`` → ``/``. Un chemin déjà sans préfixe (client API
+    direct, tests) est rendu tel quel — le préfixe est une convention du front, pas du dispatcher.
+    """
+    if path == _API_PREFIX:
+        return "/"
+    if path.startswith(_API_PREFIX + "/"):
+        return path[len(_API_PREFIX):]
+    return path
+
+
+def make_handler(
+    api: HermesApi, static_dir: Path | None = None
+) -> type[BaseHTTPRequestHandler]:
+    """Construit un handler HTTP branché sur ``api`` (le dispatcher porte la logique).
+
+    ``static_dir`` (OPP-191) : répertoire du front compilé à servir pour les requêtes GET
+    hors ``/api``. ``None`` → aucun service statique (mode dev, où Vite sert le front) : une
+    telle requête répond 404.
+    """
 
     class _Handler(BaseHTTPRequestHandler):
         def _dispatch(self, method: str) -> None:
@@ -46,7 +74,7 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
             # http.server, qui fermerait la connexion sans réponse (« empty reply » opaque côté
             # client). On rend toujours une réponse JSON — en journalisant la traceback serveur.
             try:
-                response = api.dispatch(method, self.path, body, headers)
+                response = api.dispatch(method, _strip_api_prefix(self.path), body, headers)
             except sqlite3.OperationalError as exc:
                 # Verrou SQLite (p. ex. écriture concurrente d'une collecte de fond) : erreur
                 # **transitoire**, pas un plantage → 503, pour que le client invite à réessayer.
@@ -66,7 +94,11 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
                 self._write(response.status, response.body)
 
         def do_GET(self) -> None:  # noqa: N802 - nom imposé par http.server
-            self._dispatch("GET")
+            # ``/api/*`` = données (dispatcher) ; tout le reste = front statique (OPP-191).
+            if self.path == _API_PREFIX or self.path.startswith(_API_PREFIX + "/"):
+                self._dispatch("GET")
+            else:
+                self._serve_static()
 
         def do_POST(self) -> None:  # noqa: N802 - nom imposé par http.server
             self._dispatch("POST")
@@ -81,10 +113,29 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
             # dispatcher (qui gère PUT /recommendations/{id}/letter — cf. OPP-147).
             self._dispatch("PUT")
 
+        def _serve_static(self) -> None:
+            """Sert un fichier du front compilé (OPP-191), avec fallback SPA sur index.html.
+
+            Sans ``static_dir`` (dev : Vite sert le front), toute requête non-``/api`` est un
+            404 JSON. La résolution du fichier (anti-traversée, SPA) est déléguée à
+            ``resolve_static_file`` ; ici on ne fait que l'entrée/sortie HTTP.
+            """
+            if static_dir is None:
+                self._write(404, {"error": "route inconnue"})
+                return
+            target = resolve_static_file(static_dir, self.path)
+            if target is None:
+                self._write(404, {"error": "route inconnue"})
+                return
+            self._write_bytes(200, target.read_bytes(), content_type_for(target.name))
+
         def _write(self, status: int, body: dict) -> None:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            self._write_bytes(status, payload, "application/json; charset=utf-8")
+
+        def _write_bytes(self, status: int, payload: bytes, content_type: str) -> None:
             self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
@@ -96,7 +147,10 @@ def make_handler(api: HermesApi) -> type[BaseHTTPRequestHandler]:
 
 
 def create_server(
-    api: HermesApi, host: str = "127.0.0.1", port: int = 8000
+    api: HermesApi,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    static_dir: Path | None = None,
 ) -> HTTPServer:
     """Crée un serveur HTTP servant ``api`` (non démarré ; appeler ``serve_forever``).
 
@@ -105,8 +159,10 @@ def create_server(
     conçue pour un accès multi-thread. Un ``ThreadingHTTPServer`` traiterait chaque requête
     dans un thread distinct et ferait échouer cette connexion — la concurrence viendra avec
     une connexion par requête, pas avant.
+
+    ``static_dir`` (OPP-191) : front compilé à servir pour les requêtes hors ``/api``.
     """
-    return HTTPServer((host, port), make_handler(api))
+    return HTTPServer((host, port), make_handler(api, static_dir))
 
 
 def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
@@ -356,9 +412,17 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
         demo=demo,
         demo_commands={"/demo/reset": _reset_demo, "/demo/restore": _restore_demo},
     )
-    server = create_server(router)
+    # Front compilé servi par l'API en mode packagé (OPP-191) : un seul binaire = app
+    # complète. En dev (dist absent), ``static_dir`` est ``None`` et c'est Vite qui sert.
+    from api.frontend_assets import frontend_dist_dir
+
+    static_dir = frontend_dist_dir()
+    server = create_server(router, static_dir=static_dir)
     host, port = server.server_address
-    print(f"API Hermes à l'écoute sur http://{host}:{port}")
+    if static_dir is not None:
+        print(f"Opportune à l'écoute sur http://{host}:{port} (front + API)")
+    else:
+        print(f"API Hermes à l'écoute sur http://{host}:{port}")
     server.serve_forever()
 
 
