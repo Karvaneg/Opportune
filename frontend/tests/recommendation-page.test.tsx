@@ -14,6 +14,7 @@ const DETAIL = {
   score: 100,
   title: "Développeur Full-Stack",
   company: "Holis",
+  skills: ["React", "Python"],
   kind: "emploi",
   url: "https://holis.example/jobs/42",
   created_at: "2026-09-01T08:00:00+00:00",
@@ -126,6 +127,38 @@ describe("RecommendationPage", () => {
     expect(await screen.findByText("Développeur Full-Stack")).toBeInTheDocument();
     expect(screen.queryByText("Formation")).not.toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("affiche les compétences extraites de l'offre en chips (OPP-214)", async () => {
+    stubFetch(200, { ...DETAIL, skills: ["React", "Python", "SQL"] });
+    renderPage();
+
+    await screen.findByText("Développeur Full-Stack");
+    expect(screen.getByText("Compétences")).toBeInTheDocument();
+    expect(screen.getByText("React")).toBeInTheDocument();
+    expect(screen.getByText("Python")).toBeInTheDocument();
+    expect(screen.getByText("SQL")).toBeInTheDocument();
+  });
+
+  it("aucune compétence ancrée → invite « Voir l'offre » vers l'annonce (OPP-214/213)", async () => {
+    // Extraction juste mais pauvre (snippet tronqué) : liste vide, pas de stack supposée —
+    // on renvoie à l'annonce d'origine plutôt que de meubler.
+    stubFetch(200, { ...DETAIL, skills: [], url: "https://holis.example/jobs/42" });
+    renderPage();
+
+    await screen.findByText("Développeur Full-Stack");
+    expect(screen.getByText(/Aucune compétence détectée/)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Voir l'offre" });
+    expect(link).toHaveAttribute("href", "https://holis.example/jobs/42");
+  });
+
+  it("aucune compétence et pas d'URL → mention sobre sans lien mort (OPP-214)", async () => {
+    stubFetch(200, { ...DETAIL, skills: [], url: null });
+    renderPage();
+
+    await screen.findByText("Développeur Full-Stack");
+    expect(screen.getByText(/Consulte l'annonce d'origine/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Voir l'offre" })).toBeNull();
   });
 
   it("404 → message neutre (anti-énumération)", async () => {

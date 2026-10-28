@@ -1641,6 +1641,10 @@ class HermesApi:
         ``title``/``company`` sont résolus depuis l'offre d'origine (``offer_id``) pour que la
         page reco dédiée soit lisible (OPP-112) ; ``None`` si l'offre a disparu — le front
         retombe alors sur l'``offer_id``.
+
+        ``skills`` (OPP-214) expose les compétences extraites de l'offre pour les afficher sur la
+        fiche : liste **vide** si l'offre a disparu, ou si l'extraction n'a rien ancré au texte
+        (cf. OPP-213) — le front propose alors « Voir l'offre » plutôt qu'une liste supposée.
         """
         offer = self.orchestrator.get_offer(decision.offer_id)
         return {
@@ -1651,6 +1655,7 @@ class HermesApi:
             "score": decision.score,
             "title": offer.title if offer is not None else None,
             "company": offer.company if offer is not None else None,
+            "skills": list(offer.skills) if offer is not None else [],
             # Type d'offre (OPP-166) : permet au front de badger « Formation » une fiche
             # historique (décision posée avant la distinction). ``None`` si l'offre a disparu.
             "kind": offer.kind if offer is not None else None,

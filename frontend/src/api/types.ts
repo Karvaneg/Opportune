@@ -71,6 +71,12 @@ export interface RecommendationDetail {
   score: number | null;
   title: string | null;
   company: string | null;
+  /**
+   * Compétences extraites de l'offre d'origine (OPP-214), pour affichage sur la fiche. Liste
+   * **vide** si l'offre a disparu ou si l'extraction n'a rien ancré au texte (OPP-213) — le
+   * front propose alors « Voir l'offre » plutôt qu'une stack supposée.
+   */
+  skills: string[];
   /** Type de l'offre d'origine (OPP-166), ou `null` si l'offre a disparu. */
   kind: OfferKind | null;
   /** Lien vers l'annonce d'origine (OPP-112), `null`/vide si absent ou offre disparue. */
