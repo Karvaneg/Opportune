@@ -1,0 +1,27 @@
+[package]
+name = "opportune"
+version = "1.0.0"
+description = "Opportune — assistant de candidature local-first (app desktop)"
+edition = "2021"
+rust-version = "1.77"
+
+# Scaffold desktop (OPP-192). Tauri est ici une coquille : il lance le binaire API
+# (OPP-190) en sidecar, attend qu'il serve le front compilé (OPP-191) sur localhost,
+# ouvre une fenêtre dessus et arrête le sidecar à la fermeture. Aucune logique métier.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Capture SIGINT/SIGTERM (feature « termination ») pour tuer le sidecar même quand l'app
+# est arrêtée par signal (kill, crash) et non par fermeture de fenêtre — sinon le binaire API
+# resterait orphelin à tenir le port, et le lancement suivant échouerait.
+ctrlc = { version = "3.4", features = ["termination"] }
+
+# Le binaire API (PyInstaller onefile) tourne en DEUX processus : un bootloader et le vrai
+# process Python (petit-fils) qui tient le port. On lance donc le sidecar dans son propre
+# groupe de processus (setsid) et on tue le GROUPE entier à l'arrêt — sinon tuer le seul
+# bootloader laisserait le process Python orphelin. D'où libc (setsid + killpg) sous Unix.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
