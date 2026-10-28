@@ -24,9 +24,16 @@ export function CollectionBanner() {
   return (
     <div className="border-b border-brand/30 bg-brand/10">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm sm:px-6">
+        {/* Pendant l'arrêt, on explique le délai : l'annulation est prise en compte mais
+            coopérative (OPP-209), l'offre en cours se termine avant que la passe ne s'arrête —
+            sinon le compteur qui monte encore d'un cran donne l'impression d'un blocage (OPP-215). */}
         <span className="flex items-center gap-2 text-brand">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          Collecte d'offres en cours… <CollectCounts progress={job.progress} />
+          {stopping ? (
+            <>Arrêt pris en compte — l'offre en cours se termine… <CollectCounts progress={job.progress} /></>
+          ) : (
+            <>Collecte d'offres en cours… <CollectCounts progress={job.progress} /></>
+          )}
         </span>
         <div className="flex items-center gap-3">
           <Link to="/offres" className="font-medium text-brand underline hover:text-brand-strong">
@@ -38,7 +45,7 @@ export function CollectionBanner() {
             disabled={stopping}
             className="rounded-md px-2 py-1 font-medium text-brand transition-colors hover:bg-brand/15 disabled:opacity-50"
           >
-            {stopping ? "Arrêt en cours…" : "Arrêter"}
+            {stopping ? "Arrêt demandé…" : "Arrêter"}
           </button>
         </div>
       </div>
