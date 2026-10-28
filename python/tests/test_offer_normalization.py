@@ -133,6 +133,14 @@ def test_drop_non_skills_removes_enumeration_filler():
     assert drop_non_skills(["React", "etc.", "Node.js", "...", "…"]) == ["React", "Node.js"]
 
 
+def test_drop_non_skills_removes_bare_numbers_but_keeps_versioned_techs():
+    # OPP-213 : un nombre ou numéro de version orphelin (« 3 », « 8.1 », « 2024 ») détaché
+    # par le modèle n'est pas une compétence ; une techno versionnée (lettre présente) survit.
+    assert drop_non_skills(
+        ["PHP", "Symfony", "3", "Symfony 6.4", "8.1", "2024", "C++", "C#", ".NET", "3D"]
+    ) == ["PHP", "Symfony", "Symfony 6.4", "C++", "C#", ".NET", "3D"]
+
+
 # --- Ancrage au texte réel (OPP-213) ----------------------------------------
 
 

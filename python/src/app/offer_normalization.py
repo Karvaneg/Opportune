@@ -212,8 +212,15 @@ _SKILL_COMPLEMENTS = frozenset(
 
 
 def _is_non_skill(skill: str) -> bool:
-    """Vrai si ``skill`` est du bruit (norme/organisme connu ou tâche formulée)."""
+    """Vrai si ``skill`` est du bruit (norme/organisme connu, nombre nu ou tâche formulée)."""
     if skill.lower() in _NON_SKILL_TERMS:
+        return True
+    # Un « skill » dépourvu de toute lettre n'est qu'un nombre ou un numéro de version
+    # orphelin (« 3 », « 8.1 », « 2024 ») que le modèle a détaché d'une techno (« Symfony 3 »)
+    # ou d'une durée d'expérience. Une vraie techno porte toujours une lettre (« C++ », « C# »,
+    # « .NET », « 3D »), donc on ne risque pas de perdre « Symfony 6.4 » (le complément versionné
+    # reste accolé à la techno) — OPP-213.
+    if not any(ch.isalpha() for ch in skill):
         return True
     match = _TASK_RE.match(skill)
     if match is None:
