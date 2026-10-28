@@ -283,8 +283,11 @@ describe("OffersPage", () => {
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
 
-    // Avancement visible pendant que le job tourne…
-    expect(await screen.findByText(/Récupération…/)).toBeInTheDocument();
+    // Pendant que le job tourne, le bouton reflète l'état « en cours » (la progression
+    // détaillée est portée par le bandeau global `CollectionBanner`, hors de cette page — OPP-215)…
+    expect(
+      await screen.findByRole("button", { name: /Récupération en cours…/ }),
+    ).toBeInTheDocument();
     // …puis le bilan final après re-sondage (refetchInterval ~1,5 s).
     expect(
       await screen.findByText(/3 nouvelles offres/, undefined, { timeout: 3000 }),

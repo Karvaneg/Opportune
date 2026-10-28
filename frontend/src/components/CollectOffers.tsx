@@ -8,8 +8,7 @@ import {
   useStartCollect,
 } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
-import type { CollectionProgress, CollectionReport } from "../api/types";
-import { CollectCounts } from "./CollectCounts";
+import type { CollectionReport } from "../api/types";
 import { ErrorNotice } from "./States";
 
 /**
@@ -113,7 +112,9 @@ export function CollectOffers() {
         >
           {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
         </button>
-        {status === "running" && job.data && <CollectProgress progress={job.data.progress} />}
+        {/* La progression d'une passe en cours est affichée par le bandeau global persistant
+            (`CollectionBanner`, OPP-208) — on ne la duplique plus ici (OPP-215). Le bilan final
+            et l'échec restent affichés à côté du bouton : le bandeau, lui, disparaît à la fin. */}
         {status === "done" && job.data?.report && <CollectSummary report={job.data.report} />}
         {status === "failed" && (
           <span className="text-sm text-danger">
@@ -124,18 +125,6 @@ export function CollectOffers() {
       {start.isError && <ErrorNotice error={start.error} />}
       {job.isError && <ErrorNotice error={job.error} />}
     </div>
-  );
-}
-
-/**
- * Avancement d'une passe en cours, affiché à côté du bouton pendant le sondage. Donne le
- * ressenti de progression sur une collecte longue (plusieurs minutes), avant le bilan final.
- */
-function CollectProgress({ progress }: { progress: CollectionProgress }) {
-  return (
-    <span className="text-sm text-ink-muted">
-      Récupération… <CollectCounts progress={progress} />
-    </span>
   );
 }
 

@@ -91,6 +91,32 @@ describe("CollectionBanner (OPP-208)", () => {
     );
   });
 
+  it("explique le délai quand l'arrêt est pris en compte (OPP-215)", async () => {
+    // cancel_requested = l'arrêt coopératif est posé mais l'offre en cours se termine encore :
+    // le bandeau doit l'expliquer (et non laisser croire à un blocage), bouton désactivé.
+    stubActiveCollect({
+      job_id: "j1",
+      status: "running",
+      progress: {
+        collected: 3,
+        stored: 2,
+        duplicates: 1,
+        failures: 0,
+        enriched: 0,
+        enriched_recovered: 0,
+      },
+      report: null,
+      error: null,
+      cancel_requested: true,
+    });
+    const { container } = renderBanner();
+
+    await screen.findByRole("link", { name: "Voir" });
+    expect(container.textContent).toContain("Arrêt pris en compte");
+    expect(container.textContent).toContain("l'offre en cours se termine");
+    expect(screen.getByRole("button", { name: "Arrêt demandé…" })).toBeDisabled();
+  });
+
   it("ne rend rien quand aucune collecte n'est active", async () => {
     const fetchMock = stubActiveCollect(null);
     renderBanner();
