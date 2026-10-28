@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from app.candidate_profile import CandidateProfile
     from app.candidate_registry import CandidateRegistry
     from app.collection_jobs import CollectionJob, CollectionJobRegistry
+    from app.llm_setup_service import LLMSetupService
     from app.offer_collection import CollectionReport
     from app.profile_service import ProfileService
 
@@ -172,6 +173,8 @@ _OFFERS = re.compile(r"^/offers$")
 _COLLECT = re.compile(r"^/collect$")
 _COLLECT_JOB_CANCEL = re.compile(r"^/collect/(?P<job_id>[^/]+)/cancel$")
 _COLLECT_JOB = re.compile(r"^/collect/(?P<job_id>[^/]+)$")
+_LLM_STATUS = re.compile(r"^/system/llm/status$")
+_LLM_SETUP = re.compile(r"^/system/llm/setup$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -248,6 +251,7 @@ class HermesApi:
         profiles: "ProfileService | None" = None,
         cv_intake: "CvIntake | None" = None,
         searches: "CandidateRegistry | None" = None,
+        llm_setup: "LLMSetupService | None" = None,
         conn: "sqlite3.Connection | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
@@ -281,6 +285,10 @@ class HermesApi:
         # monté (404 neutre). C'est **le même registre** que celui dont l'auth dérive le
         # périmètre — une recherche créée ici entre donc aussitôt dans ``owned_candidates``.
         self.searches = searches
+        # Mise en route du LLM local au 1er lancement (OPP-193) : statut (Ollama joignable,
+        # modèle présent, RAM) et téléchargement du modèle suivi par sondage. Optionnel : si
+        # absent, les routes /system/llm/* ne sont pas montées (404). Injecté en prod, faux en test.
+        self.llm_setup = llm_setup
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
@@ -499,6 +507,24 @@ class HermesApi:
                 raise self._not_found(user, "collecte d'offres non disponible")
             self._require(method, "GET", path)
             return self._get_collect_job(unquote(match["job_id"]), user)
+
+        if _LLM_STATUS.match(path):
+            # Mise en route du LLM local (OPP-193). Montée uniquement si le service est câblé.
+            if self.llm_setup is None:
+                raise self._not_found(user, "mise en route du LLM non disponible")
+            self._require(method, "GET", path)
+            return Response(200, self.llm_setup.status())
+
+        if _LLM_SETUP.match(path):
+            if self.llm_setup is None:
+                raise self._not_found(user, "mise en route du LLM non disponible")
+            from app.llm_setup_service import serialize_snapshot
+
+            # GET : avancement courant (sondage) ; POST : lance le téléchargement du modèle.
+            if method.upper() == "GET":
+                return Response(200, serialize_snapshot(self.llm_setup.progress()))
+            self._require(method, "POST", path)
+            return Response(202, serialize_snapshot(self.llm_setup.start()))
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
