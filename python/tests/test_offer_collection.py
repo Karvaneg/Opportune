@@ -120,7 +120,9 @@ def test_dedups_same_offer_within_one_pass_without_second_llm_call():
     store = FakeOfferStore()
     # Une seule réponse scriptée : si la 2e offre (doublon) appelait le LLM, ça lèverait.
     client = MockLLMClient([_response()])
-    raw = RawOffer(source="indeed", raw_text="même offre", url="https://x.com/j")
+    # Le texte mentionne « Python » pour que la compétence s'ancre (OPP-213) et évite de
+    # déclencher l'enrichissement — ce test isole la dédup, pas le secours.
+    raw = RawOffer(source="indeed", raw_text="même offre Python", url="https://x.com/j")
     source = ListSource([raw, raw])
 
     report = collect_offers(source, client=client, store=store)
@@ -310,7 +312,7 @@ def test_collect_enriches_offer_without_skills_via_url():
 
     report = collect_offers(
         source, client=client, store=store,
-        fetch=fetch, extract=lambda html: "texte complet et riche",
+        fetch=fetch, extract=lambda html: "texte complet et riche en Python",
     )
 
     assert report.stored == 1

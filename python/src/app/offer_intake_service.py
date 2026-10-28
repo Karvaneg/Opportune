@@ -20,7 +20,7 @@ jamais retirer une offre du catalogue.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from app.html_extract import extract_offer_text
@@ -28,6 +28,7 @@ from app.llm_client import LLMClient, LLMError
 from app.offer import Offer
 from app.offer_analysis import OfferAnalysis, OfferAnalysisError
 from app.offer_analysis_service import analyze_offer
+from app.offer_normalization import drop_unanchored_skills
 from app.offer_store import OfferRepository
 from app.url_fetch import HtmlDocument, UrlFetchError, fetch_html
 
@@ -36,8 +37,8 @@ from app.url_fetch import HtmlDocument, UrlFetchError, fetch_html
 class IntakeResult:
     """Résultat d'un intake enrichi : l'offre + ce que l'enrichissement a fait (OPP-169).
 
-    ``enrichment_attempted`` : l'analyse initiale n'a produit aucune compétence et une URL
-    était disponible → la page complète a été récupérée et ré-analysée.
+    ``enrichment_attempted`` : l'analyse initiale n'a laissé aucune compétence **ancrée** au
+    texte (OPP-213) et une URL était disponible → la page complète a été récupérée et ré-analysée.
     ``enrichment_recovered`` : parmi ces tentatives, l'offre a **effectivement** gagné des
     compétences après ré-analyse. Ces drapeaux alimentent les compteurs du bilan de collecte.
     """
@@ -47,11 +48,28 @@ class IntakeResult:
     enrichment_recovered: bool = False
 
 
+def _build_offer(
+    analysis: OfferAnalysis, *, source: str, url: str, raw_text: str
+) -> Offer:
+    """Normalise une analyse en ``Offer`` et **ancre** ses skills au texte (sans persister).
+
+    L'ancrage (``drop_unanchored_skills``, OPP-213) s'applique ici — en aval de la
+    normalisation d'une collecte réelle — plutôt que dans ``Offer.from_analysis`` : on garde
+    intact le contrat de normalisation pure du modèle. Le filtre porte sur les skills **déjà
+    atomisées/normalisées** par ``from_analysis``, et compare au ``raw_text`` effectivement
+    analysé (extrait de source ou page complète récupérée). La construction est pure (aucune
+    I/O) : ``intake_offer_enriched`` s'en sert pour décider de l'enrichissement sur les skills
+    **réellement ancrés**, et non sur les skills bruts (potentiellement inventés) du modèle.
+    """
+    offer = Offer.from_analysis(analysis, source=source, url=url, raw_text=raw_text)
+    return replace(offer, skills=drop_unanchored_skills(offer.skills, raw_text))
+
+
 def _persist(
     analysis: OfferAnalysis, *, source: str, url: str, raw_text: str, store: OfferRepository
 ) -> Offer:
-    """Normalise une analyse en ``Offer`` et la persiste ; retourne l'offre."""
-    offer = Offer.from_analysis(analysis, source=source, url=url, raw_text=raw_text)
+    """Construit l'``Offer`` ancrée (cf. ``_build_offer``) et la persiste ; retourne l'offre."""
+    offer = _build_offer(analysis, source=source, url=url, raw_text=raw_text)
     store.save(offer)
     return offer
 
@@ -98,20 +116,24 @@ def intake_offer_enriched(
     (``compute_offer_id``), remplacer le texte analysé **ne change pas** l'identité de l'offre.
     """
     analysis = analyze_offer(raw_text, client)
-    text = raw_text
+    offer = _build_offer(analysis, source=source, url=url, raw_text=raw_text)
     attempted = False
-    if not analysis.skills and url:
+    # Décision d'enrichissement fondée sur les skills **ancrés** (OPP-213) : un snippet dont
+    # toutes les compétences extraites sont inventées/reformulées (donc écartées par l'ancrage)
+    # finit sans skill ancrée → on récupère la page complète exactement comme pour une analyse
+    # qui n'aurait sorti aucune compétence, au lieu de persister une offre silencieusement vidée.
+    if not offer.skills and url:
         attempted = True
         enriched = _fetch_offer_text(url, fetch, extract)
         if enriched is not None:
             try:
                 analysis = analyze_offer(enriched, client)
-                text = enriched
+                offer = _build_offer(analysis, source=source, url=url, raw_text=enriched)
             except (OfferAnalysisError, LLMError):
-                pass  # ré-analyse infructueuse : on garde l'analyse du texte initial
-    offer = _persist(analysis, source=source, url=url, raw_text=text, store=store)
+                pass  # ré-analyse infructueuse : on garde l'offre issue du texte initial
+    store.save(offer)
     # « Récupéré » = la tentative a réellement abouti à des compétences (et non snippet vide,
-    # fetch bloqué ou ré-analyse toujours sans compétence).
+    # fetch bloqué ou ré-analyse toujours sans compétence ancrée).
     return IntakeResult(
         offer=offer,
         enrichment_attempted=attempted,

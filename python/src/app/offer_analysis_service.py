@@ -30,6 +30,10 @@ _INSTRUCTIONS = (
     "(ISO, WCAG, RGAA…), les organismes ou partenaires (UNESCO, ADEME, Microsoft…), "
     "ni les tâches ou missions (\"Optimisation de calculs\", \"Gestion des droits "
     "utilisateurs\" — ce ne sont pas des compétences).\n"
+    "N'EXTRAIS QUE des compétences EXPLICITEMENT présentes dans le texte de l'offre "
+    "ci-dessous. N'INVENTE RIEN : n'ajoute aucune technologie \"probable\" ou "
+    "habituelle du métier qui ne serait pas écrite dans l'offre. Si l'offre ne cite "
+    "aucune compétence, renvoie une liste skills VIDE — mieux vaut vide que supposé.\n"
     "Chaque champ texte doit être renseigné (\"Non précisé\" s'il est absent de "
     "l'offre).\n"
     "Ajoute aussi \"kind\" : \"formation\" si l'annonce propose un programme de "
@@ -37,6 +41,12 @@ _INSTRUCTIONS = (
     "sinon \"emploi\" (cas par défaut d'une offre de poste).\n\n"
     "Offre :\n"
 )
+
+# Température d'extraction : 0 = décodage le plus déterministe possible. Le défaut du serveur
+# Ollama (~0.8) convient à de la rédaction mais pousse le petit modèle à « compléter » une
+# stack plausible absente de l'offre (OPP-213) — exactement ce qu'on veut supprimer ici. La
+# justesse prime sur la variété : on vise une extraction reproductible, pas créative.
+INTAKE_TEMPERATURE = 0.0
 
 
 def build_analysis_prompt(offer_text: str) -> str:
@@ -59,5 +69,9 @@ def analyze_offer(offer_text: str, client: LLMClient) -> OfferAnalysis:
     # ``fmt`` contraint le décodage au schéma d'``OfferAnalysis`` : le petit modèle local ne
     # peut plus émettre de prose ni de JSON malformé autour de l'objet (cause d'échec de
     # l'intake réel). Le prompt guide toujours le *contenu* (défaut « Non précisé »).
-    response = client.generate(prompt, fmt=OFFER_ANALYSIS_SCHEMA)
+    # ``temperature=0`` rend l'extraction déterministe et coupe l'invention de compétences
+    # (OPP-213) ; l'ancrage déterministe en aval (``drop_unanchored_skills``) reste le garde-fou.
+    response = client.generate(
+        prompt, fmt=OFFER_ANALYSIS_SCHEMA, temperature=INTAKE_TEMPERATURE
+    )
     return OfferAnalysis.from_json(response.text)

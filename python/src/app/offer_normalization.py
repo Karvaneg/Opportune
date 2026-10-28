@@ -9,6 +9,17 @@ conservé tel quel (nettoyé) plutôt qu'écrasé, pour ne pas perdre d'informat
 from __future__ import annotations
 
 import re
+import unicodedata
+
+
+def strip_accents(text: str) -> str:
+    """Retire les accents/diacritiques (décomposition NFKD puis suppression des marques
+    combinantes) — p. ex. « Développé » → « Developpe ». Utilitaire **partagé** : la
+    classification de type d'offre (``offer_kind``) s'appuie dessus pour ne pas redéfinir
+    un repli d'accents divergent (NFD vs NFKD)."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
 
 # Synonymes (en minuscules) → forme canonique du type de contrat.
 _CONTRACT_SYNONYMS = {
@@ -201,8 +212,15 @@ _SKILL_COMPLEMENTS = frozenset(
 
 
 def _is_non_skill(skill: str) -> bool:
-    """Vrai si ``skill`` est du bruit (norme/organisme connu ou tâche formulée)."""
+    """Vrai si ``skill`` est du bruit (norme/organisme connu, nombre nu ou tâche formulée)."""
     if skill.lower() in _NON_SKILL_TERMS:
+        return True
+    # Un « skill » dépourvu de toute lettre n'est qu'un nombre ou un numéro de version
+    # orphelin (« 3 », « 8.1 », « 2024 ») que le modèle a détaché d'une techno (« Symfony 3 »)
+    # ou d'une durée d'expérience. Une vraie techno porte toujours une lettre (« C++ », « C# »,
+    # « .NET », « 3D »), donc on ne risque pas de perdre « Symfony 6.4 » (le complément versionné
+    # reste accolé à la techno) — OPP-213.
+    if not any(ch.isalpha() for ch in skill):
         return True
     match = _TASK_RE.match(skill)
     if match is None:
@@ -221,3 +239,48 @@ def drop_non_skills(skills: list[str]) -> list[str]:
     technique. Ordre et casse des compétences conservées sont préservés.
     """
     return [skill for skill in skills if not _is_non_skill(skill)]
+
+
+# --- Ancrage des skills au texte réel de l'offre (OPP-213) -------------------
+# Garde-fou anti-INVENTION, distinct de ``drop_non_skills`` (anti-bruit) : le petit
+# modèle local « complète » volontiers la stack avec des technos plausibles mais
+# absentes de l'annonce (jusqu'à ~75 % des skills sur un extrait Adzuna tronqué). On
+# ne conserve que les compétences réellement présentes dans le texte analysé.
+
+# Caractères porteurs de sens dans un nom de techno, conservés par le repli : « + »
+# (C++), « # » (C#). Tout le reste — y compris « . », « / », « - » — devient un
+# séparateur : « Node.js » et « React.js » s'alignent ainsi sur « node js » / « react js »,
+# quelle que soit la ponctuation qui les entoure dans l'annonce.
+_SKILL_FOLD_KEEP = frozenset("+#")
+
+
+def _fold(text: str) -> str:
+    """Replie un texte pour comparaison tolérante : sans accents, en minuscules, toute
+    ponctuation (hors « + # ») réduite à une espace, suites d'espaces compactées."""
+    stripped = strip_accents(text)
+    kept = "".join(
+        ch if (ch.isalnum() or ch in _SKILL_FOLD_KEEP) else " " for ch in stripped.lower()
+    )
+    return " ".join(kept.split())
+
+
+def drop_unanchored_skills(skills: list[str], offer_text: str) -> list[str]:
+    """Ne conserve que les compétences **réellement présentes** dans ``offer_text`` — OPP-213.
+
+    Garde-fou déterministe contre l'invention du LLM : on préfère une liste **vide mais juste**
+    à une liste riche mais supposée (arbitrage produit — mieux vaut aller lire l'offre que se
+    fier à une stack inventée). Volontairement **strict** : l'ancrage exige une correspondance
+    sur une **frontière de mot** du texte replié (``_fold``), de sorte qu'un token court
+    (« go », « r ») ne matche pas l'intérieur d'un autre mot. On assume de perdre une vraie
+    compétence reformulée différemment dans l'annonce plutôt que d'en garder une fabriquée.
+
+    Ordre et casse d'origine des compétences conservées sont préservés. À appliquer **après**
+    ``normalize_skills`` (atomisation) pour que chaque compétence testée soit déjà unitaire.
+    """
+    haystack = f" {_fold(offer_text)} "
+    anchored: list[str] = []
+    for skill in skills:
+        needle = _fold(skill)
+        if needle and f" {needle} " in haystack:
+            anchored.append(skill)
+    return anchored

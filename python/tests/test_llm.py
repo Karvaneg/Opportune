@@ -54,6 +54,17 @@ def test_build_request_threads_num_predict():
     assert payload["options"] == {"num_predict": 256}
 
 
+def test_build_request_threads_temperature():
+    # OPP-213 : la température est passée à Ollama via options.temperature (0 = déterministe).
+    _, payload = build_generate_request("Bonjour", temperature=0.0)
+    assert payload["options"] == {"temperature": 0.0}
+
+
+def test_build_request_merges_num_predict_and_temperature():
+    _, payload = build_generate_request("Bonjour", num_predict=256, temperature=0.2)
+    assert payload["options"] == {"num_predict": 256, "temperature": 0.2}
+
+
 def test_build_request_empty_prompt_raises():
     with pytest.raises(ValueError):
         build_generate_request("   ")

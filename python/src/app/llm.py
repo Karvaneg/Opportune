@@ -100,6 +100,7 @@ def build_generate_request(
     host: str | None = None,
     fmt: object | None = None,
     num_predict: int | None = None,
+    temperature: float | None = None,
 ):
     """Construit l'URL et la charge utile d'une génération Ollama (``/api/generate``).
 
@@ -109,6 +110,10 @@ def build_generate_request(
 
     ``num_predict`` (optionnel) borne le nombre de tokens générés via ``options.num_predict``
     d'Ollama. Absent → aucune borne (comportement d'origine).
+
+    ``temperature`` (optionnel) règle ``options.temperature`` d'Ollama. Absent → aucun champ,
+    donc le défaut du serveur (~0.8) s'applique — à proscrire pour une tâche d'**extraction**
+    où ce défaut pousse le petit modèle à inventer (OPP-213) : l'intake la fixe à 0.
 
     Pur (aucun appel réseau), donc directement testable. Lève ``ValueError`` si le
     prompt est vide.
@@ -120,8 +125,15 @@ def build_generate_request(
     payload = {"model": model or DEFAULT_MODEL, "prompt": prompt, "stream": False}
     if fmt is not None:
         payload["format"] = fmt
+    # ``options`` regroupe les réglages Ollama : on ne l'ajoute que s'il porte au moins un
+    # champ, pour préserver la charge minimale d'origine quand rien n'est précisé.
+    options = {}
     if num_predict is not None:
-        payload["options"] = {"num_predict": num_predict}
+        options["num_predict"] = num_predict
+    if temperature is not None:
+        options["temperature"] = temperature
+    if options:
+        payload["options"] = options
     return url, payload
 
 
