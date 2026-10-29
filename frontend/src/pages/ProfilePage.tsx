@@ -19,7 +19,7 @@ export function ProfilePage() {
           Aucune recherche pour le moment.
         </p>
       ) : (
-        <ProfilePanel candidateId={target} />
+        <ProfilePanel key={target} candidateId={target} />
       )}
     </section>
   );
