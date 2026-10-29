@@ -20,6 +20,7 @@ import argparse
 import os
 from typing import Mapping
 
+from app.adzuna_client import credentials_from_env
 from app.adzuna_source import DEFAULT_MAX_OFFERS, build_adzuna_source
 from app.collection_runner import format_report, run_collection
 from app.db import connect
@@ -40,7 +41,7 @@ def _build_defaults(
 ) -> "tuple[SourceOffres, LLMClient, OfferRepository]":
     """Assemble les collaborateurs réels depuis l'environnement (identifiants, timeout, DB)."""
     source = build_adzuna_source(
-        env,
+        credentials_from_env(env),
         filters=_filters_from_args(args) or None,
         max_offers=args.max,
         permanent=not args.tous_contrats,

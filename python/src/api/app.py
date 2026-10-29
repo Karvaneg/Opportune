@@ -61,6 +61,7 @@ from urllib.parse import parse_qs, unquote
 if TYPE_CHECKING:
     import sqlite3
 
+    from app.adzuna_credentials_store import AdzunaCredentialsStore
     from app.candidate_profile import CandidateProfile
     from app.candidate_registry import CandidateRegistry
     from app.collection_jobs import CollectionJob, CollectionJobRegistry
@@ -175,6 +176,7 @@ _COLLECT_JOB_CANCEL = re.compile(r"^/collect/(?P<job_id>[^/]+)/cancel$")
 _COLLECT_JOB = re.compile(r"^/collect/(?P<job_id>[^/]+)$")
 _LLM_STATUS = re.compile(r"^/system/llm/status$")
 _LLM_SETUP = re.compile(r"^/system/llm/setup$")
+_SETTINGS_ADZUNA = re.compile(r"^/settings/adzuna$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -252,6 +254,7 @@ class HermesApi:
         cv_intake: "CvIntake | None" = None,
         searches: "CandidateRegistry | None" = None,
         llm_setup: "LLMSetupService | None" = None,
+        adzuna_credentials: "AdzunaCredentialsStore | None" = None,
         conn: "sqlite3.Connection | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
@@ -289,6 +292,10 @@ class HermesApi:
         # modèle présent, RAM) et téléchargement du modèle suivi par sondage. Optionnel : si
         # absent, les routes /system/llm/* ne sont pas montées (404). Injecté en prod, faux en test.
         self.llm_setup = llm_setup
+        # Identifiants Adzuna saisis par l'utilisateur (OPP-222) : store fichier dans le dossier de
+        # données de l'app. Optionnel : si absent, /settings/adzuna n'est pas monté (404 neutre).
+        # Les routes n'exposent jamais les clés (secret) — seulement l'état « configuré ».
+        self.adzuna_credentials = adzuna_credentials
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
@@ -525,6 +532,16 @@ class HermesApi:
                 return Response(200, serialize_snapshot(self.llm_setup.progress()))
             self._require(method, "POST", path)
             return Response(202, serialize_snapshot(self.llm_setup.start()))
+
+        if _SETTINGS_ADZUNA.match(path):
+            # Identifiants Adzuna saisis par l'utilisateur (OPP-222). Montée uniquement si le store
+            # est câblé (sinon 404 neutre). GET : état « configuré » (jamais les clés) ; PUT : saisie.
+            if self.adzuna_credentials is None:
+                raise self._not_found(user, "réglages Adzuna non disponibles")
+            if method.upper() == "GET":
+                return self._get_adzuna_settings(user)
+            self._require(method, "PUT", path)
+            return self._put_adzuna_settings(body, user)
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
@@ -1149,6 +1166,36 @@ class HermesApi:
         except CollectionAlreadyRunning as exc:
             raise ApiError(409, str(exc)) from exc
         return Response(202, {"job_id": job_id})
+
+    def _get_adzuna_settings(self, user: User | None) -> Response:
+        """État des identifiants Adzuna (OPP-222) : **configuré ou non**, jamais les clés.
+
+        Réservé au ``reviewer`` (saisie de secrets = curation, comme la collecte). On n'expose
+        que le booléen ``configured`` : les clés sont des secrets, elles ne ressortent jamais de
+        l'API (ni en clair, ni masquées).
+        """
+        self._guard_reviewer(user)
+        assert self.adzuna_credentials is not None  # garanti par le dispatch (404 sinon)
+        return Response(200, {"configured": self.adzuna_credentials.is_configured()})
+
+    def _put_adzuna_settings(self, body: dict, user: User | None) -> Response:
+        """Enregistre les identifiants Adzuna saisis par l'utilisateur (OPP-222).
+
+        Réservé au ``reviewer``. ``app_id`` et ``app_key`` sont requis (chaînes non vides, 400
+        sinon). Les clés sont rangées dans le dossier de données de l'app (secret, hors dépôt) et
+        ne sont **jamais** renvoyées ni journalisées. Réponse : l'état ``configured`` (pas les clés).
+        """
+        self._guard_reviewer(user)
+        assert self.adzuna_credentials is not None  # garanti par le dispatch (404 sinon)
+        app_id = body.get("app_id")
+        app_key = body.get("app_key")
+        if not isinstance(app_id, str) or not isinstance(app_key, str):
+            raise ApiError(400, "app_id et app_key doivent être des chaînes")
+        try:
+            self.adzuna_credentials.save(app_id, app_key)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        return Response(200, {"configured": True})
 
     def _post_collect_cancel(self, job_id: str, user: User | None) -> Response:
         """Demande l'arrêt **coopératif** d'une collecte en cours (OPP-209).
