@@ -183,6 +183,11 @@ fn spawn_api(app: &tauri::AppHandle) -> std::io::Result<()> {
     if let Ok(data_dir) = app.path().app_data_dir() {
         command.env("OPPORTUNE_DATA_DIR", &data_dir);
     }
+    // On vise toujours l'Ollama local sur `OLLAMA_ADDR` (sidecar embarqué, ou instance déjà en
+    // écoute sur ce port que `spawn_ollama` réutilise). Sans ça, l'API hériterait du `OLLAMA_HOST`
+    // ambiant de l'utilisateur — souvent une adresse de bind (`0.0.0.0`, sans port) posée pour son
+    // propre Ollama —, et taperait à côté du moteur de l'app. (Le back ajoute le `http://` manquant.)
+    command.env("OLLAMA_HOST", OLLAMA_ADDR);
     let child = spawn_in_group(command)?;
     register_child(child);
     Ok(())

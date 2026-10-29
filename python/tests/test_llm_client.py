@@ -28,6 +28,29 @@ def test_implementations_satisfy_protocol():
     assert isinstance(MockLLMClient(), LLMClient)
 
 
+# --- ollama_url : normalisation hôte + chemin (OPP-194) ----------------------
+
+
+@pytest.mark.parametrize(
+    ("host", "expected_url"),
+    [
+        # Hôte complet : slash final rogné, chemin accolé.
+        ("http://localhost:11434/", "http://localhost:11434/api/tags"),
+        # Sans scheme (convention OLLAMA_HOST) : on garantit un http://.
+        ("127.0.0.1:11434", "http://127.0.0.1:11434/api/tags"),
+        # Adresse de bind « toutes interfaces » : ramenée sur la loopback (sinon échec client).
+        ("0.0.0.0:11434", "http://127.0.0.1:11434/api/tags"),
+        ("http://0.0.0.0:11434", "http://127.0.0.1:11434/api/tags"),
+        # Bind-all sans port (OLLAMA_HOST=0.0.0.0) : loopback, port laissé par défaut.
+        ("0.0.0.0", "http://127.0.0.1/api/tags"),
+        # IPv6 « toutes interfaces » → loopback IPv6.
+        ("http://[::]:11434", "http://[::1]:11434/api/tags"),
+    ],
+)
+def test_ollama_url_normalise_hote_et_chemin(host, expected_url):
+    assert llm.ollama_url("/api/tags", host=host) == expected_url
+
+
 # --- OllamaLLMClient (implémentation réelle, transport injecté) ---------------
 
 
