@@ -9,10 +9,12 @@ import {
 } from "../api/offers";
 import { useProfileReady } from "../api/profile";
 import { useAdzunaSettings } from "../api/settings";
+import { useLlmReady } from "../api/system";
 import { useIsReviewer } from "../auth/roles";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import type { CollectionReport } from "../api/types";
 import { AdzunaRequiredNotice } from "./AdzunaRequiredNotice";
+import { LlmRequiredNotice } from "./LlmRequiredNotice";
 import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
 import { ErrorNotice } from "./States";
 
@@ -42,6 +44,9 @@ export function CollectOffers() {
   // Clés Adzuna (OPP-195) : la collecte réelle échoue sans elles. On prévient plutôt que de
   // bloquer — `configured` ne reflète que le store, pas un éventuel fallback `.env` de dev.
   const adzuna = useAdzunaSettings();
+  // Chaque offre neuve passe par le LLM local (intake structuré) : on désactive la collecte tant
+  // qu'il n'est pas prêt (OPP-195), en orientant vers le bandeau d'installation.
+  const llm = useLlmReady();
   const [what, setWhat] = useState(DEFAULT_WHAT);
   const [where, setWhere] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
@@ -77,10 +82,13 @@ export function CollectOffers() {
   // Profil vierge (résolu, pas en cours de chargement) → on bloque la collecte et on oriente.
   // Sans recherche active (`target === ""` : périmètre vide, en cours de chargement ou API HS),
   // on ne bloque pas : l'invite « profil vierge » serait trompeuse et clignoterait au démarrage.
-  const blocked = target !== "" && !ready && !profilePending;
+  const profileBlocked = target !== "" && !ready && !profilePending;
+  // Une invite à la fois, dans l'ordre des prérequis : d'abord le CV, puis l'assistant local, et
+  // enfin les clés Adzuna. Le profil et le LLM désactivent le bouton ; l'absence de clés se
+  // contente d'avertir (non bloquant : `configured` ignore le fallback `.env` de dev).
+  const blocked = profileBlocked || !llm.ready;
   // N'avertir sur les clés Adzuna qu'une fois l'état résolu (évite le clignotement au chargement)
-  // et seulement si le profil n'est pas déjà le prérequis manquant (une invite à la fois, dans
-  // l'ordre : d'abord le CV, ensuite les clés).
+  // et seulement si aucun prérequis plus prioritaire ne manque.
   const adzunaMissing = !blocked && adzuna.data?.configured === false;
 
   if (!isReviewer) return null;
@@ -143,7 +151,11 @@ export function CollectOffers() {
           </span>
         )}
       </div>
-      {blocked && <ProfileRequiredNotice />}
+      {profileBlocked ? (
+        <ProfileRequiredNotice />
+      ) : (
+        !llm.ready && llm.reason && <LlmRequiredNotice reason={llm.reason} />
+      )}
       {adzunaMissing && <AdzunaRequiredNotice />}
       {start.isError && <ErrorNotice error={start.error} />}
       {job.isError && <ErrorNotice error={job.error} />}

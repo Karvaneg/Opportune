@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LlmSetupGate } from "../src/components/LlmSetupGate";
+import { LlmBanner } from "../src/components/LlmBanner";
 
 /** Statut /system/llm/status, surchargeable par cas. */
 function status(overrides: Record<string, unknown> = {}) {
@@ -25,13 +25,11 @@ function stubStatus(body: unknown) {
   );
 }
 
-function renderGate() {
+function renderBanner() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <LlmSetupGate>
-        <div>APPLICATION</div>
-      </LlmSetupGate>
+      <LlmBanner />
     </QueryClientProvider>,
   );
 }
@@ -40,23 +38,25 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("LlmSetupGate (OPP-193)", () => {
-  it("laisse passer vers l'app quand le modèle est présent", async () => {
+describe("LlmBanner (OPP-193/195)", () => {
+  it("n'affiche rien quand le modèle est présent", async () => {
     stubStatus(status({ model_present: true }));
 
-    renderGate();
+    const { container } = renderBanner();
+    // Laisse le temps au sondage de se résoudre avant d'affirmer l'absence de bandeau.
+    await Promise.resolve();
 
-    expect(await screen.findByText("APPLICATION")).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it("propose l'installation du modèle quand il est absent", async () => {
+  it("propose l'installation du modèle, sans bloquer, en invitant à explorer la Démo", async () => {
     stubStatus(status({ model_present: false }));
 
-    renderGate();
+    renderBanner();
 
     expect(await screen.findByText("Installer le modèle")).toBeInTheDocument();
     expect(screen.getByText(/ministral-3:3b/)).toBeInTheDocument();
-    expect(screen.queryByText("APPLICATION")).not.toBeInTheDocument();
+    expect(screen.getByText(/explorer l'espace Démo/)).toBeInTheDocument();
   });
 
   it("avertit honnêtement quand la RAM est insuffisante", async () => {
@@ -67,7 +67,7 @@ describe("LlmSetupGate (OPP-193)", () => {
       }),
     );
 
-    renderGate();
+    renderBanner();
 
     expect(await screen.findByText(/sous le minimum conseillé/)).toBeInTheDocument();
   });
@@ -75,8 +75,9 @@ describe("LlmSetupGate (OPP-193)", () => {
   it("signale quand le moteur local est injoignable", async () => {
     stubStatus(status({ model_present: false, ollama_reachable: false }));
 
-    renderGate();
+    renderBanner();
 
-    expect(await screen.findByText("Assistant local indisponible")).toBeInTheDocument();
+    expect(await screen.findByText(/Assistant local injoignable/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();
   });
 });

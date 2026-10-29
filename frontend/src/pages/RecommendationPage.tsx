@@ -16,6 +16,7 @@ import {
   useGenerateLetter,
   useLetter,
 } from "../api/letters";
+import { useLlmReady } from "../api/system";
 import { useIsReviewer } from "../auth/roles";
 import type {
   ApplicationIntent,
@@ -26,6 +27,7 @@ import type {
   RecommendationDetail,
 } from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
+import { LlmRequiredNotice } from "../components/LlmRequiredNotice";
 import { StatusBadge } from "../components/StatusBadge";
 
 // Libellés FR de l'action auto figée (présentation seule — aucun statut inventé).
@@ -568,6 +570,10 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
   const generate = useGenerateLetter(recommendationId);
   const edit = useEditLetter(recommendationId);
   const remove = useDeleteLetter(recommendationId);
+  // La rédaction passe par le LLM local (contrairement au scoring) : générer/régénérer est
+  // désactivé tant qu'il n'est pas prêt (OPP-195). Consulter ou éditer une lettre existante
+  // (ex. la Démo pré-remplie) reste possible sans LLM.
+  const llm = useLlmReady();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -610,11 +616,16 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
           <button
             type="button"
             onClick={() => generate.mutate({})}
-            disabled={generate.isPending}
+            disabled={generate.isPending || !llm.ready}
             className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
           >
             {generate.isPending ? "Génération en cours…" : "Générer la lettre"}
           </button>
+          {!llm.ready && llm.reason && (
+            <div className="mt-3">
+              <LlmRequiredNotice reason={llm.reason} />
+            </div>
+          )}
           {generate.isError && (
             <div className="mt-3">
               <ErrorNotice error={generate.error} />
@@ -645,7 +656,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
             <button
               type="button"
               onClick={() => setConfirmRegen(true)}
-              disabled={generate.isPending}
+              disabled={generate.isPending || !llm.ready}
               className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface disabled:opacity-50"
             >
               {generate.isPending ? "Régénération…" : "Régénérer"}

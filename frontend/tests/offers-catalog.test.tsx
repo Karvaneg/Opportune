@@ -221,6 +221,7 @@ describe("OffersPage", () => {
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -271,6 +272,7 @@ describe("OffersPage", () => {
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -309,6 +311,7 @@ describe("OffersPage", () => {
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -344,6 +347,7 @@ describe("OffersPage", () => {
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -376,6 +380,7 @@ describe("OffersPage", () => {
       vi.fn((url: string) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(404, { error: "profil introuvable" }); // vierge
         if (s.includes("/collect")) return res(200, { job: null });
@@ -398,6 +403,7 @@ describe("OffersPage", () => {
       vi.fn((url: string) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/settings/adzuna")) return res(200, { configured: false });
@@ -417,12 +423,37 @@ describe("OffersPage", () => {
     ).toBeEnabled();
   });
 
+  it("désactive la collecte tant que l'assistant local se prépare (OPP-195)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        // Modèle absent, Ollama joignable → la collecte (enrichissement LLM) est désactivée.
+        if (s.includes("/system/llm/status")) return res(200, { model_present: false, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: true });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+
+    renderOffers();
+    await screen.findByText(/L'assistant local se prépare/);
+
+    expect(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    ).toBeDisabled();
+  });
+
   it("n'affiche pas l'invite Adzuna quand les clés sont configurées (OPP-195)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/settings/adzuna")) return res(200, { configured: true });
