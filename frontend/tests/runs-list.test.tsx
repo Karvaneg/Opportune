@@ -112,6 +112,9 @@ describe("RunsListPage", () => {
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/profile"))
+          return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+            location: null, languages: [], total_experience_years: null, experiences: [] });
         if (s.includes("/candidates/") && init?.method === "POST") {
           calls.push(s);
           return okJson({ run_id: "run-new", items: [], total: 0, errors: [] });
@@ -139,6 +142,9 @@ describe("RunsListPage", () => {
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/profile"))
+          return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+            location: null, languages: [], total_experience_years: null, experiences: [] });
         if (s.includes("/candidates/") && init?.method === "POST")
           return okJson({ run_id: "run-empty", items: [], total: 0, errors: [] });
         return okJson(PAGE); // GET /runs
@@ -164,6 +170,9 @@ describe("RunsListPage", () => {
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/profile"))
+          return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+            location: null, languages: [], total_experience_years: null, experiences: [] });
         if (s.includes("/candidates/") && init?.method === "POST")
           return okJson({ run_id: "run-ko", items: [], total: 0, errors: ["off-x: boom"] });
         return okJson(PAGE); // GET /runs
@@ -190,6 +199,9 @@ describe("RunsListPage", () => {
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/profile"))
+          return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+            location: null, languages: [], total_experience_years: null, experiences: [] });
         if (s.includes("/runs/") && init?.method === "DELETE") {
           deleted = true;
           return okJson({ deleted: "r-a2" });
@@ -220,6 +232,9 @@ describe("RunsListPage", () => {
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
           return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/profile"))
+          return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+            location: null, languages: [], total_experience_years: null, experiences: [] });
         if (s.includes("/runs/") && init?.method === "DELETE")
           // 403 : le message est neutralisé par `messageFor` côté client.
           return Promise.resolve({

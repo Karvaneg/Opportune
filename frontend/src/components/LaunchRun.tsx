@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { useLaunchRun } from "../api/runs";
+import { useProfileReady } from "../api/profile";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
 import { ErrorNotice } from "./States";
 
 /**
@@ -8,6 +10,9 @@ import { ErrorNotice } from "./States";
  * désormais via le sélecteur global (OPP-184) ; ce raccourci agit donc sur `target`. Au succès,
  * on navigue vers le run créé (et la liste est invalidée pour l'afficher en tête). Rien à lancer
  * sans recherche active.
+ *
+ * Désactivé tant que le profil est vierge (OPP-219) : analyser sans profil n'a pas de sens (rien
+ * à scorer). On oriente alors vers l'import CV plutôt que de laisser l'action échouer.
  *
  * Raccourci partagé entre le cockpit (OPP-164) et l'Historique.
  */
@@ -17,8 +22,12 @@ export function LaunchRun() {
   // cible une valeur valide.
   const { target } = useTargetCandidate();
   const launch = useLaunchRun();
+  const { ready, isPending: profilePending } = useProfileReady(target);
 
   if (target === "") return null;
+
+  // Profil vierge (résolu, pas en cours de chargement) → on bloque et on oriente vers l'import.
+  const blocked = !ready && !profilePending;
 
   return (
     <div className="space-y-2">
@@ -37,12 +46,13 @@ export function LaunchRun() {
               },
             })
           }
-          disabled={launch.isPending}
+          disabled={launch.isPending || blocked}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
           {launch.isPending ? "Analyse en cours…" : "Lancer une analyse"}
         </button>
       </div>
+      {blocked && <ProfileRequiredNotice />}
       {launch.data?.total === 0 && launch.data.errors.length === 0 && (
         <p className="text-sm text-ink-muted">Aucune nouvelle offre à évaluer.</p>
       )}

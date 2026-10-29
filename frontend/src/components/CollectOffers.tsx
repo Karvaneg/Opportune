@@ -7,8 +7,11 @@ import {
   useCollectJob,
   useStartCollect,
 } from "../api/offers";
+import { useProfileReady } from "../api/profile";
 import { useIsReviewer } from "../auth/roles";
+import { useTargetCandidate } from "../auth/useTargetCandidate";
 import type { CollectionReport } from "../api/types";
+import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
 import { ErrorNotice } from "./States";
 
 /**
@@ -30,6 +33,10 @@ const DEFAULT_WHAT = "développeur informatique, web, d'application";
 
 export function CollectOffers() {
   const isReviewer = useIsReviewer();
+  // Profil de la recherche active : la collecte n'a de sens qu'une fois le profil renseigné
+  // (OPP-219). On la bloque tant qu'il est vierge et on oriente vers l'import CV.
+  const { target } = useTargetCandidate();
+  const { ready, isPending: profilePending } = useProfileReady(target);
   const [what, setWhat] = useState(DEFAULT_WHAT);
   const [where, setWhere] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
@@ -61,6 +68,9 @@ export function CollectOffers() {
       queryClient.invalidateQueries({ queryKey: offerKeys.all });
     }
   }, [jobId, status, job.data, queryClient]);
+
+  // Profil vierge (résolu, pas en cours de chargement) → on bloque la collecte et on oriente.
+  const blocked = !ready && !profilePending;
 
   if (!isReviewer) return null;
 
@@ -107,7 +117,7 @@ export function CollectOffers() {
         <button
           type="button"
           onClick={submit}
-          disabled={running}
+          disabled={running || blocked}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
           {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
@@ -122,6 +132,7 @@ export function CollectOffers() {
           </span>
         )}
       </div>
+      {blocked && <ProfileRequiredNotice />}
       {start.isError && <ErrorNotice error={start.error} />}
       {job.isError && <ErrorNotice error={job.error} />}
     </div>
