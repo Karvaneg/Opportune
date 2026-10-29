@@ -196,6 +196,12 @@ describe("OffersPage", () => {
   const res = (status: number, b: unknown) =>
     Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(b) } as Response);
   const ME = { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] };
+  // Profil renseigné : débloque le bouton de collecte (OPP-219). Les scénarios de collecte
+  // supposent un profil déjà constitué.
+  const READY_PROFILE = {
+    id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+    location: null, languages: [], total_experience_years: null, experiences: [],
+  };
   const noProgress = {
     collected: 0, stored: 0, duplicates: 0, failures: 0, enriched: 0, enriched_recovered: 0,
   };
@@ -216,6 +222,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
           if (options?.method === "POST") {
             posts.push({ url: s, body: JSON.parse(String(options?.body ?? "{}")) });
@@ -265,6 +272,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
           if (options?.method === "POST") return res(202, { job_id: "job-2" });
           // Suivi global (GET /collect sans id, OPP-208) : neutre ici, ne consomme pas la
@@ -302,6 +310,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
           if (options?.method === "POST") {
             posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
@@ -336,6 +345,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
           if (options?.method === "POST") return res(202, { job_id: "job-4" });
           return res(200, {
@@ -358,5 +368,27 @@ describe("OffersPage", () => {
 
     // Une panne de source (job done avec source_error) prime sur les compteurs : on le dit.
     expect(await screen.findByText(/Collecte impossible/)).toBeInTheDocument();
+  });
+
+  it("désactive « Récupérer de nouvelles offres » tant que le profil est vierge (OPP-219)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(404, { error: "profil introuvable" }); // vierge
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await screen.findByText("Lead Java"); // catalogue chargé
+    // On attend la résolution du profil (404) via l'invite, puis on vérifie le bouton.
+    expect(await screen.findByText(/Ajoute d'abord ton CV/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    ).toBeDisabled();
   });
 });
