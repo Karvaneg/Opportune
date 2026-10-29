@@ -24,7 +24,7 @@ from app.adzuna_client import (
     DEFAULT_COUNTRY,
     RESULTS_PER_PAGE_MAX,
     AdzunaClient,
-    credentials_from_env,
+    AdzunaCredentials,
 )
 from app.offer_source import RawOffer
 from app.source_support import assemble_raw_text, clamp
@@ -117,18 +117,18 @@ class AdzunaSource:
 
 
 def build_adzuna_source(
-    env: Mapping[str, str],
+    credentials: AdzunaCredentials,
     *,
     filters: "Mapping[str, str] | None" = None,
     max_offers: int = DEFAULT_MAX_OFFERS,
     country: str = DEFAULT_COUNTRY,
     permanent: bool = True,
 ) -> AdzunaSource:
-    """Assemble une ``AdzunaSource`` à partir de l'environnement (câblage prod).
+    """Assemble une ``AdzunaSource`` à partir d'identifiants déjà résolus (câblage prod).
 
-    Unique endroit qui touche à la configuration réelle : lit les identifiants de
-    l'environnement (``credentials_from_env``) et construit le client avec son transport
-    ``urllib`` par défaut. Lève ``AdzunaAuthError`` si les identifiants manquent.
+    Les identifiants (saisis par l'utilisateur via le store, ou lus de l'environnement en dev —
+    cf. ``resolve_adzuna_credentials``) sont **fournis par l'appelant** : ce module ne décide plus
+    d'où ils viennent. Construit le client avec son transport ``urllib`` par défaut.
     """
-    client = AdzunaClient(credentials_from_env(env), country=country)
+    client = AdzunaClient(credentials, country=country)
     return AdzunaSource(client, max_offers=max_offers, filters=filters, permanent=permanent)

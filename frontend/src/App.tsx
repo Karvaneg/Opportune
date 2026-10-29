@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Briefcase, History, Home, User, type LucideIcon } from "lucide-react";
+import { Briefcase, History, Home, Settings, User, type LucideIcon } from "lucide-react";
 import { createQueryClient } from "./api/queryClient";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { TargetCandidateProvider } from "./auth/useTargetCandidate";
@@ -19,6 +19,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { RecommendationPage } from "./pages/RecommendationPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsListPage } from "./pages/RunsListPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 /** Onglets de navigation, partagés entre le header (desktop) et la barre du bas (mobile). */
 const NAV_ITEMS: { to: string; label: string; end: boolean; icon: LucideIcon }[] = [
@@ -26,6 +27,7 @@ const NAV_ITEMS: { to: string; label: string; end: boolean; icon: LucideIcon }[]
   { to: "/profil", label: "Profil", end: false, icon: User },
   { to: "/offres", label: "Offres", end: false, icon: Briefcase },
   { to: "/historique", label: "Historique", end: false, icon: History },
+  { to: "/reglages", label: "Réglages", end: false, icon: Settings },
 ];
 
 /**
@@ -182,6 +184,7 @@ function AuthenticatedApp() {
                 <Route path="/offres" element={<OffersPage />} />
                 <Route path="/profil" element={<ProfilePage />} />
                 <Route path="/historique" element={<RunsListPage />} />
+                <Route path="/reglages" element={<SettingsPage />} />
                 <Route path="/runs/:runId" element={<RunDetailPage />} />
                 <Route path="/recommendations/:id" element={<RecommendationPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

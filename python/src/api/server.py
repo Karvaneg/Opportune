@@ -264,6 +264,11 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
     # collectées n'apparaîtraient jamais au catalogue. Les erreurs de la source (identifiants
     # Adzuna manquants, quota, panne) restent rendues **dans le bilan** (``source_error``).
     from app.adzuna_client import AdzunaError
+    from app.adzuna_credentials_store import (
+        AdzunaCredentialsStore,
+        default_credentials_path,
+        resolve_adzuna_credentials,
+    )
     from app.adzuna_source import build_adzuna_source
     from app.collection_jobs import CollectionJobRegistry, ProgressCallback
     from app.collection_runner import run_collection
@@ -271,6 +276,9 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
     from app.offer_collection import CollectionReport
 
     job_db_path = database_path(conn)
+    # Identifiants Adzuna saisis par l'utilisateur (OPP-222), rangés dans le dossier de données de
+    # l'app (secret, hors dépôt). Le même fichier sert les deux espaces (clés propres à la machine).
+    adzuna_credentials = AdzunaCredentialsStore(default_credentials_path())
 
     def collection_runner(
         *,
@@ -285,8 +293,9 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         try:
             job_offers = OfferStore(job_conn)
             try:
+                credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
                 source = build_adzuna_source(
-                    os.environ, filters=filters or None, max_offers=max_offers
+                    credentials, filters=filters or None, max_offers=max_offers
                 )
             except AdzunaError as exc:
                 return CollectionReport(
@@ -335,6 +344,7 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         cv_intake=cv_intake,
         searches=searches,
         llm_setup=llm_setup,
+        adzuna_credentials=adzuna_credentials,
         conn=conn,
     )
 
