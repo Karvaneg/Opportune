@@ -73,6 +73,22 @@ describe("AdzunaSettings (OPP-222)", () => {
     expect(await screen.findByText("Configurées")).toBeInTheDocument();
   });
 
+  it("guide pas-à-pas l'obtention des clés : inscription puis page Access details (OPP-195)", async () => {
+    stubSettings("reviewer", false);
+
+    renderSettings();
+    await screen.findByLabelText("App ID Adzuna");
+
+    expect(screen.getByRole("link", { name: "developer.adzuna.com" })).toHaveAttribute(
+      "href",
+      "https://developer.adzuna.com/signup",
+    );
+    expect(screen.getByRole("link", { name: "Access details" })).toHaveAttribute(
+      "href",
+      "https://developer.adzuna.com/admin/access_details",
+    );
+  });
+
   it("n'expose pas de formulaire à un non-reviewer", async () => {
     stubSettings("viewer", false);
     renderSettings();

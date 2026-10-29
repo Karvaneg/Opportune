@@ -391,4 +391,49 @@ describe("OffersPage", () => {
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     ).toBeDisabled();
   });
+
+  it("invite à renseigner les clés Adzuna quand elles manquent, sans bloquer (OPP-195)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: false });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+
+    renderOffers();
+    const notice = await screen.findByText(/Les clés Adzuna ne sont pas renseignées/);
+
+    expect(notice).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Réglages" })).toHaveAttribute("href", "/reglages");
+    // Profil renseigné : l'invite prévient mais ne verrouille pas le bouton (fallback .env possible).
+    expect(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    ).toBeEnabled();
+  });
+
+  it("n'affiche pas l'invite Adzuna quand les clés sont configurées (OPP-195)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: true });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+
+    renderOffers();
+    await screen.findByText("Lead Java");
+
+    expect(screen.queryByText(/Les clés Adzuna ne sont pas renseignées/)).not.toBeInTheDocument();
+  });
 });
