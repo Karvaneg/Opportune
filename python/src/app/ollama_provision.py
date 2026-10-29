@@ -147,15 +147,21 @@ def pull_model(
 
 
 def _get_json(url: str, *, timeout: int = _PROBE_TIMEOUT_SECONDS) -> dict:
-    """GET JSON par défaut (``urllib``). Mappe une erreur réseau vers :class:`OllamaUnreachable`.
+    """GET JSON par défaut (``urllib``). Mappe toute panne vers :class:`OllamaUnreachable`.
 
     Timeout court (:data:`_PROBE_TIMEOUT_SECONDS`) : cet appel sert les probes **interactifs**
     (statut/inventaire) sur un serveur HTTP séquentiel ; un probe lent gèlerait toute l'API.
+
+    Mappe non seulement les erreurs réseau (``URLError``/``OSError`` : serveur absent, timeout),
+    mais aussi les réponses **200 au corps non-JSON** (``JSONDecodeError``/``UnicodeDecodeError``) :
+    un autre service qui occupe le port — cas que ``main.rs`` anticipe — répondrait du texte ; sans
+    ça ``json.loads`` lèverait une exception brute qui fait faussement planter ``status()`` (500)
+    et laisse ``LLMSetupService.start`` figé. Tout ça veut dire la même chose : pas d'Ollama.
     """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 (URL interne)
             return json.loads(response.read().decode("utf-8"))
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, OSError, ValueError, UnicodeDecodeError) as exc:
         raise OllamaUnreachable(str(exc)) from exc
 
 
@@ -171,5 +177,7 @@ def _post_stream(url: str, payload: dict, *, timeout: int = 3600) -> Iterator[di
                 line = raw.decode("utf-8").strip()
                 if line:
                     yield json.loads(line)
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, OSError, ValueError, UnicodeDecodeError) as exc:
+        # Idem ``_get_json`` : panne réseau comme corps non-JSON (service tiers sur le port)
+        # remontent en :class:`OllamaUnreachable`, pas en exception brute.
         raise OllamaUnreachable(str(exc)) from exc

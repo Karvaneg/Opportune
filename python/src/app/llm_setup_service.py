@@ -120,14 +120,22 @@ class LLMSetupService:
 
         if self._model_ready:
             return self._set(SetupSnapshot(DONE, "success", 1.0))
+        # L'état vient d'être posé à RUNNING sous le verrou : toute sortie de ce bloc doit le
+        # résoudre (``done``/``failed``), sinon un échec avant le spawn le laisserait figé sur
+        # RUNNING à vie (les ``start`` suivants renoncent par idempotence → porte bloquée). On
+        # rattrape donc aussi l'inattendu, pas seulement ``OllamaUnreachable``.
         try:
             if self._present(self._model, host=self._host):
                 self._model_ready = True
                 return self._set(SetupSnapshot(DONE, "success", 1.0))
+            self._spawn(self._run)
         except OllamaUnreachable as exc:
             return self._set(SetupSnapshot(FAILED, "ollama injoignable", 0.0, error=str(exc)))
+        except Exception as exc:  # noqa: BLE001 — jamais figer sur RUNNING ; l'erreur est consignée
+            return self._set(
+                SetupSnapshot(FAILED, "échec de la mise en route", 0.0, error=f"{type(exc).__name__}: {exc}")
+            )
 
-        self._spawn(self._run)
         # On rend l'état **courant** après le spawn : avec un spawn de fond (prod) il est encore
         # ``running`` ; avec un spawn synchrone (tests) le job est déjà terminé (``done``/``failed``).
         return self.progress()

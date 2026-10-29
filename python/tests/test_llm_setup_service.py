@@ -74,6 +74,21 @@ def test_start_runs_pull_to_done():
     assert service.progress().fraction == 1.0
 
 
+def test_start_marks_failed_on_unexpected_present_error():
+    # L'état est posé à RUNNING sous le verrou avant le check de présence : si ce check lève une
+    # exception inattendue (pas OllamaUnreachable), start() doit résoudre en FAILED, jamais laisser
+    # l'état figé sur RUNNING (sinon les start() suivants renoncent et la porte reste bloquée).
+    def explode(model, host=None):
+        raise RuntimeError("corps non-JSON")
+
+    service = _service(present=explode)
+
+    snapshot = service.start()
+
+    assert snapshot.state == FAILED
+    assert service.progress().state == FAILED
+
+
 def test_start_marks_failed_on_pull_error():
     service = _service(
         present=lambda model, host=None: False,

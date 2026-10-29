@@ -1,11 +1,15 @@
 """Tests du provisioning Ollama : inventaire, pull streamé, agrégation de progression (OPP-193)."""
 
+import io
+import urllib.request
+
 import pytest
 
 from app.ollama_provision import (
     OllamaUnreachable,
     PullAggregator,
     PullProgress,
+    _get_json,
     list_models,
     model_present,
     pull_model,
@@ -116,3 +120,24 @@ def test_list_models_raises_when_unreachable():
 
     with pytest.raises(OllamaUnreachable):
         list_models(transport=refuse)
+
+
+def test_get_json_maps_non_json_200_to_unreachable(monkeypatch):
+    """Un service tiers occupe le port et répond 200 en texte (pas de JSON) : le décodage doit
+    remonter en OllamaUnreachable, pas en JSONDecodeError brute (sinon status()/start() cassent).
+    """
+
+    class _FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(url, timeout=None):
+        return _FakeResponse(b"Not Found")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(OllamaUnreachable):
+        _get_json("http://127.0.0.1:11434/api/tags")
