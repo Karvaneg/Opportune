@@ -29,12 +29,22 @@ from pathlib import Path
 _APP_DIR_NAME = "Opportune"
 
 
+def is_frozen() -> bool:
+    """L'app tourne-t-elle depuis un binaire gelé (PyInstaller) plutôt qu'en dev ?
+
+    Convention **unique** de détection du mode packagé : tous les résolveurs de chemins
+    (``user_data_dir`` ici, ``frontend_assets.frontend_dist_dir``) s'y réfèrent, pour ne pas
+    disperser le ``getattr(sys, 'frozen', …)`` et risquer qu'ils divergent un jour.
+    """
+    return bool(getattr(sys, "frozen", False))
+
+
 def user_data_dir() -> Path:
     """Répertoire où ranger les bases SQLite, selon le contexte d'exécution."""
     override = os.environ.get("OPPORTUNE_DATA_DIR")
     if override:
         return Path(override)
-    if getattr(sys, "frozen", False):
+    if is_frozen():
         return _frozen_data_dir()
     return Path("data")
 

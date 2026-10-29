@@ -365,6 +365,92 @@ def test_server_supports_delete_and_put_methods_over_http(method):
     conn.close()
 
 
+def test_server_rejects_writes_outside_api_prefix(tmp_path):
+    """OPP-194 : la frontière ``/api`` vaut pour **tous** les verbes. Une écriture hors ``/api``
+    relève du front (qui n'écrit pas) → 404 franc, jamais routée vers le dispatcher — symétrique
+    du GET qui, hors ``/api``, sert le front.
+    """
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>Opportune</title>")
+
+    conn = connect(":memory:")
+    _profile(conn)
+    server = create_server(
+        assemble_api(conn, LocalAuthProvider(OWNER)), port=0, static_dir=dist
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        client = http.client.HTTPConnection(host, port, timeout=5)
+
+        # Sans préfixe : une route de données réelle n'est pas servie en écriture (404).
+        client.request(
+            "POST", "/candidates/cand-1/recommendations", body="{}",
+            headers={"Content-Type": "application/json"},
+        )
+        unprefixed = client.getresponse()
+        assert unprefixed.status == 404
+        unprefixed.read()
+
+        # Avec le préfixe : la même route atteint bien le dispatcher (≠ 404 structurel).
+        client.request(
+            "POST", "/api/candidates/cand-1/recommendations", body="{}",
+            headers={"Content-Type": "application/json"},
+        )
+        prefixed = client.getresponse()
+        assert prefixed.status != 404
+        prefixed.read()
+
+        client.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    conn.close()
+
+
+def test_server_revalidates_static_assets_with_etag(tmp_path):
+    """OPP-194 : un asset du front est servi avec un ``ETag`` ; un rappel conditionnel
+    (``If-None-Match``) reçoit ``304`` sans corps — on ne renvoie pas le bundle à chaque fois.
+    """
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "app.js").write_text("console.log('opportune')")
+
+    conn = connect(":memory:")
+    _profile(conn)
+    server = create_server(
+        assemble_api(conn, LocalAuthProvider(OWNER)), port=0, static_dir=dist
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        client = http.client.HTTPConnection(host, port, timeout=5)
+
+        client.request("GET", "/app.js")
+        first = client.getresponse()
+        etag = first.getheader("ETag")
+        first.read()
+        assert first.status == 200
+        assert etag
+
+        client.request("GET", "/app.js", headers={"If-None-Match": etag})
+        revalidated = client.getresponse()
+        body = revalidated.read()
+        assert revalidated.status == 304
+        assert body == b""
+
+        client.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    conn.close()
+
+
 # --- GET /me : identité locale (OPP-103, local-first OPP-181) ----------------
 
 def test_me_returns_local_identity(env):

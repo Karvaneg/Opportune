@@ -24,6 +24,8 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
+from app.paths import is_frozen
+
 # Content-types forcés pour les extensions servies par Vite, **avant** ``mimetypes`` (OPP-191).
 # ``mimetypes`` lit le registre Windows, où ``.js`` peut être mappé sur ``text/plain`` : un
 # module ES (``<script type="module">``) servi en ``text/plain`` est alors **refusé** par le
@@ -51,7 +53,7 @@ def frontend_dist_dir() -> Path | None:
     if override:
         path = Path(override)
         return path if path.is_dir() else None
-    if getattr(sys, "frozen", False):
+    if is_frozen():
         bundled = Path(sys._MEIPASS) / "frontend_dist"  # type: ignore[attr-defined]
         return bundled if bundled.is_dir() else None
     # src/api/frontend_assets.py → parents[3] = racine du dépôt.

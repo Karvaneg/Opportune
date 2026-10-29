@@ -27,17 +27,27 @@ from app.auth import REVIEWER, LocalAuthProvider, User
 _API_PREFIX = "/api"
 
 
-def _strip_api_prefix(path: str) -> str:
-    """Retire un éventuel préfixe ``/api`` du chemin avant dispatch.
+def _is_api_path(path: str) -> bool:
+    """Le chemin relève-t-il des **données** (préfixe ``/api``) plutôt que du front ?
 
-    ``/api/offers`` → ``/offers`` ; ``/api`` → ``/``. Un chemin déjà sans préfixe (client API
+    Source unique de la frontière ``/api`` : tous les verbes s'y appuient pour router (données
+    vers le dispatcher, reste vers le front), de sorte que lecture et écriture tracent la **même**
+    ligne. La query string est ignorée (``/api/offers?x=1`` relève bien des données).
+    """
+    head = path.split("?", 1)[0]
+    return head == _API_PREFIX or head.startswith(_API_PREFIX + "/")
+
+
+def _strip_api_prefix(path: str) -> str:
+    """Retire le préfixe ``/api`` du chemin avant dispatch.
+
+    ``/api/offers`` → ``/offers`` ; ``/api`` → ``/``. Un chemin hors ``/api`` (appel au dispatcher
     direct, tests) est rendu tel quel — le préfixe est une convention du front, pas du dispatcher.
     """
-    if path == _API_PREFIX:
-        return "/"
-    if path.startswith(_API_PREFIX + "/"):
-        return path[len(_API_PREFIX):]
-    return path
+    if not _is_api_path(path):
+        return path
+    rest = path[len(_API_PREFIX):]
+    return rest if rest.startswith("/") else "/"
 
 
 def make_handler(
@@ -49,6 +59,24 @@ def make_handler(
     hors ``/api``. ``None`` → aucun service statique (mode dev, où Vite sert le front) : une
     telle requête répond 404.
     """
+
+    # Cache mémoire des assets du front (OPP-194) : ``{chemin résolu: (signature, etag, octets)}``.
+    # Le ``dist`` ne change pas pendant la vie du process ; sans cache, chaque GET relisait tout le
+    # fichier du disque. La signature (mtime + taille) détecte malgré tout une recompilation en dev
+    # et recharge. Capturé par la closure, partagé par toutes les requêtes (serveur séquentiel).
+    static_cache: dict[Path, tuple[tuple[int, int], str, bytes]] = {}
+
+    def cached_asset(target: Path) -> tuple[str, bytes]:
+        """Renvoie ``(etag, octets)`` pour ``target``, en relisant le disque seulement si besoin."""
+        stat = target.stat()
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cached = static_cache.get(target)
+        if cached is not None and cached[0] == signature:
+            return cached[1], cached[2]
+        payload = target.read_bytes()
+        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+        static_cache[target] = (signature, etag, payload)
+        return etag, payload
 
     class _Handler(BaseHTTPRequestHandler):
         def _dispatch(self, method: str) -> None:
@@ -96,23 +124,34 @@ def make_handler(
 
         def do_GET(self) -> None:  # noqa: N802 - nom imposé par http.server
             # ``/api/*`` = données (dispatcher) ; tout le reste = front statique (OPP-191).
-            if self.path == _API_PREFIX or self.path.startswith(_API_PREFIX + "/"):
+            if _is_api_path(self.path):
                 self._dispatch("GET")
             else:
                 self._serve_static()
 
         def do_POST(self) -> None:  # noqa: N802 - nom imposé par http.server
-            self._dispatch("POST")
+            self._dispatch_api("POST")
 
         def do_DELETE(self) -> None:  # noqa: N802 - nom imposé par http.server
             # Sans ce point d'entrée, http.server répond 501 avant même le dispatcher
             # (qui, lui, gère DELETE /runs/{id} — cf. OPP-144).
-            self._dispatch("DELETE")
+            self._dispatch_api("DELETE")
 
         def do_PUT(self) -> None:  # noqa: N802 - nom imposé par http.server
             # Comme do_DELETE : sans ce point d'entrée, http.server répondrait 501 avant le
             # dispatcher (qui gère PUT /recommendations/{id}/letter — cf. OPP-147).
-            self._dispatch("PUT")
+            self._dispatch_api("PUT")
+
+        def _dispatch_api(self, method: str) -> None:
+            """Dispatche une écriture, mais seulement sous ``/api`` : même frontière que ``do_GET``.
+
+            Un verbe d'écriture hors ``/api`` ne correspond à aucune donnée (le reste relève du
+            front, qui n'accepte pas d'écriture) → 404 franc, symétrique du GET qui y sert le front.
+            """
+            if _is_api_path(self.path):
+                self._dispatch(method)
+            else:
+                self._write(404, {"error": "route inconnue"})
 
         def _serve_static(self) -> None:
             """Sert un fichier du front compilé (OPP-191), avec fallback SPA sur index.html.
@@ -128,16 +167,35 @@ def make_handler(
             if target is None:
                 self._write(404, {"error": "route inconnue"})
                 return
-            self._write_bytes(200, target.read_bytes(), content_type_for(target.name))
+            etag, payload = cached_asset(target)
+            # Revalidation par ETag : le navigateur garde l'asset en cache et ne reçoit que le
+            # statut 304 (sans corps) tant que le fichier n'a pas changé — évite de renvoyer le
+            # bundle à chaque rechargement.
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.end_headers()
+                return
+            self._write_bytes(
+                200, payload, content_type_for(target.name), extra_headers={"ETag": etag}
+            )
 
         def _write(self, status: int, body: dict) -> None:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
             self._write_bytes(status, payload, "application/json; charset=utf-8")
 
-        def _write_bytes(self, status: int, payload: bytes, content_type: str) -> None:
+        def _write_bytes(
+            self,
+            status: int,
+            payload: bytes,
+            content_type: str,
+            extra_headers: dict[str, str] | None = None,
+        ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(payload)))
+            for name, value in (extra_headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(payload)
 

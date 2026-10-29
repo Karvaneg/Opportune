@@ -1,10 +1,22 @@
 # Opportune — coquille desktop (Tauri, OPP-192)
 
-Transforme les deux processus de dev (API Python + front Vite) en **une app de
-bureau**. Tauri ne porte aucune logique métier : il lance le binaire API
-(`opportune-api`, OPP-190) en **sidecar**, attend qu'il serve le front compilé
-(OPP-191) sur `127.0.0.1:8000`, ouvre une fenêtre dessus, et arrête le sidecar à
-la fermeture. Front et données viennent du même origin (le sidecar) : aucun CORS.
+Transforme les processus de dev (API Python + front Vite + moteur LLM) en **une app
+de bureau**. Tauri ne porte aucune logique métier : il lance **deux sidecars**,
+attend que l'API réponde, ouvre une fenêtre dessus, et les arrête à la fermeture.
+Front et données viennent du même origin (l'API) : aucun CORS.
+
+- **API** (`opportune-api`, OPP-190) : sert le front compilé (OPP-191) sur
+  `127.0.0.1:8000`. La fenêtre s'ouvre une fois ce port prêt.
+- **Ollama** (OPP-194) : le moteur LLM local, sur `127.0.0.1:11434`. Embarqué en
+  **version CPU seule** (cf. `sync-ollama.sh`). Si un Ollama tourne déjà sur ce
+  port, on le réutilise au lieu d'en lancer un second. Le téléchargement du
+  **modèle** reste géré par le front/API (flux OPP-193, `/system/llm/*`).
+
+Tout tient dans **une seule arborescence de données** (celle de l'app) : les bases
+SQLite (via `OPPORTUNE_DATA_DIR`, passé au sidecar API) **et** les modèles Ollama
+(via `OLLAMA_MODELS`) y sont rangés ensemble — supprimés avec l'app, sauvegardables
+d'un bloc. **Réserve** : quand on réutilise un Ollama déjà lancé, ses modèles suivent
+*sa* configuration (souvent `~/.ollama`), hors de notre contrôle.
 
 ## Lancer en dev
 
@@ -15,19 +27,30 @@ fenêtre s'affiche via WSLg (`echo $DISPLAY` doit renvoyer `:0`).
 cd frontend
 npm install                      # récupère @tauri-apps/cli
 bash src-tauri/sync-sidecar.sh   # construit front + binaire API, place le sidecar
+bash src-tauri/sync-ollama.sh    # embarque Ollama CPU (nécessite zstd : apt install zstd)
 npm run tauri dev                # compile la coquille Rust et ouvre la fenêtre
 ```
+
+La compilation Rust **exige** que les deux sidecars soient en place (`binaries/opportune-api-*`
+et `binaries/ollama/`) : lance les deux scripts de sync d'abord, sinon le build échoue.
 
 La **première** compilation Rust télécharge et bâtit les dépendances (plusieurs
 minutes). Les suivantes sont rapides.
 
 ## Pièces
 
-- `tauri.conf.json` — config : identifiant, icônes, `externalBin` (le sidecar).
-- `src/main.rs` — spawn du sidecar, attente de disponibilité, création de la
-  fenêtre sur `http://127.0.0.1:8000`, arrêt du sidecar à la fermeture.
+- `tauri.conf.json` — config : identifiant, icônes, `externalBin` (sidecar API),
+  `resources` (arbre Ollama embarqué sous `ollama/`).
+- `src/main.rs` — spawn des deux sidecars (Ollama puis API), attente de l'API,
+  création de la fenêtre sur `http://127.0.0.1:8000`, arrêt des sidecars à la sortie.
 - `sync-sidecar.sh` — copie le binaire API sous `binaries/opportune-api-<triple>`,
   nom où Tauri résout son sidecar.
+- `sync-ollama.sh` — **Linux seulement** : télécharge Ollama (version figée), **jette
+  les runners GPU** (CUDA/ROCm) et dépose l'arbre CPU sous `binaries/ollama/` (`bin/` +
+  `lib/`). Sur **Windows**, l'arbre se prépare à la main sur l'hôte (le script ne gère
+  pas cet OS) : extraire l'archive officielle sous `binaries/ollama/` — `main.rs`
+  reconnaît le binaire aussi bien en `bin/ollama.exe` qu'à la racine `ollama.exe`, les
+  runners restant sous `lib/ollama`.
 - `binaries/`, `target/`, `gen/` — artefacts de build, non versionnés.
 
 ## Limites connues (socle 1.0)
@@ -36,7 +59,9 @@ minutes). Les suivantes sont rapides.
   sidecar ne démarre pas. Un port dynamique viendra si besoin.
 - **Icônes** : placeholders 32×32. Le jeu multi-résolutions (`.ico`/`.icns`)
   arrive avec les installeurs signés (OPP-194).
-- **Build Windows/Mac** : fait sur ces OS / en CI (OPP-194), pas en cross-compile.
+- **Build Windows/Linux** (OPP-194) : fait sur chaque OS, pas en cross-compile —
+  Linux dans WSL, Windows sur l'hôte. **Mac reporté** (OPP-216, via un runner
+  `macos-latest` en CI).
 - **Message d'échec invisible sur Windows release** : si le sidecar ne démarre pas,
   l'erreur part sur `eprintln!`, sans console en release (`windows_subsystem =
   "windows"`). Un vrai dialogue d'erreur (tauri-plugin-dialog) relève de l'onboarding
