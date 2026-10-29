@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch, apiPut } from "./client";
 import { useApiMutation } from "./mutations";
+import { useIsReviewer } from "../auth/roles";
 
 // Réglages de l'app (OPP-222). Pour l'instant : les identifiants Adzuna saisis par l'utilisateur.
 // Contrat miroir de `api.app` (route /settings/adzuna). Les clés sont des **secrets** : l'API ne
@@ -15,11 +16,18 @@ export const settingsKeys = {
   adzuna: ["settings", "adzuna"] as const,
 };
 
-/** État des identifiants Adzuna : `GET /settings/adzuna` → `{ configured }` (jamais les clés). */
+/**
+ * État des identifiants Adzuna : `GET /settings/adzuna` → `{ configured }` (jamais les clés).
+ *
+ * Réservé au reviewer côté back (403 sinon) : on conditionne donc la requête au rôle (`enabled`)
+ * pour ne pas déclencher d'appel voué au 403 (et ses retries) chez un simple viewer.
+ */
 export function useAdzunaSettings() {
+  const isReviewer = useIsReviewer();
   return useQuery({
     queryKey: settingsKeys.adzuna,
     queryFn: () => apiFetch<AdzunaSettings>("/settings/adzuna"),
+    enabled: isReviewer,
   });
 }
 

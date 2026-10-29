@@ -69,10 +69,15 @@ class AdzunaCredentialsStore:
             raise ValueError("app_id et app_key sont requis (clés Adzuna)")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps({"app_id": app_id, "app_key": app_key})
-        # Écriture puis restriction des permissions au propriétaire : un secret ne doit pas être
-        # lisible par d'autres comptes de la machine. ``chmod`` est sans effet notable sous Windows
-        # (ACL), mais inoffensif — le dossier de données y est déjà par-utilisateur (AppData).
-        self._path.write_text(payload, encoding="utf-8")
+        # Création du fichier **directement** en permissions propriétaire (0o600) via ``os.open`` :
+        # un secret ne doit à aucun moment être lisible par d'autres comptes, pas même dans la
+        # fenêtre entre une écriture et un ``chmod`` différé. Le mode passé à ``O_CREAT`` ne vaut
+        # que pour une création ; on ``chmod`` ensuite pour couvrir le cas d'un fichier préexistant
+        # aux permissions plus larges. Sans effet notable sous Windows (ACL), mais inoffensif — le
+        # dossier de données y est déjà par-utilisateur (AppData).
+        fd = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
         try:
             os.chmod(self._path, 0o600)
         except OSError:

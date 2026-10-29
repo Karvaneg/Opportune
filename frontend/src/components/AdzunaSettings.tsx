@@ -76,6 +76,7 @@ export function AdzunaSettings() {
         pour obtenir ton <code className="rounded bg-ink/5 px-1 py-0.5">app_id</code> et ta{" "}
         <code className="rounded bg-ink/5 px-1 py-0.5">app_key</code>. Elles sont stockées
         localement sur ta machine, jamais envoyées ailleurs.
+        {data?.configured && " Pour les remplacer, ressaisis les deux clés."}
       </p>
 
       <div className="space-y-3">
@@ -86,7 +87,7 @@ export function AdzunaSettings() {
             value={appId}
             onChange={(e) => setAppId(e.target.value)}
             autoComplete="off"
-            placeholder={data?.configured ? "•••••••• (laisser pour conserver)" : "Ton app_id Adzuna"}
+            placeholder={data?.configured ? "Nouvel app_id (remplace l'actuel)" : "Ton app_id Adzuna"}
             aria-label="App ID Adzuna"
             className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink"
           />
@@ -98,7 +99,7 @@ export function AdzunaSettings() {
             value={appKey}
             onChange={(e) => setAppKey(e.target.value)}
             autoComplete="off"
-            placeholder={data?.configured ? "•••••••• (laisser pour conserver)" : "Ta app_key Adzuna"}
+            placeholder={data?.configured ? "Nouvelle app_key (remplace l'actuelle)" : "Ta app_key Adzuna"}
             aria-label="App Key Adzuna"
             className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink"
           />
