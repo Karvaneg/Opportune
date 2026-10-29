@@ -70,7 +70,9 @@ export function CollectOffers() {
   }, [jobId, status, job.data, queryClient]);
 
   // Profil vierge (résolu, pas en cours de chargement) → on bloque la collecte et on oriente.
-  const blocked = !ready && !profilePending;
+  // Sans recherche active (`target === ""` : périmètre vide, en cours de chargement ou API HS),
+  // on ne bloque pas : l'invite « profil vierge » serait trompeuse et clignoterait au démarrage.
+  const blocked = target !== "" && !ready && !profilePending;
 
   if (!isReviewer) return null;
 
