@@ -132,6 +132,17 @@ fn spawn_in_group(mut command: Command) -> std::io::Result<Child> {
             Ok(())
         });
     }
+    // `CREATE_NO_WINDOW` : empêche le sidecar d'ouvrir sa propre fenêtre console à côté de l'app
+    // (OPP-221) — l'API (onefile PyInstaller `console=True`) comme `ollama serve` en ouvriraient
+    // une sinon. Réservé au build **release** : en debug la coquille a elle-même une console (cf.
+    // `windows_subsystem` en tête), dont le sidecar hérite → ses logs restent visibles. Sans effet
+    // sur l'arrêt, qui passe par `taskkill /T /F` (arbre de process, indépendant de la console).
+    #[cfg(all(windows, not(debug_assertions)))]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     command.spawn()
 }
 
