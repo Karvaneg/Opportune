@@ -37,6 +37,21 @@ et `binaries/ollama/`) : lance les deux scripts de sync d'abord, sinon le build 
 La **première** compilation Rust télécharge et bâtit les dépendances (plusieurs
 minutes). Les suivantes sont rapides.
 
+## Construire les installeurs Linux
+
+```bash
+cd frontend
+bash src-tauri/build-linux.sh                 # .deb + .rpm + .AppImage
+bash src-tauri/build-linux.sh --bundles deb   # seulement le .deb
+```
+
+Les artefacts atterrissent sous `src-tauri/target/release/bundle/{deb,rpm,appimage}/`.
+Passer par `build-linux.sh` plutôt que `tauri build` directement : le `.deb`/`.rpm`
+se construisent sans rien, mais l'**AppImage** échoue sous WSL/headless sans
+l'environnement que le wrapper pose (`APPIMAGE_EXTRACT_AND_RUN` pour contourner FUSE,
+`LD_LIBRARY_PATH` pour que `linuxdeploy` résolve les libs Ollama). Prérequis : les
+sidecars en place (`sync-sidecar.sh` + `sync-ollama.sh`).
+
 ## Pièces
 
 - `tauri.conf.json` — config : identifiant, icônes, `externalBin` (sidecar API),
@@ -46,11 +61,13 @@ minutes). Les suivantes sont rapides.
 - `sync-sidecar.sh` — copie le binaire API sous `binaries/opportune-api-<triple>`,
   nom où Tauri résout son sidecar.
 - `sync-ollama.sh` — **Linux seulement** : télécharge Ollama (version figée), **jette
-  les runners GPU** (CUDA/ROCm) et dépose l'arbre CPU sous `binaries/ollama/` (`bin/` +
-  `lib/`). Sur **Windows**, l'arbre se prépare à la main sur l'hôte (le script ne gère
-  pas cet OS) : extraire l'archive officielle sous `binaries/ollama/` — `main.rs`
-  reconnaît le binaire aussi bien en `bin/ollama.exe` qu'à la racine `ollama.exe`, les
-  runners restant sous `lib/ollama`.
+  les runners GPU** (CUDA/ROCm/Vulkan) et dépose l'arbre CPU sous `binaries/ollama/`
+  (`bin/` + `lib/`, ~76 Mo). Sur **Windows**, l'arbre se prépare à la main sur l'hôte
+  (le script ne gère pas cet OS) : extraire l'archive officielle sous `binaries/ollama/`
+  — `main.rs` reconnaît le binaire aussi bien en `bin/ollama.exe` qu'à la racine
+  `ollama.exe`, les runners restant sous `lib/ollama`.
+- `build-linux.sh` — wrapper de `tauri build` qui pose l'environnement requis par
+  l'étape AppImage (voir « Construire les installeurs Linux »).
 - `binaries/`, `target/`, `gen/` — artefacts de build, non versionnés.
 
 ## Limites connues (socle 1.0)

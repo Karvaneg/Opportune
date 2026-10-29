@@ -3,10 +3,10 @@
 # Embarque une version CPU seule d'Ollama pour le sidecar desktop (OPP-194).
 #
 # Les releases Ollama Linux officielles sont des archives .tar.zst d'environ 1,5 Go, car elles
-# contiennent les runners GPU (CUDA v12/v13, ROCm) en plus du CPU. Pour un modèle 3B sur la
-# machine d'un non-dev, le GPU est inutile : on télécharge l'archive, on **jette les runners GPU**
-# (`lib/ollama/cuda_*`, `lib/ollama/rocm*`) et on ne garde que `bin/ollama` + les libs CPU. Résultat
-# attendu : quelques dizaines de Mo au lieu de 1,5 Go.
+# contiennent les runners GPU (CUDA v12/v13, ROCm, Vulkan) en plus du CPU. Pour un modèle 3B sur
+# la machine d'un non-dev, le GPU est inutile : on télécharge l'archive, on **jette les runners
+# GPU** (`lib/ollama/cuda_*`, `lib/ollama/rocm*`, `lib/ollama/vulkan*`) et on ne garde que
+# `bin/ollama` + les libs CPU. Résultat attendu : ~115 Mo au lieu de 1,5 Go.
 #
 # L'arbre est déposé sous `src-tauri/binaries/ollama/` (voisins `bin/` et `lib/`, comme l'attend le
 # binaire pour résoudre ses runners). Il est ensuite embarqué comme ressource Tauri
@@ -66,9 +66,11 @@ if [ ! -f "$TMP/bin/ollama" ]; then
 fi
 
 # --- Élagage des runners GPU -------------------------------------------------
-echo "→ Suppression des runners GPU (CUDA/ROCm)…"
+echo "→ Suppression des runners GPU (CUDA/ROCm/Vulkan)…"
 if [ -d "$TMP/lib/ollama" ]; then
-  find "$TMP/lib/ollama" -maxdepth 1 -type d \( -name 'cuda*' -o -name 'rocm*' \) -prune -exec rm -rf {} +
+  find "$TMP/lib/ollama" -maxdepth 1 -type d \( -name 'cuda*' -o -name 'rocm*' -o -name 'vulkan*' \) -prune -exec rm -rf {} +
+  # Le runner Vulkan peut aussi être un fichier (libggml-vulkan.so) directement sous lib/ollama.
+  find "$TMP/lib/ollama" -maxdepth 1 -type f -name '*vulkan*' -delete
 fi
 
 # --- Dépôt de l'arbre CPU ----------------------------------------------------
