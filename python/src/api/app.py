@@ -801,14 +801,38 @@ class HermesApi:
         """Profil du candidat (OPP-158) : lecture owner-gated pour consultation/édition côté UI.
 
         Owner-gated (``_guard_owner`` : 404 neutre hors périmètre ; 401 sans jeton en amont),
-        cohérent avec /stats et /activity. 404 si le candidat n'a pas de profil.
+        cohérent avec /stats et /activity.
+
+        Un candidat **du périmètre mais sans profil encore** (recherche neuve, pas de CV importé)
+        renvoie un **profil vide en 200**, pas un 404 (OPP-195) : un profil pas encore créé est un
+        état *nominal*, pas une erreur. Le front affiche alors le formulaire d'import, et la
+        console du navigateur ne se salit pas d'un 404 rouge pour un cas normal. Le 404 reste
+        réservé au candidat **hors périmètre** (géré par ``_guard_owner``, anti-énumération).
         """
         self._guard_owner(user, candidate_id)
         assert self.profiles is not None  # garanti par le dispatch (404 sinon)
         profile = self.profiles.get(candidate_id)
         if profile is None:
-            raise self._not_found(user, f"profil introuvable : {candidate_id}")
+            return Response(200, self._empty_profile_payload(candidate_id))
         return Response(200, self._serialize_profile(profile))
+
+    @staticmethod
+    def _empty_profile_payload(candidate_id: str) -> dict:
+        """Profil **vierge** exposé au front : mêmes champs que ``_serialize_profile``, tous vides.
+
+        Un candidat du périmètre sans profil encore (OPP-195). Le front le reconnaît comme vierge
+        (ni compétence ni expérience) et propose l'import CV, au lieu d'un 404 pour un état normal.
+        """
+        return {
+            "id": candidate_id,
+            "name": "",
+            "skills": [],
+            "contract_type": "",
+            "location": None,
+            "languages": [],
+            "total_experience_years": None,
+            "experiences": [],
+        }
 
     def _put_profile(self, candidate_id: str, body: dict, user: User | None) -> Response:
         """Édite les compétences du profil (OPP-158) : remplacement de la liste ``skills``.

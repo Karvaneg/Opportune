@@ -101,7 +101,9 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
     }
     // Le contrat vient du profil existant ; sur un premier import (pas de profil), du choix fait
     // juste au-dessus. Le back l'exige dans les deux cas — un CV ne le porte pas.
-    upload.mutate({ candidateId, pdfBase64, contractType: data?.contract_type ?? contractType });
+    // `||` (pas `??`) : un profil vierge porte `contract_type: ""` (chaîne vide, pas `null`) —
+    // on retombe alors sur le type choisi dans le sélecteur. Un profil déjà créé porte le sien.
+    upload.mutate({ candidateId, pdfBase64, contractType: data?.contract_type || contractType });
   };
 
   const dirty = data ? JSON.stringify(skills) !== JSON.stringify(data.skills) : false;
@@ -139,10 +141,11 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
 
       {isReviewer && (
         <section className="space-y-1">
-          {/* Premier import : pas encore de profil, donc pas de type de contrat connu. On le
-              demande ici (le back l'exige) ; une fois le profil créé, il le porte et ce sélecteur
-              disparaît (OPP-218). */}
-          {!data && (
+          {/* Premier import : profil encore vierge, donc pas de type de contrat connu (le back
+              renvoie un profil vide avec `contract_type: ""`). On le demande ici (le back l'exige
+              à la création) ; une fois le profil créé, il le porte et ce sélecteur disparaît
+              (OPP-218/195). */}
+          {!data?.contract_type && (
             <label className="block text-sm font-medium text-ink">
               Type de contrat recherché
               <select
