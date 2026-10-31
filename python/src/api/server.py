@@ -431,7 +431,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from app.db import connect
     from api.app import Response
     from app.candidate_registry import CandidateRegistry
-    from app.demo_candidate import DEMO_CANDIDATE_ID, reset_demo, seed_demo_candidate
+    from app.demo_candidate import reset_demo, seed_demo_candidate
     from app.profile_store import ProfileStore
     from api.space_router import SpaceRouter
 
@@ -469,11 +469,11 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
             if demo_db != ":memory:":
                 Path(demo_db).unlink(missing_ok=True)
             raise
-    # Périmètre démo : son unique candidat vit aussi dans le registre (OPP-183). On garantit le
-    # slot au boot (idempotent) — vrai même pour une base démo antérieure à OPP-183, ou après un
-    # « repartir de zéro » qui conserve le slot vide pour l'onboarding.
+    # Périmètre démo : son candidat vitrine est posé par le **seed** (premier lancement et
+    # « Restaurer l'exemple »). On ne force **plus** le slot au boot (OPP-195) : après un
+    # « repartir de zéro », le périmètre doit rester vide, y compris au redémarrage — le
+    # sélecteur invite alors à créer une nouvelle recherche, plutôt que de ressusciter « Alex Demo ».
     demo_registry = CandidateRegistry(demo_conn)
-    demo_registry.ensure([DEMO_CANDIDATE_ID])
     # Réglages de la démo **isolés** dans un sous-dossier dédié (OPP-195) : les clés Adzuna et les
     # flux RSS saisis dans « Mon espace » ne doivent ni être partagés, ni fuiter vers la démo.
     demo = assemble_api(

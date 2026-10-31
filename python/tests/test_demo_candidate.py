@@ -139,11 +139,12 @@ def test_reset_demo_vide_tout(conn):
     assert ProfileStore(conn).get(DEMO_CANDIDATE_ID) is None
     assert DecisionStore(conn).count() == 0
 
-    # Mais le SLOT du candidat démo survit au vidage (OPP-183) : le périmètre garde une recherche
-    # vide → le cockpit propose le guide d'accueil, pas « aucun candidat ».
-    assert CandidateRegistry(conn).list_ids() == [DEMO_CANDIDATE_ID]
+    # Table rase complète (OPP-195) : le slot du candidat démo est vidé lui aussi → périmètre
+    # vide, le sélecteur invite à créer une nouvelle recherche (plus d'« Alex Demo » résiduelle).
+    assert CandidateRegistry(conn).list_ids() == []
 
-    # Et « restaurer » (reset + seed) ramène la vitrine canonique.
+    # « Restaurer l'exemple » (reset + seed) ramène le slot et la vitrine canonique.
     reset_demo(conn)
     seed_demo_candidate(conn)
     assert OfferStore(conn).count() == 5
+    assert CandidateRegistry(conn).list_ids() == [DEMO_CANDIDATE_ID]
