@@ -266,6 +266,18 @@ describe("ProfilePanel (OPP-158)", () => {
     expect(screen.queryByText(/Ressource introuvable/)).not.toBeInTheDocument();
   });
 
+  it("profil vierge (200 vide) : l'éditeur de compétences reste masqué tant qu'aucun CV ne l'a créé (OPP-195)", async () => {
+    stubProfile(EMPTY_PROFILE, "reviewer");
+
+    renderPanel();
+
+    await screen.findByText(/Ton profil est encore vide/);
+    expect(screen.queryByLabelText("Ajouter une compétence")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Enregistrer les compétences/ }),
+    ).toBeNull();
+  });
+
   it("importe un premier CV avec le type de contrat choisi, puis affiche le profil (OPP-218)", async () => {
     const posts = stubNewProfileWithCv("reviewer");
     renderPanel();

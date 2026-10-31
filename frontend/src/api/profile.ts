@@ -13,8 +13,9 @@ export const profileKeys = {
 
 /**
  * Profil d'un candidat : `GET /candidates/{id}/profile` (OPP-158). Alimente le panneau de
- * consultation/édition des compétences du cockpit. Désactivée sans candidat ciblé. Un `404`
- * (candidat sans profil) remonte comme erreur — l'appelant l'affiche sobrement.
+ * consultation/édition des compétences du cockpit. Désactivée sans candidat ciblé. Un candidat du
+ * périmètre sans profil encore renvoie un profil **vide en 200** (OPP-195) ; un `404` ne survient
+ * plus que hors périmètre et remonte comme erreur — l'appelant l'affiche sobrement.
  */
 export function useProfile(candidateId: string) {
   return useQuery({
@@ -30,12 +31,14 @@ export function useProfile(candidateId: string) {
 /**
  * Le profil du candidat est-il **renseigné** ? (au moins une compétence ou une expérience) — la
  * condition « profil non vierge » qui conditionne la collecte d'offres et l'analyse (OPP-219). Un
- * 404 (candidat sans profil encore) ou un profil sans skills ni parcours comptent comme vierges.
+ * profil vide renvoyé en 200 (candidat sans profil encore, OPP-195), ou un profil sans skills ni
+ * parcours, comptent comme vierges.
  *
  * `isPending` tant que l'état n'est pas tranché : on n'affiche pas « vierge » pendant le
  * chargement (sinon le bouton clignoterait désactivé puis actif). Une erreur **autre** qu'un 404
  * (panne réseau) est traitée comme « renseigné » : on ne piège pas l'utilisateur sur une panne,
- * le back reste l'arbitre à la soumission. Sans candidat ciblé (`""`), vierge et résolu.
+ * le back reste l'arbitre à la soumission. Un 404 (hors périmètre) compte comme vierge. Sans
+ * candidat ciblé (`""`), vierge et résolu.
  */
 export function useProfileReady(candidateId: string): { ready: boolean; isPending: boolean } {
   const { data, isPending, isError, error } = useProfile(candidateId);
