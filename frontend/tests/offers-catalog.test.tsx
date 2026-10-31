@@ -330,6 +330,7 @@ describe("OffersPage", () => {
     renderOffers();
 
     await screen.findByText("Lead Java");
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
     await userEvent.click(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
@@ -345,7 +346,7 @@ describe("OffersPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("envoie le poste recherché prérempli quand le champ n'est pas modifié", async () => {
+  it("exige un poste : bouton désactivé à vide, puis transmet le poste saisi (OPP-195)", async () => {
     const posts: Array<{ body: { what?: string; where?: string } }> = [];
     vi.stubGlobal(
       "fetch",
@@ -371,14 +372,20 @@ describe("OffersPage", () => {
     renderOffers();
 
     await screen.findByText("Lead Java");
+    // Aucun intitulé prérempli (plus de biais « développeur ») : le bouton reste désactivé tant
+    // que l'utilisateur n'a pas saisi son poste — pas de collecte « tous métiers » à vide.
+    expect(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    ).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "infirmier");
     await userEvent.click(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
 
-    // Défaut métier large, lieu vide → collecte pertinente sans aucune saisie.
     await screen.findByText(/0 nouvelle offre/);
     expect(posts).toHaveLength(1);
-    expect(posts[0].body.what).toMatch(/développeur/);
+    expect(posts[0].body.what).toBe("infirmier");
     expect(posts[0].body.where).toBe("");
   });
 
@@ -407,6 +414,7 @@ describe("OffersPage", () => {
     renderOffers();
 
     await screen.findByText("Lead Java");
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
     await userEvent.click(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
@@ -458,7 +466,9 @@ describe("OffersPage", () => {
 
     expect(notice).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Réglages" })).toHaveAttribute("href", "/reglages");
-    // Profil renseigné : l'invite prévient mais ne verrouille pas le bouton (fallback .env possible).
+    // Un poste saisi (requis, OPP-195) : l'invite Adzuna prévient mais ne verrouille pas le
+    // bouton (un fallback `.env` reste possible) — seule l'absence de poste le désactive.
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
     expect(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     ).toBeEnabled();

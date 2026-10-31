@@ -30,12 +30,6 @@ import { ErrorNotice } from "./States";
  * manquants, quota) revient dans `source_error` du bilan, pas en erreur HTTP — on l'affiche
  * distinctement ; un `409` au démarrage signale qu'une collecte est déjà en cours.
  */
-// Poste recherché par défaut (OPP-167). Le profil décrit les compétences du candidat mais
-// pas l'intitulé de poste visé, et les skills bruts font de mauvais mots-clés Adzuna : on
-// préremplit donc un libellé métier large, modifiable. À remplacer par un champ « poste cible »
-// du profil le jour où il existera (cf. ticket scoring/profil).
-const DEFAULT_WHAT = "développeur informatique, web, d'application";
-
 export function CollectOffers() {
   const isReviewer = useIsReviewer();
   // Profil de la recherche active : la collecte n'a de sens qu'une fois le profil renseigné
@@ -52,7 +46,12 @@ export function CollectOffers() {
   // Chaque offre neuve passe par le LLM local (intake structuré) : on désactive la collecte tant
   // qu'il n'est pas prêt (OPP-195), en orientant vers le bandeau d'installation.
   const llm = useLlmReady();
-  const [what, setWhat] = useState(DEFAULT_WHAT);
+  // Poste recherché : vide par défaut et **requis** (OPP-195). On ne préremplit plus un intitulé
+  // (c'était « développeur… », un biais pour un outil censé servir tous les métiers) ; et un
+  // `what` vide collecterait toute la France sans cible, chaque offre passant par le LLM. On
+  // laisse donc l'utilisateur saisir son propre intitulé et on bloque la collecte Adzuna tant
+  // qu'il est vide. La collecte RSS, elle, ne dépend pas de ce champ.
+  const [what, setWhat] = useState("");
   const [where, setWhere] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
   const start = useStartCollect();
@@ -116,15 +115,15 @@ export function CollectOffers() {
         Récupérer de nouvelles offres
       </h3>
       <p className="text-sm text-ink-muted">
-        Interroge Adzuna et ajoute les offres neuves au catalogue. Le poste recherché est
-        prérempli (modifiable) ; précise un lieu pour cibler, ou laisse vide pour toute la France.
+        Interroge Adzuna et ajoute les offres neuves au catalogue. Indique le poste que tu
+        recherches ; précise un lieu pour cibler, ou laisse vide pour toute la France.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={what}
           onChange={(e) => setWhat(e.target.value)}
-          placeholder="Poste recherché (ex. développeur web)"
+          placeholder="Poste recherché (ex. ton intitulé de poste)"
           aria-label="Poste recherché"
           className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
         />
@@ -141,7 +140,8 @@ export function CollectOffers() {
         <button
           type="button"
           onClick={submit}
-          disabled={running || blocked}
+          // Poste requis (OPP-195) : pas de collecte Adzuna « tous métiers » déclenchée à vide.
+          disabled={running || blocked || what.trim() === ""}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
           {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
