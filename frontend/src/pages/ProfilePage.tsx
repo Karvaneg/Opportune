@@ -16,7 +16,7 @@ export function ProfilePage() {
 
       {target === "" ? (
         <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
-          Aucune recherche pour le moment.
+          Aucune recherche pour le moment. Crée une recherche ci-dessus pour commencer.
         </p>
       ) : (
         <ProfilePanel key={target} candidateId={target} />

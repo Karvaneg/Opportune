@@ -1,4 +1,19 @@
+import type { ReactNode } from "react";
 import { ApiHttpError } from "../api/client";
+
+/**
+ * Encart d'information **neutre** (bord pointillé) : messages d'aide ou de prérequis non
+ * bloquants — LLM à installer, clés Adzuna manquantes, flux RSS à renseigner, action réservée au
+ * reviewer. Centralise le style partagé par ces encarts, pour qu'un ajustement de tokens (bord,
+ * fond, espacement) se fasse à un seul endroit plutôt que recopié dans chaque composant.
+ */
+export function Hint({ children }: { children: ReactNode }) {
+  return (
+    <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
+      {children}
+    </p>
+  );
+}
 
 /** Indicateur de chargement neutre. */
 export function Loading({ label = "Chargement…" }: { label?: string }) {

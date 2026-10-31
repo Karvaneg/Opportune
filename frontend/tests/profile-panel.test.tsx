@@ -22,14 +22,13 @@ const EXPERIENCE = {
 const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
 
-/** Réponse 404 : un candidat sans profil encore (recherche tout juste créée). Le corps porte un
- * message neutre, comme le vrai back. */
-const notFound = () =>
-  Promise.resolve({
-    ok: false,
-    status: 404,
-    json: () => Promise.resolve({ error: "profil introuvable" }),
-  } as Response);
+/** Profil **vierge** renvoyé en 200 par le back pour un candidat sans profil encore (recherche
+ * tout juste créée, OPP-195) : ni compétence ni parcours. Le front le reconnaît comme vide et
+ * oriente vers l'import CV, sans 404 en console. */
+const EMPTY_PROFILE = {
+  id: "cand-1", name: "", skills: [], contract_type: "",
+  location: null, languages: [], total_experience_years: null, experiences: [],
+};
 
 /** fetch factice renvoyant un profil **figé** (lecture seule), paramétrable — pour les cas
  * d'affichage (parcours, état vide) qui n'exercent ni édition ni upload. */
@@ -94,12 +93,12 @@ function stubFetchWithCv(role = "reviewer") {
   return posts;
 }
 
-/** fetch factice pour un **profil encore inexistant** (OPP-218) : `GET /profile` renvoie 404
- * tant qu'aucun CV n'a été importé ; le premier `POST /profile/cv` crée le profil, que les GET
- * suivants renvoient alors en 200. Enregistre les corps postés. */
+/** fetch factice pour un **profil encore inexistant** (OPP-218/195) : `GET /profile` renvoie un
+ * profil **vide en 200** tant qu'aucun CV n'a été importé ; le premier `POST /profile/cv` crée le
+ * profil, que les GET suivants renvoient alors rempli. Enregistre les corps postés. */
 function stubNewProfileWithCv(role = "reviewer") {
   const posts: Array<Record<string, unknown>> = [];
-  let profile: Record<string, unknown> | null = null; // pas de profil au départ
+  let profile: Record<string, unknown> = EMPTY_PROFILE; // profil vierge au départ
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
@@ -111,8 +110,7 @@ function stubNewProfileWithCv(role = "reviewer") {
         profile = { ...PROFILE, name: "Marie (depuis CV)", skills: ["Python", "SQL"] };
         return ok(profile);
       }
-      if (s.includes("/profile")) return profile ? ok(profile) : notFound();
-      return profile ? ok(profile) : notFound();
+      return ok(profile);
     }),
   );
   return posts;
@@ -257,7 +255,7 @@ describe("ProfilePanel (OPP-158)", () => {
     expect(screen.queryByText("Parcours")).not.toBeInTheDocument();
   });
 
-  it("accueille un profil vierge (404) par l'import, sans message d'erreur (OPP-218)", async () => {
+  it("accueille un profil vierge (200 vide) par l'import, sans message d'erreur (OPP-218/195)", async () => {
     stubNewProfileWithCv("reviewer");
     renderPanel();
 
@@ -266,6 +264,18 @@ describe("ProfilePanel (OPP-158)", () => {
     expect(screen.getByLabelText("Importer un CV PDF")).toBeInTheDocument();
     expect(screen.getByLabelText("Type de contrat recherché")).toBeInTheDocument();
     expect(screen.queryByText(/Ressource introuvable/)).not.toBeInTheDocument();
+  });
+
+  it("profil vierge (200 vide) : l'éditeur de compétences reste masqué tant qu'aucun CV ne l'a créé (OPP-195)", async () => {
+    stubProfile(EMPTY_PROFILE, "reviewer");
+
+    renderPanel();
+
+    await screen.findByText(/Ton profil est encore vide/);
+    expect(screen.queryByLabelText("Ajouter une compétence")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Enregistrer les compétences/ }),
+    ).toBeNull();
   });
 
   it("importe un premier CV avec le type de contrat choisi, puis affiche le profil (OPP-218)", async () => {

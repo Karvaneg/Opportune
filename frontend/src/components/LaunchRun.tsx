@@ -27,6 +27,8 @@ export function LaunchRun() {
   if (target === "") return null;
 
   // Profil vierge (résolu, pas en cours de chargement) → on bloque et on oriente vers l'import.
+  // L'analyse ne fait que du scoring déterministe (aucun LLM) : on ne la gate donc pas sur
+  // l'assistant local, contrairement à la collecte (intake) et à la rédaction de lettre.
   const blocked = !ready && !profilePending;
 
   return (

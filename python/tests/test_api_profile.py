@@ -2,7 +2,7 @@
 
 Service profil réel adossé à un dépôt factice : on vérifie le contrat HTTP — sérialisation,
 garde propriétaire (404 neutre hors périmètre), garde reviewer sur l'édition, validation du
-corps, 404 profil absent, route optionnelle, et méthode non supportée.
+corps, profil absent rendu **vide en 200** (OPP-195), route optionnelle, et méthode non supportée.
 """
 
 import pytest
@@ -91,9 +91,18 @@ def test_get_profile_serializes_experiences():
     assert resp.body["experiences"] == [exp]
 
 
-def test_get_profile_404_when_candidate_has_no_profile():
+def test_get_profile_returns_empty_200_when_candidate_has_no_profile():
+    # Candidat accessible mais sans profil encore (recherche neuve) : 200 avec un profil **vide**,
+    # pas un 404 (OPP-195). Un profil pas encore créé est un état normal, pas une erreur — le front
+    # affiche l'import CV et la console ne se salit pas d'un 404 rouge.
     api = _api(_service())  # aucun profil enregistré
-    assert api.dispatch("GET", "/candidates/cand-1/profile", None, None).status == 404
+
+    resp = api.dispatch("GET", "/candidates/cand-1/profile", None, None)
+
+    assert resp.status == 200
+    assert resp.body["skills"] == []
+    assert resp.body["experiences"] == []
+    assert resp.body["name"] == ""
 
 
 def test_get_profile_route_absent_without_service():

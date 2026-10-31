@@ -1,9 +1,8 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useProfile, useUpdateProfileSkills, useUploadCv } from "../api/profile";
-import { ApiHttpError } from "../api/client";
 import { useIsReviewer } from "../auth/roles";
 import { ProfileExperiences } from "./ProfileExperiences";
-import { ErrorNotice, Loading } from "./States";
+import { ErrorNotice, Hint, Loading } from "./States";
 
 /** Lit un fichier en base64 (sans le préfixe `data:…`), pour l'envoyer dans le corps JSON.
  * Via `FileReader` : disponible dans tout navigateur (et sous jsdom en test). */
@@ -40,8 +39,10 @@ const CONTRACT_TYPES = ["CDI", "freelance", "les deux"] as const;
  * vide, une orientation invite à importer un CV plutôt que de laisser un panneau muet.
  *
  * Un candidat **sans profil encore** (recherche tout juste créée, « je pars de zéro ») renvoie un
- * 404 sur `GET /profile` : on l'accueille comme un profil vierge et on oriente vers l'import CV,
- * au lieu d'afficher « Ressource introuvable » qui bloquait le tout premier geste (OPP-218).
+ * profil **vide en 200** sur `GET /profile` (OPP-195) : on l'accueille comme un profil vierge et on
+ * oriente vers l'import CV, au lieu d'afficher « Ressource introuvable » qui bloquait le tout
+ * premier geste (OPP-218). L'éditeur de compétences reste masqué tant qu'aucun CV n'a créé le
+ * profil — un `PUT /profile` renverrait 404 sans profil en base.
  */
 export function ProfilePanel({ candidateId }: { candidateId: string }) {
   const isReviewer = useIsReviewer();
@@ -68,10 +69,10 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
 
   if (candidateId === "") return null;
   if (isPending) return <Loading label="Chargement du profil…" />;
-  // Un 404 n'est pas une panne : c'est un candidat sans profil encore. On le traite comme un
-  // profil vierge (import CV). Toute autre erreur reste signalée sobrement, sans bloquer le cockpit.
-  const noProfile = isError && error instanceof ApiHttpError && error.status === 404;
-  if (isError && !noProfile) return <ErrorNotice error={error} />;
+  // Depuis OPP-195, un candidat du périmètre sans profil renvoie un profil vide en 200 (pas un
+  // 404) : une erreur ici est donc une vraie anomalie (panne réseau, ou 404 hors périmètre), qu'on
+  // signale sobrement sans bloquer le cockpit.
+  if (isError) return <ErrorNotice error={error} />;
 
   const addSkill = () => {
     const value = draft.trim();
@@ -101,7 +102,9 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
     }
     // Le contrat vient du profil existant ; sur un premier import (pas de profil), du choix fait
     // juste au-dessus. Le back l'exige dans les deux cas — un CV ne le porte pas.
-    upload.mutate({ candidateId, pdfBase64, contractType: data?.contract_type ?? contractType });
+    // `||` (pas `??`) : un profil vierge porte `contract_type: ""` (chaîne vide, pas `null`) —
+    // on retombe alors sur le type choisi dans le sélecteur. Un profil déjà créé porte le sien.
+    upload.mutate({ candidateId, pdfBase64, contractType: data?.contract_type || contractType });
   };
 
   const dirty = data ? JSON.stringify(skills) !== JSON.stringify(data.skills) : false;
@@ -109,9 +112,9 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
 
   // Fallback défensif : un profil mis en cache avant OPP-176 peut ne pas porter `experiences`.
   const experiences = data?.experiences ?? [];
-  // Profil « vierge » : aucun profil encore (404), ou profil sans compétence ni parcours. On
-  // oriente vers l'import CV au lieu d'afficher un panneau muet. On se base sur les skills
-  // **serveur** (pas l'édition locale en cours).
+  // Profil « vierge » : profil vide renvoyé en 200 (recherche neuve, OPP-195), ou profil sans
+  // compétence ni parcours. On oriente vers l'import CV au lieu d'afficher un panneau muet. On se
+  // base sur les skills **serveur** (pas l'édition locale en cours).
   const isEmptyProfile = !data || (data.skills.length === 0 && experiences.length === 0);
 
   return (
@@ -129,20 +132,21 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
       </div>
 
       {isEmptyProfile && (
-        <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
+        <Hint>
           Ton profil est encore vide.{" "}
           {isReviewer
             ? "Importe ton CV (PDF) ci-dessous pour reconstituer automatiquement tes compétences et ton parcours."
             : "Un reviewer peut importer un CV pour le reconstituer."}
-        </p>
+        </Hint>
       )}
 
       {isReviewer && (
         <section className="space-y-1">
-          {/* Premier import : pas encore de profil, donc pas de type de contrat connu. On le
-              demande ici (le back l'exige) ; une fois le profil créé, il le porte et ce sélecteur
-              disparaît (OPP-218). */}
-          {!data && (
+          {/* Premier import : profil encore vierge, donc pas de type de contrat connu (le back
+              renvoie un profil vide avec `contract_type: ""`). On le demande ici (le back l'exige
+              à la création) ; une fois le profil créé, il le porte et ce sélecteur disparaît
+              (OPP-218/195). */}
+          {!data?.contract_type && (
             <label className="block text-sm font-medium text-ink">
               Type de contrat recherché
               <select
@@ -195,9 +199,11 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
         </section>
       )}
 
-      {/* Édition des compétences : seulement quand un profil existe. Sans profil, il n'y a rien à
-          éditer et le PUT /profile renverrait 404 tant qu'aucun CV ne l'a créé. */}
-      {data && (
+      {/* Édition des compétences : seulement quand un profil **existe vraiment** (au moins une
+          compétence ou une expérience). Sur une recherche neuve, le back renvoie un profil vide en
+          200 (OPP-195) mais aucun profil n'est encore créé en base : le PUT /profile renverrait 404.
+          On masque donc l'éditeur et on oriente vers l'import CV. */}
+      {!isEmptyProfile && (
         <section className="space-y-2 border-t border-border pt-3">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Compétences

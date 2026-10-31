@@ -221,6 +221,7 @@ describe("OffersPage", () => {
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -252,6 +253,47 @@ describe("OffersPage", () => {
     expect(posts[0].body).toEqual({ what: "python", where: "Paris" });
   });
 
+  it("propose « Collecter mes flux RSS » quand des flux sont configurés et poste source=rss (OPP-195)", async () => {
+    const posts: Array<{ body: unknown }> = [];
+    const job = {
+      job_id: "job-rss", status: "done", error: null,
+      progress: noProgress,
+      report: {
+        collected: 2, stored: 2, duplicates: 0, failures: 0, source_error: null,
+        enriched: 0, enriched_recovered: 0,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/rss")) return res(200, { feeds: ["https://a.example/f"] });
+        if (s.includes("/collect")) {
+          if (options?.method === "POST") {
+            posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
+            return res(202, { job_id: "job-rss" });
+          }
+          if (s.split("?")[0].endsWith("/collect")) return res(200, { job: null });
+          return res(200, job);
+        }
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Collecter mes flux RSS" }),
+    );
+
+    expect(await screen.findByText(/2 nouvelles offres/)).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toEqual({ source: "rss" });
+  });
+
   it("sonde jusqu'à la fin : progression en cours puis bilan final", async () => {
     let getCalls = 0;
     const running = {
@@ -271,6 +313,7 @@ describe("OffersPage", () => {
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -287,6 +330,7 @@ describe("OffersPage", () => {
     renderOffers();
 
     await screen.findByText("Lead Java");
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
     await userEvent.click(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
@@ -302,13 +346,14 @@ describe("OffersPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("envoie le poste recherché prérempli quand le champ n'est pas modifié", async () => {
+  it("exige un poste : bouton désactivé à vide, puis transmet le poste saisi (OPP-195)", async () => {
     const posts: Array<{ body: { what?: string; where?: string } }> = [];
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -327,14 +372,20 @@ describe("OffersPage", () => {
     renderOffers();
 
     await screen.findByText("Lead Java");
+    // Aucun intitulé prérempli (plus de biais « développeur ») : le bouton reste désactivé tant
+    // que l'utilisateur n'a pas saisi son poste — pas de collecte « tous métiers » à vide.
+    expect(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    ).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "infirmier");
     await userEvent.click(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
 
-    // Défaut métier large, lieu vide → collecte pertinente sans aucune saisie.
     await screen.findByText(/0 nouvelle offre/);
     expect(posts).toHaveLength(1);
-    expect(posts[0].body.what).toMatch(/développeur/);
+    expect(posts[0].body.what).toBe("infirmier");
     expect(posts[0].body.where).toBe("");
   });
 
@@ -344,6 +395,7 @@ describe("OffersPage", () => {
       vi.fn((url: string, options?: RequestInit) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(200, READY_PROFILE);
         if (s.includes("/collect")) {
@@ -362,6 +414,7 @@ describe("OffersPage", () => {
     renderOffers();
 
     await screen.findByText("Lead Java");
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
     await userEvent.click(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     );
@@ -376,6 +429,7 @@ describe("OffersPage", () => {
       vi.fn((url: string) => {
         const s = String(url);
         if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
         if (s.includes("/me")) return res(200, ME);
         if (s.includes("/profile")) return res(404, { error: "profil introuvable" }); // vierge
         if (s.includes("/collect")) return res(200, { job: null });
@@ -390,5 +444,78 @@ describe("OffersPage", () => {
     expect(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     ).toBeDisabled();
+  });
+
+  it("invite à renseigner les clés Adzuna quand elles manquent, sans bloquer (OPP-195)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: false });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+
+    renderOffers();
+    const notice = await screen.findByText(/Les clés Adzuna ne sont pas renseignées/);
+
+    expect(notice).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Réglages" })).toHaveAttribute("href", "/reglages");
+    // Un poste saisi (requis, OPP-195) : l'invite Adzuna prévient mais ne verrouille pas le
+    // bouton (un fallback `.env` reste possible) — seule l'absence de poste le désactive.
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
+    expect(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    ).toBeEnabled();
+  });
+
+  it("désactive la collecte tant que l'assistant local se prépare (OPP-195)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        // Modèle absent, Ollama joignable → la collecte (enrichissement LLM) est désactivée.
+        if (s.includes("/system/llm/status")) return res(200, { model_present: false, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: true });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+
+    renderOffers();
+    await screen.findByText(/L'assistant local se prépare/);
+
+    expect(
+      screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
+    ).toBeDisabled();
+  });
+
+  it("n'affiche pas l'invite Adzuna quand les clés sont configurées (OPP-195)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: true });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+
+    renderOffers();
+    await screen.findByText("Lead Java");
+
+    expect(screen.queryByText(/Les clés Adzuna ne sont pas renseignées/)).not.toBeInTheDocument();
   });
 });

@@ -34,7 +34,11 @@ type LetterState = typeof AI_LETTER | null;
 type Call = { method: string; body: { regenerate?: boolean; body?: string } | null };
 
 /** fetch factice à état : /me (rôle), GET détail reco, et CRUD lettre sur `/letter`. */
-function stubLetterFlow({ role = "reviewer", initial = null as LetterState } = {}) {
+function stubLetterFlow({
+  role = "reviewer",
+  initial = null as LetterState,
+  llm = { model_present: true, ollama_reachable: true },
+} = {}) {
   let letter: LetterState = initial;
   const calls: Call[] = [];
   const ok = (body: unknown, status = 200) =>
@@ -50,6 +54,7 @@ function stubLetterFlow({ role = "reviewer", initial = null as LetterState } = {
       const s = String(url);
       const method = init?.method ?? "GET";
       if (s.includes("/me")) return ok({ id: "u", role, owned_count: 1 });
+      if (s.includes("/system/llm/status")) return ok(llm);
       if (s.includes("/letter")) {
         const body = init?.body ? JSON.parse(String(init.body)) : null;
         calls.push({ method, body });
@@ -156,6 +161,29 @@ describe("LetterPanel (OPP-147)", () => {
     // vérifie que l'ancien corps (et ses actions) ne subsistent PAS à côté de « Générer ».
     expect(screen.queryByText(/adresse ma candidature/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Éditer" })).toBeNull();
+  });
+
+  it("désactive la génération tant que l'assistant local se prépare (OPP-195)", async () => {
+    stubLetterFlow({ initial: null, llm: { model_present: false, ollama_reachable: true } });
+
+    renderPage();
+    await screen.findByText(/L'assistant local se prépare/);
+
+    expect(screen.getByRole("button", { name: "Générer la lettre" })).toBeDisabled();
+  });
+
+  it("laisse consulter une lettre déjà écrite même sans assistant local (OPP-195)", async () => {
+    stubLetterFlow({
+      initial: { ...AI_LETTER },
+      llm: { model_present: false, ollama_reachable: false },
+    });
+
+    renderPage();
+
+    // Le corps de la lettre reste lisible ; seule la régénération est verrouillée.
+    expect(await screen.findByText(/adresse ma candidature/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Régénérer" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Éditer" })).toBeEnabled();
   });
 
   it("un non-reviewer ne voit pas le panneau lettre (garde UI)", async () => {

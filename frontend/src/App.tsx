@@ -9,7 +9,7 @@ import { useSpace } from "./space/SpaceContext";
 import { WelcomeScreen } from "./space/WelcomeScreen";
 import { DemoBanner } from "./space/DemoBanner";
 import { CollectionBanner } from "./components/CollectionBanner";
-import { LlmSetupGate } from "./components/LlmSetupGate";
+import { LlmBanner } from "./components/LlmBanner";
 import { SearchBar } from "./components/SearchBar";
 import { Logo } from "./components/Logo";
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -126,10 +126,6 @@ function AuthenticatedApp() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Porte de 1er lancement (OPP-193) : bloque l'app tant que le modèle local n'est pas prêt
-          (téléchargement + barre de progression), puis laisse passer. Sous le QueryClientProvider
-          pour le sondage, au-dessus du reste car la disponibilité du LLM conditionne l'usage. */}
-      <LlmSetupGate>
       <TargetCandidateProvider>
         <BrowserRouter>
           <div className="min-h-screen bg-surface text-ink">
@@ -172,6 +168,10 @@ function AuthenticatedApp() {
             </header>
             {/* Bandeau démo (OPP-182) : repartir de zéro / restaurer l'exemple, espace démo uniquement. */}
             {space === "demo" && <DemoBanner />}
+            {/* Mise en route du LLM local (OPP-193/195) : bandeau non bloquant d'installation du
+                modèle ou d'alerte « Ollama injoignable ». L'app reste utilisable (consultation,
+                Démo) ; seules les actions LLM se désactivent (cf. `useLlmReady`). */}
+            <LlmBanner />
             {/* Indicateur global de collecte en cours (OPP-208) : persiste d'un écran à l'autre. */}
             <CollectionBanner />
             {/* Padding bas sur mobile pour que le contenu ne passe pas sous la barre d'onglets fixe. */}
@@ -202,7 +202,6 @@ function AuthenticatedApp() {
           </div>
         </BrowserRouter>
       </TargetCandidateProvider>
-      </LlmSetupGate>
     </QueryClientProvider>
   );
 }

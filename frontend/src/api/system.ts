@@ -47,6 +47,26 @@ export function useLlmStatus() {
   });
 }
 
+/** Pourquoi le LLM n'est pas prêt : son modèle s'installe, ou le moteur Ollama est injoignable. */
+export type LlmNotReadyReason = "preparing" | "unreachable";
+
+/**
+ * Le LLM local est-il utilisable *maintenant* ? Dérivé de {@link useLlmStatus} pour les actions
+ * qui en dépendent (lancer une analyse, collecter avec enrichissement). Permet de les désactiver
+ * individuellement plutôt que de bloquer toute l'app (OPP-195) : la consultation (espace Démo,
+ * offres déjà en base) reste accessible sans LLM.
+ *
+ * Fail-open : statut en cours de chargement, en erreur ou indéterminable (vieux backend) → on
+ * considère le LLM prêt. On préfère laisser tenter l'action — qui signalera elle-même un éventuel
+ * échec — plutôt que de verrouiller à tort sur une incertitude.
+ */
+export function useLlmReady(): { ready: boolean; reason: LlmNotReadyReason | null } {
+  const status = useLlmStatus();
+  if (status.isLoading || status.isError || !status.data) return { ready: true, reason: null };
+  if (status.data.model_present) return { ready: true, reason: null };
+  return { ready: false, reason: status.data.ollama_reachable ? "preparing" : "unreachable" };
+}
+
 /**
  * Lance le téléchargement du modèle : `POST /system/llm/setup`. Idempotent côté serveur.
  *

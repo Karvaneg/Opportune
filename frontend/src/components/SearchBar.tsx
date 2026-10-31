@@ -140,7 +140,7 @@ export function SearchBar() {
               autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Ex. Data Analyst Paris"
+              placeholder="Ex. Infirmier à Nantes"
               className="rounded-md border border-border px-2 py-1.5 text-sm"
             />
             <button

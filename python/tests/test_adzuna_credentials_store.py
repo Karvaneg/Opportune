@@ -98,3 +98,26 @@ def test_resolve_raises_when_neither_store_nor_env(tmp_path):
 
     with pytest.raises(AdzunaAuthError):
         resolve_adzuna_credentials(store, {})
+
+
+def test_clear_removes_stored_credentials(tmp_path):
+    store = AdzunaCredentialsStore(tmp_path / "adzuna.json")
+    store.save("my-id", "my-key")
+
+    store.clear()
+
+    assert store.load() is None
+
+
+def test_clear_is_noop_when_file_absent(tmp_path):
+    store = AdzunaCredentialsStore(tmp_path / "absent.json")
+
+    store.clear()  # ne doit pas lever
+
+    assert store.load() is None
+
+
+def test_default_path_honours_data_dir(tmp_path):
+    from app.adzuna_credentials_store import default_credentials_path
+
+    assert default_credentials_path(tmp_path).parent == tmp_path

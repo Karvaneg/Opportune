@@ -32,22 +32,32 @@ const WITH_OFFERS: CandidateStats = { ...NO_STATS, offres_total: 12 };
 
 /**
  * fetch factice paramétrable : /me (rôle), /profile (vierge, rempli, ou **404** = candidat sans
- * profil encore), /runs (compte de runs). `profile: null` ⇒ 404.
+ * profil encore), /runs (compte de runs), /system/llm/status (modèle présent ?) et
+ * /settings/adzuna (clés configurées ?). `profile: null` ⇒ 404. Par défaut le LLM est prêt et les
+ * clés configurées : les étapes « assistant local » et « clés Adzuna » ne s'affichent alors pas,
+ * ce qui laisse inchangés les cas qui ne les visent pas.
  */
 function stubFetch({
   profile,
   runsTotal,
   role = "reviewer",
+  llmModelPresent = true,
+  adzunaConfigured = true,
 }: {
   profile: unknown;
   runsTotal: number;
   role?: string;
+  llmModelPresent?: boolean;
+  adzunaConfigured?: boolean;
 }) {
   const fetchMock = vi.fn((url: string) => {
     const s = String(url);
     if (s.includes("/me"))
       return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
     if (s.includes("/runs")) return ok(runsPage(runsTotal));
+    if (s.includes("/system/llm/status"))
+      return ok({ model_present: llmModelPresent, ollama_reachable: true });
+    if (s.includes("/settings/adzuna")) return ok({ configured: adzunaConfigured });
     if (s.includes("/profile")) return profile === null ? notFound() : ok(profile);
     return ok({});
   });
@@ -150,5 +160,42 @@ describe("NewProfileGuide (OPP-177)", () => {
       expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/me"))).toBe(true);
     });
     expect(screen.queryByText("Nouveau profil")).toBeNull();
+  });
+
+  it("assistant local non prêt : l'étape « Préparer l'assistant local » s'affiche (OPP-195)", async () => {
+    stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, llmModelPresent: false });
+    renderGuide(NO_STATS);
+
+    expect(await screen.findByText("Préparer l'assistant local")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Voir l'installation" })).toBeInTheDocument();
+  });
+
+  it("assistant local prêt : l'étape n'apparaît pas du tout (OPP-195)", async () => {
+    stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, llmModelPresent: true });
+    renderGuide(NO_STATS);
+
+    // Modèle déjà installé → on n'affiche pas une étape cochée muette : elle disparaît du guide.
+    await screen.findByText("Ajouter votre CV");
+    expect(screen.queryByText("Préparer l'assistant local")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Voir l'installation" })).toBeNull();
+  });
+
+  it("clés Adzuna manquantes : invite optionnelle vers les Réglages (OPP-195)", async () => {
+    stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, adzunaConfigured: false });
+    renderGuide(NO_STATS);
+
+    expect(await screen.findByText("Ajouter vos clés Adzuna")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ajouter les clés" })).toHaveAttribute(
+      "href",
+      "/reglages",
+    );
+  });
+
+  it("clés Adzuna configurées : pas d'invite Adzuna (OPP-195)", async () => {
+    stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, adzunaConfigured: true });
+    renderGuide(NO_STATS);
+
+    await screen.findByText("Ajouter votre CV");
+    expect(screen.queryByText("Ajouter vos clés Adzuna")).toBeNull();
   });
 });

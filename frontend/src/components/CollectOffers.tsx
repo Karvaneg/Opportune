@@ -8,9 +8,14 @@ import {
   useStartCollect,
 } from "../api/offers";
 import { useProfileReady } from "../api/profile";
+import { useAdzunaSettings, useRssSettings } from "../api/settings";
+import { useLlmReady } from "../api/system";
+import type { CollectOffersVariables } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import type { CollectionReport } from "../api/types";
+import { AdzunaRequiredNotice } from "./AdzunaRequiredNotice";
+import { LlmRequiredNotice } from "./LlmRequiredNotice";
 import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
 import { ErrorNotice } from "./States";
 
@@ -25,19 +30,28 @@ import { ErrorNotice } from "./States";
  * manquants, quota) revient dans `source_error` du bilan, pas en erreur HTTP — on l'affiche
  * distinctement ; un `409` au démarrage signale qu'une collecte est déjà en cours.
  */
-// Poste recherché par défaut (OPP-167). Le profil décrit les compétences du candidat mais
-// pas l'intitulé de poste visé, et les skills bruts font de mauvais mots-clés Adzuna : on
-// préremplit donc un libellé métier large, modifiable. À remplacer par un champ « poste cible »
-// du profil le jour où il existera (cf. ticket scoring/profil).
-const DEFAULT_WHAT = "développeur informatique, web, d'application";
-
 export function CollectOffers() {
   const isReviewer = useIsReviewer();
   // Profil de la recherche active : la collecte n'a de sens qu'une fois le profil renseigné
   // (OPP-219). On la bloque tant qu'il est vierge et on oriente vers l'import CV.
   const { target } = useTargetCandidate();
   const { ready, isPending: profilePending } = useProfileReady(target);
-  const [what, setWhat] = useState(DEFAULT_WHAT);
+  // Clés Adzuna (OPP-195) : la collecte réelle échoue sans elles. On prévient plutôt que de
+  // bloquer — `configured` ne reflète que le store, pas un éventuel fallback `.env` de dev.
+  const adzuna = useAdzunaSettings();
+  // Flux RSS saisis par l'utilisateur (OPP-195) : on propose une collecte « flux RSS » seulement
+  // s'il en a configuré au moins un (sinon la passe ne rapporterait qu'un `source_error`).
+  const rss = useRssSettings();
+  const hasRssFeeds = (rss.data?.feeds?.length ?? 0) > 0;
+  // Chaque offre neuve passe par le LLM local (intake structuré) : on désactive la collecte tant
+  // qu'il n'est pas prêt (OPP-195), en orientant vers le bandeau d'installation.
+  const llm = useLlmReady();
+  // Poste recherché : vide par défaut et **requis** (OPP-195). On ne préremplit plus un intitulé
+  // (c'était « développeur… », un biais pour un outil censé servir tous les métiers) ; et un
+  // `what` vide collecterait toute la France sans cible, chaque offre passant par le LLM. On
+  // laisse donc l'utilisateur saisir son propre intitulé et on bloque la collecte Adzuna tant
+  // qu'il est vide. La collecte RSS, elle, ne dépend pas de ce champ.
+  const [what, setWhat] = useState("");
   const [where, setWhere] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
   const start = useStartCollect();
@@ -72,21 +86,28 @@ export function CollectOffers() {
   // Profil vierge (résolu, pas en cours de chargement) → on bloque la collecte et on oriente.
   // Sans recherche active (`target === ""` : périmètre vide, en cours de chargement ou API HS),
   // on ne bloque pas : l'invite « profil vierge » serait trompeuse et clignoterait au démarrage.
-  const blocked = target !== "" && !ready && !profilePending;
+  const profileBlocked = target !== "" && !ready && !profilePending;
+  // Une invite à la fois, dans l'ordre des prérequis : d'abord le CV, puis l'assistant local, et
+  // enfin les clés Adzuna. Le profil et le LLM désactivent le bouton ; l'absence de clés se
+  // contente d'avertir (non bloquant : `configured` ignore le fallback `.env` de dev).
+  const blocked = profileBlocked || !llm.ready;
+  // N'avertir sur les clés Adzuna qu'une fois l'état résolu (évite le clignotement au chargement)
+  // et seulement si aucun prérequis plus prioritaire ne manque.
+  const adzunaMissing = !blocked && adzuna.data?.configured === false;
 
   if (!isReviewer) return null;
 
-  const submit = () =>
-    start.mutate(
-      { what: what.trim(), where: where.trim() },
-      {
-        onSuccess: (data) => {
-          setJobId(data.job_id);
-          // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
-          queryClient.invalidateQueries({ queryKey: activeCollectKey });
-        },
+  const launch = (variables: CollectOffersVariables) =>
+    start.mutate(variables, {
+      onSuccess: (data) => {
+        setJobId(data.job_id);
+        // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
+        queryClient.invalidateQueries({ queryKey: activeCollectKey });
       },
-    );
+    });
+  const submit = () => launch({ what: what.trim(), where: where.trim() });
+  // Collecte depuis les flux RSS configurés : `what`/`where` ne s'appliquent pas (OPP-195).
+  const submitRss = () => launch({ source: "rss" });
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-4">
@@ -94,15 +115,15 @@ export function CollectOffers() {
         Récupérer de nouvelles offres
       </h3>
       <p className="text-sm text-ink-muted">
-        Interroge Adzuna et ajoute les offres neuves au catalogue. Le poste recherché est
-        prérempli (modifiable) ; précise un lieu pour cibler, ou laisse vide pour toute la France.
+        Interroge Adzuna et ajoute les offres neuves au catalogue. Indique le poste que tu
+        recherches ; précise un lieu pour cibler, ou laisse vide pour toute la France.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={what}
           onChange={(e) => setWhat(e.target.value)}
-          placeholder="Poste recherché (ex. développeur web)"
+          placeholder="Poste recherché (ex. ton intitulé de poste)"
           aria-label="Poste recherché"
           className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
         />
@@ -119,11 +140,25 @@ export function CollectOffers() {
         <button
           type="button"
           onClick={submit}
-          disabled={running || blocked}
+          // Poste requis (OPP-195) : pas de collecte Adzuna « tous métiers » déclenchée à vide.
+          disabled={running || blocked || what.trim() === ""}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
           {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
         </button>
+        {/* Collecte depuis les flux RSS configurés (OPP-195) : proposée seulement si l'utilisateur
+            en a enregistré au moins un dans les Réglages. Même verrou que la collecte Adzuna
+            (profil + LLM requis, un seul job à la fois). */}
+        {hasRssFeeds && (
+          <button
+            type="button"
+            onClick={submitRss}
+            disabled={running || blocked}
+            className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/10 disabled:opacity-50"
+          >
+            Collecter mes flux RSS
+          </button>
+        )}
         {/* La progression d'une passe en cours est affichée par le bandeau global persistant
             (`CollectionBanner`, OPP-208) — on ne la duplique plus ici (OPP-215). Le bilan final
             et l'échec restent affichés à côté du bouton : le bandeau, lui, disparaît à la fin. */}
@@ -134,7 +169,12 @@ export function CollectOffers() {
           </span>
         )}
       </div>
-      {blocked && <ProfileRequiredNotice />}
+      {profileBlocked ? (
+        <ProfileRequiredNotice />
+      ) : (
+        !llm.ready && llm.reason && <LlmRequiredNotice reason={llm.reason} />
+      )}
+      {adzunaMissing && <AdzunaRequiredNotice />}
       {start.isError && <ErrorNotice error={start.error} />}
       {job.isError && <ErrorNotice error={job.error} />}
     </div>

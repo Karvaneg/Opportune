@@ -14,6 +14,7 @@ import sqlite3
 import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Mapping
 
 from api.app import HermesApi
 from api.frontend_assets import content_type_for, resolve_static_file
@@ -146,10 +147,33 @@ def make_handler(
     return _Handler
 
 
+# Port d'écoute par défaut de l'API (+ front en mode packagé). Surchargeable par
+# ``OPPORTUNE_API_PORT`` : la coquille Tauri lit la **même** variable pour savoir où joindre le
+# sidecar (cf. ``src-tauri/src/main.rs``), de sorte qu'un port occupé se règle à un seul endroit.
+DEFAULT_API_PORT = 8000
+
+
+def resolve_api_port(env: Mapping[str, str]) -> int:
+    """Port d'écoute de l'API depuis ``OPPORTUNE_API_PORT`` ; :data:`DEFAULT_API_PORT` sinon.
+
+    Tolérant comme les autres réglages de confort (cf. ``app.llm._env_int``) : absent, vide, non
+    entier ou hors de la plage valide des ports → défaut, plutôt qu'un refus de démarrer sur une
+    valeur mal saisie.
+    """
+    raw = env.get("OPPORTUNE_API_PORT")
+    if raw is None or raw.strip() == "":
+        return DEFAULT_API_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        return DEFAULT_API_PORT
+    return port if 1 <= port <= 65535 else DEFAULT_API_PORT
+
+
 def create_server(
     api: HermesApi,
     host: str = "127.0.0.1",
-    port: int = 8000,
+    port: int = DEFAULT_API_PORT,
     static_dir: Path | None = None,
 ) -> HTTPServer:
     """Crée un serveur HTTP servant ``api`` (non démarré ; appeler ``serve_forever``).
@@ -165,7 +189,9 @@ def create_server(
     return HTTPServer((host, port), make_handler(api, static_dir))
 
 
-def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
+def assemble_api(
+    conn, auth: "LocalAuthProvider", searches=None, settings_dir: "Path | None" = None
+) -> HermesApi:
     """Compose l'API **de production** : orchestrateur + actions + **identité locale**.
 
     ``auth`` est **obligatoire** : le point d'entrée réseau ne sert jamais l'API en mode
@@ -176,6 +202,10 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
     dont ``auth`` dérive le périmètre, pour que le CRUD « recherche » (/searches) et l'auth
     partagent une seule source de vérité. Optionnel pour rester compatible avec les appelants
     existants ; ``main`` le fournit toujours.
+
+    ``settings_dir`` est le dossier des **réglages** (clés Adzuna, flux RSS) de cet espace. Par
+    défaut le dossier de données de l'app (espace réel) ; la démo reçoit un sous-dossier dédié
+    pour que ses réglages soient **isolés** du réel (ni partage, ni fuite d'un espace à l'autre).
     """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
@@ -269,40 +299,72 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         default_credentials_path,
         resolve_adzuna_credentials,
     )
+    from importlib.util import find_spec
+
     from app.adzuna_source import build_adzuna_source
     from app.collection_jobs import CollectionJobRegistry, ProgressCallback
     from app.collection_runner import run_collection
     from app.db import connect, database_path
     from app.offer_collection import CollectionReport
+    from app.rss_feeds_store import RssFeedsStore, default_rss_feeds_path
+    from app.rss_source import build_rss_source
 
     job_db_path = database_path(conn)
     # Identifiants Adzuna saisis par l'utilisateur (OPP-222), rangés dans le dossier de données de
     # l'app (secret, hors dépôt). Le même fichier sert les deux espaces (clés propres à la machine).
-    adzuna_credentials = AdzunaCredentialsStore(default_credentials_path())
+    adzuna_credentials = AdzunaCredentialsStore(default_credentials_path(settings_dir))
+    # URLs de flux RSS saisies par l'utilisateur (OPP-195) : faute de flux FR gratuit par défaut,
+    # la source RSS n'est alimentée que par ces URLs (non secrètes, relues telles quelles dans l'UI).
+    rss_feeds = RssFeedsStore(default_rss_feeds_path(settings_dir))
 
     def collection_runner(
         *,
+        source: str,
         what: str,
         where: str,
         max_offers: int,
         on_progress: ProgressCallback,
         should_cancel: Callable[[], bool],
     ) -> CollectionReport:
-        filters = {k: v for k, v in (("what", what), ("where", where)) if v}
         job_conn = connect(job_db_path)
         try:
             job_offers = OfferStore(job_conn)
             try:
-                credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
-                source = build_adzuna_source(
-                    credentials, filters=filters or None, max_offers=max_offers
-                )
+                if source == "rss":
+                    # Flux saisis par l'utilisateur ; ``what``/``where`` ne s'appliquent pas ici.
+                    feeds = rss_feeds.load()
+                    if not feeds:
+                        return CollectionReport(
+                            0, 0, 0, (),
+                            source_error="Aucun flux RSS configuré : ajoutez des URLs de flux dans les Réglages.",
+                        )
+                    # Le nettoyage HTML du contenu RSS exige l'extra ``scrape`` (BeautifulSoup) :
+                    # sans lui, chaque offre échouerait. On échoue vite et clair (cf. rss_runner).
+                    if find_spec("bs4") is None:
+                        return CollectionReport(
+                            0, 0, 0, (),
+                            source_error="Collecte RSS indisponible : le composant de nettoyage HTML n'est pas installé.",
+                        )
+                    collection_source = build_rss_source(feeds, max_offers=max_offers)
+                elif source == "adzuna":
+                    filters = {k: v for k, v in (("what", what), ("where", where)) if v}
+                    credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
+                    collection_source = build_adzuna_source(
+                        credentials, filters=filters or None, max_offers=max_offers
+                    )
+                else:
+                    # La source est déjà validée en amont (``_collect_source`` : 400 sinon) ; ce
+                    # garde-fou évite qu'une **nouvelle** source ajoutée à la liste sans branche
+                    # ici ne retombe silencieusement sur Adzuna et collecte la mauvaise source.
+                    return CollectionReport(
+                        0, 0, 0, (), source_error=f"Source de collecte inconnue : {source}."
+                    )
             except AdzunaError as exc:
                 return CollectionReport(
                     0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}"
                 )
             return run_collection(
-                source,
+                collection_source,
                 llm_client=llm_client,
                 store=job_offers,
                 on_progress=on_progress,
@@ -345,6 +407,7 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         searches=searches,
         llm_setup=llm_setup,
         adzuna_credentials=adzuna_credentials,
+        rss_feeds=rss_feeds,
         conn=conn,
     )
 
@@ -368,7 +431,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from app.db import connect
     from api.app import Response
     from app.candidate_registry import CandidateRegistry
-    from app.demo_candidate import DEMO_CANDIDATE_ID, reset_demo, seed_demo_candidate
+    from app.demo_candidate import reset_demo, seed_demo_candidate
     from app.profile_store import ProfileStore
     from api.space_router import SpaceRouter
 
@@ -406,23 +469,36 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
             if demo_db != ":memory:":
                 Path(demo_db).unlink(missing_ok=True)
             raise
-    # Périmètre démo : son unique candidat vit aussi dans le registre (OPP-183). On garantit le
-    # slot au boot (idempotent) — vrai même pour une base démo antérieure à OPP-183, ou après un
-    # « repartir de zéro » qui conserve le slot vide pour l'onboarding.
+    # Périmètre démo : son candidat vitrine est posé par le **seed** (premier lancement et
+    # « Restaurer l'exemple »). On ne force **plus** le slot au boot (OPP-195) : après un
+    # « repartir de zéro », le périmètre doit rester vide, y compris au redémarrage — le
+    # sélecteur invite alors à créer une nouvelle recherche, plutôt que de ressusciter « Alex Demo ».
     demo_registry = CandidateRegistry(demo_conn)
-    demo_registry.ensure([DEMO_CANDIDATE_ID])
+    # Réglages de la démo **isolés** dans un sous-dossier dédié (OPP-195) : les clés Adzuna et les
+    # flux RSS saisis dans « Mon espace » ne doivent ni être partagés, ni fuiter vers la démo.
     demo = assemble_api(
-        demo_conn, build_local_auth(demo_registry.list_ids), searches=demo_registry
+        demo_conn,
+        build_local_auth(demo_registry.list_ids),
+        searches=demo_registry,
+        settings_dir=user_data_dir() / "demo",
     )
 
     # Commandes d'espace démo (OPP-182), portées par le routeur donc toujours ciblées sur la
     # base démo : « repartir de zéro » (vider) et « restaurer l'exemple » (vitrine canonique).
+    # Le vidage emporte aussi les **réglages** de la démo (OPP-195) : repartir de zéro ne doit
+    # rien conserver, clés Adzuna et flux RSS compris.
+    def _clear_demo_settings() -> None:
+        demo.adzuna_credentials.clear()
+        demo.rss_feeds.clear()
+
     def _reset_demo() -> Response:
         reset_demo(demo_conn)
+        _clear_demo_settings()
         return Response(200, {"status": "reset"})
 
     def _restore_demo() -> Response:
         reset_demo(demo_conn)
+        _clear_demo_settings()
         seed_demo_candidate(demo_conn)
         return Response(200, {"status": "restored"})
 
@@ -436,7 +512,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from api.frontend_assets import frontend_dist_dir
 
     static_dir = frontend_dist_dir()
-    server = create_server(router, static_dir=static_dir)
+    server = create_server(router, port=resolve_api_port(os.environ), static_dir=static_dir)
     host, port = server.server_address
     if static_dir is not None:
         print(f"Opportune à l'écoute sur http://{host}:{port} (front + API)")

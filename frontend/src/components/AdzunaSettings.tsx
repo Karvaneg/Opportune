@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAdzunaSettings, useSaveAdzunaSettings } from "../api/settings";
 import { useIsReviewer } from "../auth/roles";
-import { ErrorNotice, Loading } from "./States";
+import { ErrorNotice, Hint, Loading } from "./States";
 
 /**
  * Réglage des identifiants Adzuna (OPP-222) : l'utilisateur saisit ses propres `app_id` + `app_key`
@@ -21,11 +21,7 @@ export function AdzunaSettings() {
   const [appKey, setAppKey] = useState("");
 
   if (!isReviewer) {
-    return (
-      <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
-        Un reviewer peut renseigner les clés Adzuna.
-      </p>
-    );
+    return <Hint>Un reviewer peut renseigner les clés Adzuna.</Hint>;
   }
 
   if (isPending) return <Loading label="Chargement des réglages…" />;
@@ -63,21 +59,45 @@ export function AdzunaSettings() {
         </span>
       </div>
 
-      <p className="text-sm text-ink-muted">
-        La collecte d'offres interroge Adzuna avec tes propres clés. Crée un compte gratuit sur{" "}
-        <a
-          href="https://developer.adzuna.com"
-          target="_blank"
-          rel="noreferrer"
-          className="font-medium text-brand hover:underline"
-        >
-          developer.adzuna.com
-        </a>{" "}
-        pour obtenir ton <code className="rounded bg-ink/5 px-1 py-0.5">app_id</code> et ta{" "}
-        <code className="rounded bg-ink/5 px-1 py-0.5">app_key</code>. Elles sont stockées
-        localement sur ta machine, jamais envoyées ailleurs.
-        {data?.configured && " Pour les remplacer, ressaisis les deux clés."}
-      </p>
+      <div className="space-y-2 text-sm text-ink-muted">
+        <p>
+          La collecte d'offres interroge Adzuna avec tes propres clés, gratuites. Sans elles, tu
+          peux explorer l'espace Démo ou coller des offres à la main ; pour récupérer de vraies
+          offres, renseigne-les en trois étapes :
+        </p>
+        <ol className="list-decimal space-y-1 pl-5">
+          <li>
+            Crée un compte gratuit sur{" "}
+            <a
+              href="https://developer.adzuna.com/signup"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-brand hover:underline"
+            >
+              developer.adzuna.com
+            </a>
+            .
+          </li>
+          <li>
+            Une fois connecté, ouvre{" "}
+            <a
+              href="https://developer.adzuna.com/admin/access_details"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-brand hover:underline"
+            >
+              Access details
+            </a>{" "}
+            : ton <code className="rounded bg-ink/5 px-1 py-0.5">app_id</code> et ta{" "}
+            <code className="rounded bg-ink/5 px-1 py-0.5">app_key</code> y sont affichés.
+          </li>
+          <li>Copie-les dans les champs ci-dessous, puis enregistre.</li>
+        </ol>
+        <p>
+          Les clés sont stockées localement sur ta machine, jamais envoyées ailleurs.
+          {data?.configured && " Pour les remplacer, ressaisis les deux clés."}
+        </p>
+      </div>
 
       <div className="space-y-3">
         <label className="block text-sm font-medium text-ink">
