@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRssSettings, useSaveRssSettings, type RssSettings as RssData } from "../api/settings";
 import { useIsReviewer } from "../auth/roles";
-import { ErrorNotice, Loading } from "./States";
+import { ErrorNotice, Hint, Loading } from "./States";
 
 /**
  * Réglage des flux RSS (OPP-195) : l'utilisateur colle les URLs des flux d'offres qu'il veut
@@ -19,11 +19,7 @@ export function RssSettings() {
   const { data, isPending, isError, error } = useRssSettings();
 
   if (!isReviewer) {
-    return (
-      <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
-        Un reviewer peut renseigner les flux RSS.
-      </p>
-    );
+    return <Hint>Un reviewer peut renseigner les flux RSS.</Hint>;
   }
 
   if (isPending) return <Loading label="Chargement des réglages…" />;

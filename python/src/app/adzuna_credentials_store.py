@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Mapping
 
 from app.adzuna_client import AdzunaAuthError, AdzunaCredentials, credentials_from_env
+from app.json_file_store import load_json_object
 from app.paths import user_data_dir
 
 # Nom du fichier de secrets dans le dossier de données de l'app.
@@ -46,15 +47,8 @@ class AdzunaCredentialsStore:
         Tolérant par conception : toute anomalie de lecture (absent, JSON invalide, champs
         manquants/vides) est traitée comme « pas d'identifiants » plutôt que remontée en erreur.
         """
-        try:
-            raw = self._path.read_text(encoding="utf-8")
-        except OSError:
-            return None
-        try:
-            data = json.loads(raw)
-        except (ValueError, UnicodeDecodeError):
-            return None
-        if not isinstance(data, dict):
+        data = load_json_object(self._path)
+        if data is None:
             return None
         app_id = str(data.get("app_id") or "").strip()
         app_key = str(data.get("app_key") or "").strip()
@@ -74,19 +68,18 @@ class AdzunaCredentialsStore:
             raise ValueError("app_id et app_key sont requis (clés Adzuna)")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps({"app_id": app_id, "app_key": app_key})
-        # Création du fichier **directement** en permissions propriétaire (0o600) via ``os.open`` :
-        # un secret ne doit à aucun moment être lisible par d'autres comptes, pas même dans la
-        # fenêtre entre une écriture et un ``chmod`` différé. Le mode passé à ``O_CREAT`` ne vaut
-        # que pour une création ; on ``chmod`` ensuite pour couvrir le cas d'un fichier préexistant
-        # aux permissions plus larges. Sans effet notable sous Windows (ACL), mais inoffensif — le
-        # dossier de données y est déjà par-utilisateur (AppData).
-        fd = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # Création **neuve** en permissions propriétaire (0o600) : un secret ne doit à aucun moment
+        # être lisible par d'autres comptes. Le mode passé à ``os.open`` ne s'applique qu'à une
+        # vraie création, pas à un fichier réouvert en place. On **supprime donc d'abord** tout
+        # fichier préexistant (qui pourrait traîner des permissions plus larges), puis on crée avec
+        # ``O_EXCL`` : le 0o600 est ainsi garanti par la création elle-même, sans dépendre d'un
+        # ``chmod`` ultérieur (lequel échoue en silence sur certains montages, laissant le secret
+        # lisible). Sans effet notable sous Windows (ACL), mais inoffensif — le dossier de données
+        # y est déjà par-utilisateur (AppData).
+        self._path.unlink(missing_ok=True)
+        fd = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(payload)
-        try:
-            os.chmod(self._path, 0o600)
-        except OSError:
-            pass
 
     def is_configured(self) -> bool:
         """Vrai si des identifiants exploitables sont stockés."""

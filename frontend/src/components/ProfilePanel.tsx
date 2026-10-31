@@ -3,7 +3,7 @@ import { useProfile, useUpdateProfileSkills, useUploadCv } from "../api/profile"
 import { ApiHttpError } from "../api/client";
 import { useIsReviewer } from "../auth/roles";
 import { ProfileExperiences } from "./ProfileExperiences";
-import { ErrorNotice, Loading } from "./States";
+import { ErrorNotice, Hint, Loading } from "./States";
 
 /** Lit un fichier en base64 (sans le préfixe `data:…`), pour l'envoyer dans le corps JSON.
  * Via `FileReader` : disponible dans tout navigateur (et sous jsdom en test). */
@@ -129,12 +129,12 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
       </div>
 
       {isEmptyProfile && (
-        <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
+        <Hint>
           Ton profil est encore vide.{" "}
           {isReviewer
             ? "Importe ton CV (PDF) ci-dessous pour reconstituer automatiquement tes compétences et ton parcours."
             : "Un reviewer peut importer un CV pour le reconstituer."}
-        </p>
+        </Hint>
       )}
 
       {isReviewer && (

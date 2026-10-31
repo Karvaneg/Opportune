@@ -1,4 +1,5 @@
 import type { LlmNotReadyReason } from "../api/system";
+import { Hint } from "./States";
 
 /**
  * Explique pourquoi une action est désactivée tant que le LLM local n'est pas prêt (OPP-195) :
@@ -8,10 +9,10 @@ import type { LlmNotReadyReason } from "../api/system";
  */
 export function LlmRequiredNotice({ reason }: { reason: LlmNotReadyReason }) {
   return (
-    <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
+    <Hint>
       {reason === "unreachable"
         ? "L'assistant local (Ollama) est injoignable : cette action le requiert. Démarre-le, puis réessaie depuis le bandeau en haut."
         : "L'assistant local se prépare (installation du modèle, voir le bandeau en haut) : cette action sera disponible dès qu'il est prêt."}
-    </p>
+    </Hint>
   );
 }

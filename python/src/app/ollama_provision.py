@@ -24,7 +24,15 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Callable
 
-from app.llm import DEFAULT_MODEL, DEFAULT_OLLAMA_HOST
+from app.llm import DEFAULT_MODEL, ollama_url
+
+# Délai max (s) d'un appel **interactif** à Ollama (inventaire ``/api/tags``). Court à dessein :
+# le serveur HTTP est séquentiel (cf. ``api.server.create_server``), donc un probe qui traîne
+# fige **toute** l'API le temps du timeout. Ollama local répond à ``/api/tags`` instantanément
+# quand il tourne (sinon la connexion est refusée tout de suite) ; ce plafond ne mord que sur une
+# connexion acceptée mais sans réponse, cas où l'on préfère rendre la main vite. Le téléchargement
+# (``/api/pull``) garde, lui, un timeout large (c'est l'opération lente attendue).
+_PROBE_TIMEOUT_SECONDS = 5
 
 # Transport de requête simple (GET → dict), injectable pour tester sans réseau.
 JsonTransport = Callable[[str], dict]
@@ -93,7 +101,7 @@ class PullAggregator:
 
 def list_models(*, host: str | None = None, transport: JsonTransport | None = None) -> list[str]:
     """Noms des modèles présents dans Ollama (``/api/tags``). Lève :class:`OllamaUnreachable`."""
-    url = f"{(host or DEFAULT_OLLAMA_HOST).rstrip('/')}/api/tags"
+    url = ollama_url("api/tags", host=host)
     send = transport or _get_json
     body = send(url)
     return [m["name"] for m in body.get("models", []) if isinstance(m, dict) and "name" in m]
@@ -123,7 +131,7 @@ def pull_model(
     termine sans ``success`` rend un progrès porteur d'``error``.
     """
     target = model or DEFAULT_MODEL
-    url = f"{(host or DEFAULT_OLLAMA_HOST).rstrip('/')}/api/pull"
+    url = ollama_url("api/pull", host=host)
     stream = transport or _post_stream
     aggregator = PullAggregator()
     last = PullProgress("pulling manifest", 0.0)
@@ -138,8 +146,12 @@ def pull_model(
     return last
 
 
-def _get_json(url: str, *, timeout: int = 10) -> dict:
-    """GET JSON par défaut (``urllib``). Mappe une erreur réseau vers :class:`OllamaUnreachable`."""
+def _get_json(url: str, *, timeout: int = _PROBE_TIMEOUT_SECONDS) -> dict:
+    """GET JSON par défaut (``urllib``). Mappe une erreur réseau vers :class:`OllamaUnreachable`.
+
+    Timeout court (:data:`_PROBE_TIMEOUT_SECONDS`) : cet appel sert les probes **interactifs**
+    (statut/inventaire) sur un serveur HTTP séquentiel ; un probe lent gèlerait toute l'API.
+    """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 (URL interne)
             return json.loads(response.read().decode("utf-8"))

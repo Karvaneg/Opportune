@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.json_file_store import load_json_object
 from app.paths import user_data_dir
 
 # Nom du fichier de flux dans le dossier de données de l'app.
@@ -61,15 +62,8 @@ class RssFeedsStore:
 
         Tolérant par conception : toute anomalie de lecture est traitée comme « aucun flux ».
         """
-        try:
-            raw = self._path.read_text(encoding="utf-8")
-        except OSError:
-            return []
-        try:
-            data = json.loads(raw)
-        except (ValueError, UnicodeDecodeError):
-            return []
-        if not isinstance(data, dict):
+        data = load_json_object(self._path)
+        if data is None:
             return []
         return _clean(data.get("feeds"))
 

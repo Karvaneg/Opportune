@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Hint } from "./States";
 
 /**
  * Avertit que la récupération d'offres réelles échouera tant que les clés Adzuna ne sont pas
@@ -10,13 +11,13 @@ import { Link } from "react-router-dom";
  */
 export function AdzunaRequiredNotice() {
   return (
-    <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
+    <Hint>
       Les clés Adzuna ne sont pas renseignées : sans elles, la récupération d'offres réelles
       échouera. Ajoute-les depuis l'onglet{" "}
       <Link to="/reglages" className="font-medium text-brand hover:underline">
         Réglages
       </Link>
       . Tu peux aussi explorer l'espace Démo ou coller des offres à la main sans aucune clé.
-    </p>
+    </Hint>
   );
 }

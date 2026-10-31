@@ -14,6 +14,7 @@ import sqlite3
 import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Mapping
 
 from api.app import HermesApi
 from api.frontend_assets import content_type_for, resolve_static_file
@@ -146,10 +147,33 @@ def make_handler(
     return _Handler
 
 
+# Port d'écoute par défaut de l'API (+ front en mode packagé). Surchargeable par
+# ``OPPORTUNE_API_PORT`` : la coquille Tauri lit la **même** variable pour savoir où joindre le
+# sidecar (cf. ``src-tauri/src/main.rs``), de sorte qu'un port occupé se règle à un seul endroit.
+DEFAULT_API_PORT = 8000
+
+
+def resolve_api_port(env: Mapping[str, str]) -> int:
+    """Port d'écoute de l'API depuis ``OPPORTUNE_API_PORT`` ; :data:`DEFAULT_API_PORT` sinon.
+
+    Tolérant comme les autres réglages de confort (cf. ``app.llm._env_int``) : absent, vide, non
+    entier ou hors de la plage valide des ports → défaut, plutôt qu'un refus de démarrer sur une
+    valeur mal saisie.
+    """
+    raw = env.get("OPPORTUNE_API_PORT")
+    if raw is None or raw.strip() == "":
+        return DEFAULT_API_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        return DEFAULT_API_PORT
+    return port if 1 <= port <= 65535 else DEFAULT_API_PORT
+
+
 def create_server(
     api: HermesApi,
     host: str = "127.0.0.1",
-    port: int = 8000,
+    port: int = DEFAULT_API_PORT,
     static_dir: Path | None = None,
 ) -> HTTPServer:
     """Crée un serveur HTTP servant ``api`` (non démarré ; appeler ``serve_forever``).
@@ -322,11 +346,18 @@ def assemble_api(
                             source_error="Collecte RSS indisponible : le composant de nettoyage HTML n'est pas installé.",
                         )
                     collection_source = build_rss_source(feeds, max_offers=max_offers)
-                else:
+                elif source == "adzuna":
                     filters = {k: v for k, v in (("what", what), ("where", where)) if v}
                     credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
                     collection_source = build_adzuna_source(
                         credentials, filters=filters or None, max_offers=max_offers
+                    )
+                else:
+                    # La source est déjà validée en amont (``_collect_source`` : 400 sinon) ; ce
+                    # garde-fou évite qu'une **nouvelle** source ajoutée à la liste sans branche
+                    # ici ne retombe silencieusement sur Adzuna et collecte la mauvaise source.
+                    return CollectionReport(
+                        0, 0, 0, (), source_error=f"Source de collecte inconnue : {source}."
                     )
             except AdzunaError as exc:
                 return CollectionReport(
@@ -481,7 +512,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from api.frontend_assets import frontend_dist_dir
 
     static_dir = frontend_dist_dir()
-    server = create_server(router, static_dir=static_dir)
+    server = create_server(router, port=resolve_api_port(os.environ), static_dir=static_dir)
     host, port = server.server_address
     if static_dir is not None:
         print(f"Opportune à l'écoute sur http://{host}:{port} (front + API)")

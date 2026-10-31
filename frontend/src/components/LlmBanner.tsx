@@ -1,7 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
-  systemKeys,
   useLlmSetupProgress,
   useLlmStatus,
   useStartLlmSetup,
@@ -35,21 +33,19 @@ function LlmSetup({
   status: NonNullable<ReturnType<typeof useLlmStatus>["data"]>;
   onReady: () => void;
 }) {
-  const queryClient = useQueryClient();
   const start = useStartLlmSetup();
   // Un téléchargement déjà en cours au (re)montage (ex. changement de page) : on reprend le sondage.
   const [downloading, setDownloading] = useState(status.setup.state === "running");
   const progress = useLlmSetupProgress(downloading);
   const setup = progress.data ?? status.setup;
 
-  // Dès que le modèle est prêt, on réinterroge le statut : `model_present` passe à vrai et le
-  // bandeau disparaît.
+  // Dès que le modèle est prêt, on réinterroge le statut (`onReady` = refetch de `llmStatus`) :
+  // `model_present` passe à vrai et le bandeau disparaît.
   useEffect(() => {
     if (setup.state === "done") {
-      queryClient.invalidateQueries({ queryKey: systemKeys.llmStatus });
       onReady();
     }
-  }, [setup.state, queryClient, onReady]);
+  }, [setup.state, onReady]);
 
   if (!status.ollama_reachable) {
     return (

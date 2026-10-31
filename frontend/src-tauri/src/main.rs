@@ -22,9 +22,26 @@ use std::time::{Duration, Instant};
 
 use tauri::{RunEvent, WebviewUrl, WebviewWindowBuilder};
 
-/// Hôte/port où le sidecar sert le front + l'API (cf. `api.server`, port figé OPP-190).
-const API_ADDR: &str = "127.0.0.1:8000";
-const API_URL: &str = "http://127.0.0.1:8000/";
+/// Port d'écoute du sidecar (front + API), depuis `OPPORTUNE_API_PORT` (défaut 8000). La **même**
+/// variable pilote le port côté Python (`api.server.resolve_api_port`) ; le sidecar en hérite via
+/// l'environnement de ce process, donc un port occupé se règle à un seul endroit pour toute l'app.
+fn api_port() -> u16 {
+    std::env::var("OPPORTUNE_API_PORT")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u16>().ok())
+        .filter(|&port| port != 0)
+        .unwrap_or(8000)
+}
+
+/// Adresse TCP où sonder la disponibilité du sidecar (`127.0.0.1:<port>`).
+fn api_addr() -> String {
+    format!("127.0.0.1:{}", api_port())
+}
+
+/// URL chargée dans la fenêtre une fois le sidecar prêt (`http://127.0.0.1:<port>/`).
+fn api_url() -> String {
+    format!("http://127.0.0.1:{}/", api_port())
+}
 
 /// Poignée **globale** du sidecar, atteignable depuis les trois chemins d'arrêt : fermeture
 /// de fenêtre (`RunEvent::ExitRequested`), signal (SIGINT/SIGTERM via `ctrlc`) et filet de fin
@@ -139,7 +156,7 @@ fn main() {
             // pour ne pas laisser le process API orphelin tenir le port (prochain lancement cassé).
             let handle = app.handle().clone();
             std::thread::spawn(move || {
-                let ready = wait_until_ready(API_ADDR, Duration::from_secs(20));
+                let ready = wait_until_ready(&api_addr(), Duration::from_secs(20));
                 let ui = handle.clone();
                 let _ = handle.run_on_main_thread(move || {
                     if !ready {
@@ -151,7 +168,7 @@ fn main() {
                     let opened = WebviewWindowBuilder::new(
                         &ui,
                         "main",
-                        WebviewUrl::External(API_URL.parse().unwrap()),
+                        WebviewUrl::External(api_url().parse().unwrap()),
                     )
                     .title("Opportune")
                     .inner_size(1280.0, 800.0)

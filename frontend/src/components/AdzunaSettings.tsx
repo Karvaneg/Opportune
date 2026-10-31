@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAdzunaSettings, useSaveAdzunaSettings } from "../api/settings";
 import { useIsReviewer } from "../auth/roles";
-import { ErrorNotice, Loading } from "./States";
+import { ErrorNotice, Hint, Loading } from "./States";
 
 /**
  * Réglage des identifiants Adzuna (OPP-222) : l'utilisateur saisit ses propres `app_id` + `app_key`
@@ -21,11 +21,7 @@ export function AdzunaSettings() {
   const [appKey, setAppKey] = useState("");
 
   if (!isReviewer) {
-    return (
-      <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
-        Un reviewer peut renseigner les clés Adzuna.
-      </p>
-    );
+    return <Hint>Un reviewer peut renseigner les clés Adzuna.</Hint>;
   }
 
   if (isPending) return <Loading label="Chargement des réglages…" />;

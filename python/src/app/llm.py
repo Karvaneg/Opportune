@@ -93,6 +93,16 @@ def resolve_llm_timeout(env: Mapping[str, str]) -> int:
 Transport = Callable[[str, dict], dict]
 
 
+def ollama_url(path: str, *, host: str | None = None) -> str:
+    """Compose l'URL d'un endpoint Ollama (``/api/...``) sur l'hôte configuré.
+
+    Centralise la résolution de l'hôte (défaut :data:`DEFAULT_OLLAMA_HOST`) et le nettoyage du
+    slash final, partagés par le client de génération et le provisioning du modèle
+    (:mod:`app.ollama_provision`) — un seul endroit à changer si l'hôte évolue (proxy, etc.).
+    """
+    return f"{(host or DEFAULT_OLLAMA_HOST).rstrip('/')}/{path.lstrip('/')}"
+
+
 def build_generate_request(
     prompt: str,
     *,
@@ -121,7 +131,7 @@ def build_generate_request(
     if not isinstance(prompt, str) or prompt.strip() == "":
         raise ValueError("Le prompt est requis")
 
-    url = f"{(host or DEFAULT_OLLAMA_HOST).rstrip('/')}/api/generate"
+    url = ollama_url("api/generate", host=host)
     payload = {"model": model or DEFAULT_MODEL, "prompt": prompt, "stream": False}
     if fmt is not None:
         payload["format"] = fmt
