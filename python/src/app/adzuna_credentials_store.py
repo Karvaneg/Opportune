@@ -24,9 +24,14 @@ from app.paths import user_data_dir
 _FILENAME = "adzuna_credentials.json"
 
 
-def default_credentials_path() -> Path:
-    """Chemin du fichier d'identifiants Adzuna dans le dossier de données de l'app."""
-    return user_data_dir() / _FILENAME
+def default_credentials_path(data_dir: Path | None = None) -> Path:
+    """Chemin du fichier d'identifiants Adzuna dans un dossier de données.
+
+    ``data_dir`` sélectionne l'emplacement : le dossier de l'app par défaut (espace réel), ou un
+    sous-dossier propre à un autre espace (ex. la démo) — pour que les clés d'un espace ne
+    fuitent pas dans l'autre.
+    """
+    return (data_dir or user_data_dir()) / _FILENAME
 
 
 class AdzunaCredentialsStore:
@@ -86,6 +91,14 @@ class AdzunaCredentialsStore:
     def is_configured(self) -> bool:
         """Vrai si des identifiants exploitables sont stockés."""
         return self.load() is not None
+
+    def clear(self) -> None:
+        """Supprime les identifiants stockés (le fichier). Sans effet s'il est déjà absent.
+
+        Sert au « repartir de zéro » d'un espace : vider ses données doit aussi vider ses
+        réglages, sans quoi l'espace repartirait avec des clés héritées.
+        """
+        self._path.unlink(missing_ok=True)
 
 
 def resolve_adzuna_credentials(

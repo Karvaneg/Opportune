@@ -165,7 +165,9 @@ def create_server(
     return HTTPServer((host, port), make_handler(api, static_dir))
 
 
-def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
+def assemble_api(
+    conn, auth: "LocalAuthProvider", searches=None, settings_dir: "Path | None" = None
+) -> HermesApi:
     """Compose l'API **de production** : orchestrateur + actions + **identité locale**.
 
     ``auth`` est **obligatoire** : le point d'entrée réseau ne sert jamais l'API en mode
@@ -176,6 +178,10 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
     dont ``auth`` dérive le périmètre, pour que le CRUD « recherche » (/searches) et l'auth
     partagent une seule source de vérité. Optionnel pour rester compatible avec les appelants
     existants ; ``main`` le fournit toujours.
+
+    ``settings_dir`` est le dossier des **réglages** (clés Adzuna, flux RSS) de cet espace. Par
+    défaut le dossier de données de l'app (espace réel) ; la démo reçoit un sous-dossier dédié
+    pour que ses réglages soient **isolés** du réel (ni partage, ni fuite d'un espace à l'autre).
     """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
@@ -282,10 +288,10 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
     job_db_path = database_path(conn)
     # Identifiants Adzuna saisis par l'utilisateur (OPP-222), rangés dans le dossier de données de
     # l'app (secret, hors dépôt). Le même fichier sert les deux espaces (clés propres à la machine).
-    adzuna_credentials = AdzunaCredentialsStore(default_credentials_path())
+    adzuna_credentials = AdzunaCredentialsStore(default_credentials_path(settings_dir))
     # URLs de flux RSS saisies par l'utilisateur (OPP-195) : faute de flux FR gratuit par défaut,
     # la source RSS n'est alimentée que par ces URLs (non secrètes, relues telles quelles dans l'UI).
-    rss_feeds = RssFeedsStore(default_rss_feeds_path())
+    rss_feeds = RssFeedsStore(default_rss_feeds_path(settings_dir))
 
     def collection_runner(
         *,
@@ -437,18 +443,31 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     # « repartir de zéro » qui conserve le slot vide pour l'onboarding.
     demo_registry = CandidateRegistry(demo_conn)
     demo_registry.ensure([DEMO_CANDIDATE_ID])
+    # Réglages de la démo **isolés** dans un sous-dossier dédié (OPP-195) : les clés Adzuna et les
+    # flux RSS saisis dans « Mon espace » ne doivent ni être partagés, ni fuiter vers la démo.
     demo = assemble_api(
-        demo_conn, build_local_auth(demo_registry.list_ids), searches=demo_registry
+        demo_conn,
+        build_local_auth(demo_registry.list_ids),
+        searches=demo_registry,
+        settings_dir=user_data_dir() / "demo",
     )
 
     # Commandes d'espace démo (OPP-182), portées par le routeur donc toujours ciblées sur la
     # base démo : « repartir de zéro » (vider) et « restaurer l'exemple » (vitrine canonique).
+    # Le vidage emporte aussi les **réglages** de la démo (OPP-195) : repartir de zéro ne doit
+    # rien conserver, clés Adzuna et flux RSS compris.
+    def _clear_demo_settings() -> None:
+        demo.adzuna_credentials.clear()
+        demo.rss_feeds.clear()
+
     def _reset_demo() -> Response:
         reset_demo(demo_conn)
+        _clear_demo_settings()
         return Response(200, {"status": "reset"})
 
     def _restore_demo() -> Response:
         reset_demo(demo_conn)
+        _clear_demo_settings()
         seed_demo_candidate(demo_conn)
         return Response(200, {"status": "restored"})
 

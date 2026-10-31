@@ -22,9 +22,14 @@ from app.paths import user_data_dir
 _FILENAME = "rss_feeds.json"
 
 
-def default_rss_feeds_path() -> Path:
-    """Chemin du fichier de flux RSS dans le dossier de données de l'app."""
-    return user_data_dir() / _FILENAME
+def default_rss_feeds_path(data_dir: Path | None = None) -> Path:
+    """Chemin du fichier de flux RSS dans un dossier de données.
+
+    ``data_dir`` sélectionne l'emplacement : le dossier de l'app par défaut (espace réel), ou un
+    sous-dossier propre à un autre espace (ex. la démo) — pour que les réglages d'un espace ne
+    fuitent pas dans l'autre.
+    """
+    return (data_dir or user_data_dir()) / _FILENAME
 
 
 def _clean(urls: object) -> list[str]:
@@ -85,3 +90,11 @@ class RssFeedsStore:
     def is_configured(self) -> bool:
         """Vrai si au moins une URL de flux exploitable est stockée."""
         return bool(self.load())
+
+    def clear(self) -> None:
+        """Supprime les flux stockés (le fichier). Sans effet s'il est déjà absent.
+
+        Sert au « repartir de zéro » d'un espace : vider ses données doit aussi vider ses
+        réglages, sans quoi l'espace repartirait avec des flux hérités.
+        """
+        self._path.unlink(missing_ok=True)

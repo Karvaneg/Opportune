@@ -67,3 +67,26 @@ def test_is_configured_reflects_presence_of_feeds(tmp_path):
     store.save(["https://example.com/feed"])
 
     assert store.is_configured() is True
+
+
+def test_clear_removes_stored_feeds(tmp_path):
+    store = RssFeedsStore(tmp_path / "rss.json")
+    store.save(["https://example.com/feed"])
+
+    store.clear()
+
+    assert store.load() == []
+
+
+def test_clear_is_noop_when_file_absent(tmp_path):
+    store = RssFeedsStore(tmp_path / "absent.json")
+
+    store.clear()  # ne doit pas lever
+
+    assert store.load() == []
+
+
+def test_default_path_honours_data_dir(tmp_path):
+    from app.rss_feeds_store import default_rss_feeds_path
+
+    assert default_rss_feeds_path(tmp_path).parent == tmp_path
