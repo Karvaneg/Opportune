@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from app.llm_setup_service import LLMSetupService
     from app.offer_collection import CollectionReport
     from app.profile_service import ProfileService
+    from app.rss_feeds_store import RssFeedsStore
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.candidate_profile import ProfileValidationError
@@ -177,6 +178,7 @@ _COLLECT_JOB = re.compile(r"^/collect/(?P<job_id>[^/]+)$")
 _LLM_STATUS = re.compile(r"^/system/llm/status$")
 _LLM_SETUP = re.compile(r"^/system/llm/setup$")
 _SETTINGS_ADZUNA = re.compile(r"^/settings/adzuna$")
+_SETTINGS_RSS = re.compile(r"^/settings/rss$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -255,6 +257,7 @@ class HermesApi:
         searches: "CandidateRegistry | None" = None,
         llm_setup: "LLMSetupService | None" = None,
         adzuna_credentials: "AdzunaCredentialsStore | None" = None,
+        rss_feeds: "RssFeedsStore | None" = None,
         conn: "sqlite3.Connection | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
@@ -296,6 +299,10 @@ class HermesApi:
         # données de l'app. Optionnel : si absent, /settings/adzuna n'est pas monté (404 neutre).
         # Les routes n'exposent jamais les clés (secret) — seulement l'état « configuré ».
         self.adzuna_credentials = adzuna_credentials
+        # URLs de flux RSS saisies par l'utilisateur (OPP-195) : store fichier dans le dossier de
+        # données de l'app. Optionnel : si absent, /settings/rss n'est pas monté (404 neutre).
+        # Contrairement aux clés Adzuna, ces URLs ne sont pas des secrets : les routes les relisent.
+        self.rss_feeds = rss_feeds
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
@@ -542,6 +549,16 @@ class HermesApi:
                 return self._get_adzuna_settings(user)
             self._require(method, "PUT", path)
             return self._put_adzuna_settings(body, user)
+
+        if _SETTINGS_RSS.match(path):
+            # URLs de flux RSS saisies par l'utilisateur (OPP-195). Montée uniquement si le store
+            # est câblé (sinon 404 neutre). GET : les URLs enregistrées ; PUT : la nouvelle liste.
+            if self.rss_feeds is None:
+                raise self._not_found(user, "réglages RSS non disponibles")
+            if method.upper() == "GET":
+                return self._get_rss_settings(user)
+            self._require(method, "PUT", path)
+            return self._put_rss_settings(body, user)
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
@@ -1155,13 +1172,14 @@ class HermesApi:
         Si une collecte est déjà en cours (unicité de l'écrivain), on répond **409**.
         """
         self._guard_reviewer(user)
+        source = self._collect_source(body)
         what = self._collect_param(body, "what")
         where = self._collect_param(body, "where")
         max_offers = self._collect_max(body)
         assert self.collections is not None  # garanti par le dispatch (404 sinon)
         try:
             job_id = self.collections.start(
-                what=what, where=where, max_offers=max_offers
+                source=source, what=what, where=where, max_offers=max_offers
             )
         except CollectionAlreadyRunning as exc:
             raise ApiError(409, str(exc)) from exc
@@ -1196,6 +1214,35 @@ class HermesApi:
         except ValueError as exc:
             raise ApiError(400, str(exc)) from exc
         return Response(200, {"configured": True})
+
+    def _get_rss_settings(self, user: User | None) -> Response:
+        """URLs de flux RSS enregistrées (OPP-195) : ``{"feeds": [...]}``.
+
+        Réservé au ``reviewer`` (curation du pool, comme la collecte). Les URLs ne sont **pas**
+        des secrets : on les renvoie telles quelles pour que l'UI puisse les réafficher et les
+        éditer (différence avec Adzuna, qui ne rend jamais que l'état « configuré »).
+        """
+        self._guard_reviewer(user)
+        assert self.rss_feeds is not None  # garanti par le dispatch (404 sinon)
+        return Response(200, {"feeds": self.rss_feeds.load()})
+
+    def _put_rss_settings(self, body: dict, user: User | None) -> Response:
+        """Enregistre la liste des URLs de flux RSS saisies par l'utilisateur (OPP-195).
+
+        Réservé au ``reviewer``. ``feeds`` doit être une liste (400 sinon) ; le store ne retient
+        que les URLs ``http(s)`` exploitables et refuse une liste qui n'en contient aucune (400).
+        Réponse : la liste **réellement enregistrée** (après nettoyage), que l'UI réaffiche.
+        """
+        self._guard_reviewer(user)
+        assert self.rss_feeds is not None  # garanti par le dispatch (404 sinon)
+        feeds = body.get("feeds")
+        if not isinstance(feeds, list):
+            raise ApiError(400, "feeds doit être une liste d'URLs")
+        try:
+            saved = self.rss_feeds.save(feeds)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        return Response(200, {"feeds": saved})
 
     def _post_collect_cancel(self, job_id: str, user: User | None) -> Response:
         """Demande l'arrêt **coopératif** d'une collecte en cours (OPP-209).
@@ -1238,6 +1285,19 @@ class HermesApi:
         if job is None:
             raise self._not_found(user, "collecte introuvable")
         return Response(200, self._serialize_job(job))
+
+    @staticmethod
+    def _collect_source(body: dict) -> str:
+        """Connecteur à employer pour la passe : ``adzuna`` (défaut) ou ``rss`` ; 400 sinon.
+
+        Le défaut préserve le contrat historique (un POST /collect sans ``source`` reste une
+        collecte Adzuna). Une valeur inconnue est refusée tôt (400) plutôt que silencieusement
+        retombée sur Adzuna, qui masquerait une erreur d'appel côté client.
+        """
+        raw = body.get("source", "adzuna")
+        if raw not in ("adzuna", "rss"):
+            raise ApiError(400, "source doit être 'adzuna' ou 'rss'")
+        return raw
 
     @staticmethod
     def _collect_param(body: dict, key: str) -> str:

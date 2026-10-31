@@ -253,6 +253,47 @@ describe("OffersPage", () => {
     expect(posts[0].body).toEqual({ what: "python", where: "Paris" });
   });
 
+  it("propose « Collecter mes flux RSS » quand des flux sont configurés et poste source=rss (OPP-195)", async () => {
+    const posts: Array<{ body: unknown }> = [];
+    const job = {
+      job_id: "job-rss", status: "done", error: null,
+      progress: noProgress,
+      report: {
+        collected: 2, stored: 2, duplicates: 0, failures: 0, source_error: null,
+        enriched: 0, enriched_recovered: 0,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/rss")) return res(200, { feeds: ["https://a.example/f"] });
+        if (s.includes("/collect")) {
+          if (options?.method === "POST") {
+            posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
+            return res(202, { job_id: "job-rss" });
+          }
+          if (s.split("?")[0].endsWith("/collect")) return res(200, { job: null });
+          return res(200, job);
+        }
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Collecter mes flux RSS" }),
+    );
+
+    expect(await screen.findByText(/2 nouvelles offres/)).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toEqual({ source: "rss" });
+  });
+
   it("sonde jusqu'à la fin : progression en cours puis bilan final", async () => {
     let getCalls = 0;
     const running = {

@@ -64,7 +64,7 @@ def test_post_collect_returns_202_with_job_id():
 
 
 def test_poll_done_job_serializes_report():
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=5, stored=3, duplicates=2)
 
     api = _api(runner)
@@ -86,7 +86,7 @@ def test_poll_done_job_serializes_report():
 
 def test_poll_reports_progress_snapshot():
     # L'avancement publié par le runner via ``on_progress`` est lisible dans l'état du job.
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         on_progress(
             CollectionProgress(
                 collected=4, stored=1, duplicates=2, failures=1, enriched=0, enriched_recovered=0
@@ -109,7 +109,7 @@ def test_poll_reports_progress_snapshot():
 
 def test_poll_serializes_enrichment_counts():
     # OPP-169 : les compteurs d'enrichissement non nuls remontent dans le bilan du job.
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=4, stored=4, duplicates=0, enriched=2, enriched_recovered=1)
 
     api = _api(runner)
@@ -122,7 +122,7 @@ def test_poll_serializes_enrichment_counts():
 def test_start_passes_criteria_and_default_max():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where, max_offers=max_offers)
         return _report()
 
@@ -130,10 +130,37 @@ def test_start_passes_criteria_and_default_max():
     assert captured == {"what": "python", "where": "Paris", "max_offers": _COLLECT_MAX_DEFAULT}
 
 
+def test_start_defaults_source_to_adzuna():
+    captured = {}
+
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        captured["source"] = source
+        return _report()
+
+    _start(_api(runner), {})
+    assert captured["source"] == "adzuna"
+
+
+def test_start_forwards_rss_source():
+    captured = {}
+
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        captured["source"] = source
+        return _report()
+
+    _start(_api(runner), {"source": "rss"})
+    assert captured["source"] == "rss"
+
+
+def test_start_rejects_unknown_source():
+    resp, _ = _start(_api(lambda **k: _report()), {"source": "linkedin"})
+    assert resp.status == 400
+
+
 def test_start_defaults_empty_criteria():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where)
         return _report()
 
@@ -144,7 +171,7 @@ def test_start_defaults_empty_criteria():
 def test_start_strips_criteria():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where)
         return _report()
 
@@ -155,7 +182,7 @@ def test_start_strips_criteria():
 def test_start_clamps_max_to_cap():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured["max_offers"] = max_offers
         return _report()
 
@@ -166,7 +193,7 @@ def test_start_clamps_max_to_cap():
 def test_start_honours_explicit_max_below_cap():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured["max_offers"] = max_offers
         return _report()
 
@@ -190,7 +217,7 @@ def test_source_error_surfaces_in_done_report_not_status():
     # Panne de la source (identifiants Adzuna manquants, quota…) : le runner rend un bilan
     # porteur de ``source_error`` — le job est ``done`` (pas ``failed``) et le détail est dans
     # le bilan. Une panne de source n'est pas un échec de job.
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=0, stored=0, duplicates=0, source_error="AdzunaAuthError: …")
 
     api = _api(runner)
@@ -201,7 +228,7 @@ def test_source_error_surfaces_in_done_report_not_status():
 
 
 def test_runner_exception_marks_job_failed():
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         raise RuntimeError("boom")
 
     api = _api(runner)
@@ -218,7 +245,7 @@ def test_done_report_counts_failures():
         CollectionFailure(raw=RawOffer(source="adzuna", raw_text="y", url="u2"), error="bam"),
     )
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=4, stored=1, duplicates=1, failures=failures)
 
     api = _api(runner)
@@ -232,7 +259,7 @@ def test_second_collect_while_running_returns_409():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         release.wait(timeout=5)
         return _report()
@@ -265,7 +292,7 @@ def test_cancel_running_job_returns_202_then_job_cancelled():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         while not should_cancel():
             if release.wait(0.01):
@@ -333,7 +360,7 @@ def test_get_active_collect_reflects_running_job():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         release.wait(timeout=5)
         return _report()

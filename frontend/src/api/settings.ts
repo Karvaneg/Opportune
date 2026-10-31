@@ -12,8 +12,14 @@ export interface AdzunaSettings {
   configured: boolean;
 }
 
+export interface RssSettings {
+  /** URLs des flux RSS saisies par l'utilisateur (non secrètes : relues telles quelles). */
+  feeds: string[];
+}
+
 export const settingsKeys = {
   adzuna: ["settings", "adzuna"] as const,
+  rss: ["settings", "rss"] as const,
 };
 
 /**
@@ -46,5 +52,34 @@ export function useSaveAdzunaSettings() {
     mutationFn: ({ appId, appKey }) =>
       apiPut<AdzunaSettings>("/settings/adzuna", { app_id: appId, app_key: appKey }),
     invalidateKeys: () => [settingsKeys.adzuna],
+  });
+}
+
+/**
+ * URLs des flux RSS enregistrées : `GET /settings/rss` → `{ feeds }`. Réservé au reviewer côté
+ * back (403 sinon) : on conditionne donc la requête au rôle (`enabled`), comme pour Adzuna.
+ */
+export function useRssSettings() {
+  const isReviewer = useIsReviewer();
+  return useQuery({
+    queryKey: settingsKeys.rss,
+    queryFn: () => apiFetch<RssSettings>("/settings/rss"),
+    enabled: isReviewer,
+  });
+}
+
+export interface SaveRssVariables {
+  feeds: string[];
+}
+
+/**
+ * Enregistre les URLs de flux RSS : `PUT /settings/rss` (OPP-195). Reviewer uniquement. Le back
+ * ne retient que les URLs `http(s)` exploitables et renvoie la liste réellement enregistrée. Au
+ * succès, invalide l'état pour le relire.
+ */
+export function useSaveRssSettings() {
+  return useApiMutation<RssSettings, SaveRssVariables>({
+    mutationFn: ({ feeds }) => apiPut<RssSettings>("/settings/rss", { feeds }),
+    invalidateKeys: () => [settingsKeys.rss],
   });
 }

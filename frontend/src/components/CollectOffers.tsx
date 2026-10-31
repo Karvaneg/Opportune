@@ -8,8 +8,9 @@ import {
   useStartCollect,
 } from "../api/offers";
 import { useProfileReady } from "../api/profile";
-import { useAdzunaSettings } from "../api/settings";
+import { useAdzunaSettings, useRssSettings } from "../api/settings";
 import { useLlmReady } from "../api/system";
+import type { CollectOffersVariables } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import type { CollectionReport } from "../api/types";
@@ -44,6 +45,10 @@ export function CollectOffers() {
   // Clés Adzuna (OPP-195) : la collecte réelle échoue sans elles. On prévient plutôt que de
   // bloquer — `configured` ne reflète que le store, pas un éventuel fallback `.env` de dev.
   const adzuna = useAdzunaSettings();
+  // Flux RSS saisis par l'utilisateur (OPP-195) : on propose une collecte « flux RSS » seulement
+  // s'il en a configuré au moins un (sinon la passe ne rapporterait qu'un `source_error`).
+  const rss = useRssSettings();
+  const hasRssFeeds = (rss.data?.feeds?.length ?? 0) > 0;
   // Chaque offre neuve passe par le LLM local (intake structuré) : on désactive la collecte tant
   // qu'il n'est pas prêt (OPP-195), en orientant vers le bandeau d'installation.
   const llm = useLlmReady();
@@ -93,17 +98,17 @@ export function CollectOffers() {
 
   if (!isReviewer) return null;
 
-  const submit = () =>
-    start.mutate(
-      { what: what.trim(), where: where.trim() },
-      {
-        onSuccess: (data) => {
-          setJobId(data.job_id);
-          // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
-          queryClient.invalidateQueries({ queryKey: activeCollectKey });
-        },
+  const launch = (variables: CollectOffersVariables) =>
+    start.mutate(variables, {
+      onSuccess: (data) => {
+        setJobId(data.job_id);
+        // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
+        queryClient.invalidateQueries({ queryKey: activeCollectKey });
       },
-    );
+    });
+  const submit = () => launch({ what: what.trim(), where: where.trim() });
+  // Collecte depuis les flux RSS configurés : `what`/`where` ne s'appliquent pas (OPP-195).
+  const submitRss = () => launch({ source: "rss" });
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-4">
@@ -141,6 +146,19 @@ export function CollectOffers() {
         >
           {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
         </button>
+        {/* Collecte depuis les flux RSS configurés (OPP-195) : proposée seulement si l'utilisateur
+            en a enregistré au moins un dans les Réglages. Même verrou que la collecte Adzuna
+            (profil + LLM requis, un seul job à la fois). */}
+        {hasRssFeeds && (
+          <button
+            type="button"
+            onClick={submitRss}
+            disabled={running || blocked}
+            className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/10 disabled:opacity-50"
+          >
+            Collecter mes flux RSS
+          </button>
+        )}
         {/* La progression d'une passe en cours est affichée par le bandeau global persistant
             (`CollectionBanner`, OPP-208) — on ne la duplique plus ici (OPP-215). Le bilan final
             et l'échec restent affichés à côté du bouton : le bandeau, lui, disparaît à la fin. */}

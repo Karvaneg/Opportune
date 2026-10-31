@@ -269,40 +269,65 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         default_credentials_path,
         resolve_adzuna_credentials,
     )
+    from importlib.util import find_spec
+
     from app.adzuna_source import build_adzuna_source
     from app.collection_jobs import CollectionJobRegistry, ProgressCallback
     from app.collection_runner import run_collection
     from app.db import connect, database_path
     from app.offer_collection import CollectionReport
+    from app.rss_feeds_store import RssFeedsStore, default_rss_feeds_path
+    from app.rss_source import build_rss_source
 
     job_db_path = database_path(conn)
     # Identifiants Adzuna saisis par l'utilisateur (OPP-222), rangés dans le dossier de données de
     # l'app (secret, hors dépôt). Le même fichier sert les deux espaces (clés propres à la machine).
     adzuna_credentials = AdzunaCredentialsStore(default_credentials_path())
+    # URLs de flux RSS saisies par l'utilisateur (OPP-195) : faute de flux FR gratuit par défaut,
+    # la source RSS n'est alimentée que par ces URLs (non secrètes, relues telles quelles dans l'UI).
+    rss_feeds = RssFeedsStore(default_rss_feeds_path())
 
     def collection_runner(
         *,
+        source: str,
         what: str,
         where: str,
         max_offers: int,
         on_progress: ProgressCallback,
         should_cancel: Callable[[], bool],
     ) -> CollectionReport:
-        filters = {k: v for k, v in (("what", what), ("where", where)) if v}
         job_conn = connect(job_db_path)
         try:
             job_offers = OfferStore(job_conn)
             try:
-                credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
-                source = build_adzuna_source(
-                    credentials, filters=filters or None, max_offers=max_offers
-                )
+                if source == "rss":
+                    # Flux saisis par l'utilisateur ; ``what``/``where`` ne s'appliquent pas ici.
+                    feeds = rss_feeds.load()
+                    if not feeds:
+                        return CollectionReport(
+                            0, 0, 0, (),
+                            source_error="Aucun flux RSS configuré : ajoutez des URLs de flux dans les Réglages.",
+                        )
+                    # Le nettoyage HTML du contenu RSS exige l'extra ``scrape`` (BeautifulSoup) :
+                    # sans lui, chaque offre échouerait. On échoue vite et clair (cf. rss_runner).
+                    if find_spec("bs4") is None:
+                        return CollectionReport(
+                            0, 0, 0, (),
+                            source_error="Collecte RSS indisponible : le composant de nettoyage HTML n'est pas installé.",
+                        )
+                    collection_source = build_rss_source(feeds, max_offers=max_offers)
+                else:
+                    filters = {k: v for k, v in (("what", what), ("where", where)) if v}
+                    credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
+                    collection_source = build_adzuna_source(
+                        credentials, filters=filters or None, max_offers=max_offers
+                    )
             except AdzunaError as exc:
                 return CollectionReport(
                     0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}"
                 )
             return run_collection(
-                source,
+                collection_source,
                 llm_client=llm_client,
                 store=job_offers,
                 on_progress=on_progress,
@@ -345,6 +370,7 @@ def assemble_api(conn, auth: "LocalAuthProvider", searches=None) -> HermesApi:
         searches=searches,
         llm_setup=llm_setup,
         adzuna_credentials=adzuna_credentials,
+        rss_feeds=rss_feeds,
         conn=conn,
     )
 
