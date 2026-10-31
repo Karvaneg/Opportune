@@ -74,17 +74,9 @@ function RssForm({ initialFeeds }: { initialFeeds: string[] }) {
       <div className="space-y-2 text-sm text-ink-muted">
         <p>
           Colle l'URL d'un flux RSS/Atom d'offres par ligne. La collecte « flux RSS » parcourt ces
-          flux et ajoute les offres neuves au catalogue. Les flux ouverts fiables sont surtout
-          orientés tech/remote (par ex.{" "}
-          <a
-            href="https://weworkremotely.com/remote-jobs.rss"
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-brand hover:underline"
-          >
-            We Work Remotely
-          </a>
-          ) ; la plupart des sites d'emploi français n'exposent plus de flux RSS public.
+          flux et ajoute les offres neuves au catalogue. La plupart des grands sites d'emploi, en
+          France notamment, n'exposent plus de flux RSS public : cherche un flux proposé par un
+          site ou un agrégateur d'offres de ton secteur.
         </p>
       </div>
 
