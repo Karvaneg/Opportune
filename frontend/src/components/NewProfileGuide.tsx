@@ -109,16 +109,18 @@ export function NewProfileGuide({
   // Boucle de démarrage complète → plus besoin du guide (l'état LLM/clés n'entre pas en compte).
   if (coreSteps.every((s) => s.done)) return null;
 
-  // L'assistant local passe **en tête** : c'est le prérequis des deux actions suivantes (collecte
-  // et analyse font chacune un passage LLM). Son action renvoie au bandeau d'installation en haut.
+  // L'assistant local n'apparaît comme étape **que s'il n'est pas prêt** : une fois le modèle
+  // installé, l'afficher coché et barré n'apprend rien et intrigue (c'est un prérequis technique,
+  // pas une action du parcours). Quand il manque, il passe en tête — prérequis de la collecte et
+  // de l'analyse (chacune fait un passage LLM) — et renvoie au bandeau d'installation en haut.
   const llmStep: Step = {
     title: "Préparer l'assistant local",
     description:
       "Opportune installe une seule fois un petit modèle d'IA local pour analyser les offres et rédiger vos lettres. L'installation se lance depuis le bandeau en haut.",
-    done: llmReady,
+    done: false,
     action: { label: "Voir l'installation", onClick: scrollToTop },
   };
-  const steps: Step[] = [llmStep, ...coreSteps];
+  const steps: Step[] = llmReady ? coreSteps : [llmStep, ...coreSteps];
 
   // Première étape non faite : mise en avant (« à faire maintenant »).
   const currentIndex = steps.findIndex((s) => !s.done);

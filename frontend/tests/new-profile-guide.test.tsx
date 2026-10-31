@@ -170,12 +170,13 @@ describe("NewProfileGuide (OPP-177)", () => {
     expect(screen.getByRole("button", { name: "Voir l'installation" })).toBeInTheDocument();
   });
 
-  it("assistant local prêt : l'étape ne propose plus d'action (cochée) (OPP-195)", async () => {
+  it("assistant local prêt : l'étape n'apparaît pas du tout (OPP-195)", async () => {
     stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, llmModelPresent: true });
     renderGuide(NO_STATS);
 
-    // On attend le guide, puis on vérifie que l'étape LLM est cochée (plus de bouton d'action).
+    // Modèle déjà installé → on n'affiche pas une étape cochée muette : elle disparaît du guide.
     await screen.findByText("Ajouter votre CV");
+    expect(screen.queryByText("Préparer l'assistant local")).toBeNull();
     expect(screen.queryByRole("button", { name: "Voir l'installation" })).toBeNull();
   });
 
