@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCandidateActivity } from "../api/activity";
 import { useCandidateStats } from "../api/stats";
-import type { FunnelStage } from "../api/funnel";
+import type { CatalogStage } from "../api/funnel";
 import type { ActivityEvent } from "../api/types";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { AddOffer } from "../components/AddOffer";
@@ -75,15 +75,21 @@ export function CockpitPage() {
   );
 }
 
-/** Les trois compteurs d'avancement + le total du pool. */
+/** Les compteurs d'avancement (entonnoir + entretiens à venir) + le total du pool. */
 function StatCards({
   stats,
 }: {
-  stats: { a_etudier: number; a_postuler: number; postule: number; offres_total: number };
+  stats: {
+    a_etudier: number;
+    a_postuler: number;
+    postule: number;
+    offres_total: number;
+    entretiens_prevus: number;
+  };
 }) {
   return (
     <div className="space-y-2">
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="À étudier"
           value={stats.a_etudier}
@@ -104,6 +110,15 @@ function StatCards({
           value={stats.postule}
           stage="postule"
           tone="bg-success/10 text-success-text hover:border-success/30"
+        />
+        {/* Entretiens à venir (OPP-223) : filtre transverse « entretien » du catalogue (offres
+            candidatées avec un entretien à venir). Teinte neutre, distincte des trois piles.
+            `?? 0` : aucun entretien à venir (ou API antérieure à OPP-223) → 0, jamais vide. */}
+        <StatCard
+          label="Entretiens prévus"
+          value={stats.entretiens_prevus ?? 0}
+          stage="entretien"
+          tone="bg-ink/5 text-ink hover:border-ink/20"
         />
       </div>
       <p className="text-sm text-ink-muted">{stats.offres_total} offre(s) au total</p>
@@ -168,8 +183,8 @@ function formatActivityDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR");
 }
 
-/** Carte-compteur, cliquable : ouvre Offres filtré sur l'étape d'entonnoir. Le candidat ciblé est
- *  porté par le contexte partagé (cf. useTargetCandidate), inutile de le repasser par l'URL. */
+/** Carte-compteur cliquable : ouvre Offres filtré sur l'étape/le filtre donné (le candidat ciblé
+ *  vient du contexte partagé, cf. useTargetCandidate, inutile de le repasser par l'URL). */
 function StatCard({
   label,
   value,
@@ -178,7 +193,7 @@ function StatCard({
 }: {
   label: string;
   value: number;
-  stage: FunnelStage;
+  stage: CatalogStage;
   tone: string;
 }) {
   const navigate = useNavigate();

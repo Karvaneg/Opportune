@@ -27,7 +27,9 @@ const runsPage = (total: number) => ({
   items: [], page: 1, page_size: 20, total, total_pages: total > 0 ? 1 : 0,
 });
 
-const NO_STATS: CandidateStats = { a_etudier: 0, a_postuler: 0, postule: 0, offres_total: 0 };
+const NO_STATS: CandidateStats = {
+  a_etudier: 0, a_postuler: 0, postule: 0, offres_total: 0, entretiens_prevus: 0,
+};
 const WITH_OFFERS: CandidateStats = { ...NO_STATS, offres_total: 12 };
 
 /**

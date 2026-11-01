@@ -31,6 +31,14 @@ _DECISION_LABELS = {
     "deferred": "Décision reportée",
 }
 
+# Libellés FR d'un événement de suivi post-candidature (OPP-223).
+_TRACKING_LABELS = {
+    "interview": "Entretien",
+    "rejected": "Candidature rejetée",
+    "offer": "Offre reçue",
+    "no_response": "Relance / sans réponse",
+}
+
 
 @dataclass(frozen=True)
 class ActivityEvent:
@@ -66,6 +74,16 @@ def application_event(at: str, offer_title: str, recommendation_id: str) -> Acti
 def offer_event(at: str, offer_title: str, offer_id: str) -> ActivityEvent:
     """Événement « offre ajoutée au catalogue » (pool partagé, non lié à un candidat)."""
     return ActivityEvent("offer", at, f"Offre ajoutée — {offer_title}", TARGET_OFFER, offer_id)
+
+
+def tracking_event(kind: str, at: str, offer_title: str, recommendation_id: str) -> ActivityEvent:
+    """Événement de suivi post-candidature (entretien, rejet, offre reçue, relance ; OPP-223).
+
+    ``at`` est l'horodatage d'**enregistrement** (comme les autres événements du flux) ; la date
+    prévue d'un entretien reste sur la fiche, le journal n'affiche que l'instant où l'on a noté.
+    """
+    label = _TRACKING_LABELS.get(kind, "Suivi mis à jour")
+    return ActivityEvent("tracking", at, f"{label} — {offer_title}", TARGET_RECOMMENDATION, recommendation_id)
 
 
 def _instant(iso: str) -> datetime:

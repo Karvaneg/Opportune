@@ -1,7 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiDelete, apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
-import type { ActionConfirmation, ApplicationIntent, RecommendationDetail } from "./types";
+import type {
+  ActionConfirmation,
+  ApplicationIntent,
+  RecommendationDetail,
+  TrackingEvent,
+  TrackingEventKind,
+} from "./types";
 
 // Clé de cache du détail d'une recommandation. Distincte des `runKeys` : une reco se
 // consulte par son id stable (cf. decision_id), indépendamment du run qui l'a produite.
@@ -115,6 +121,30 @@ export function useUnmarkApplied(recommendationId: string) {
     mutationFn: (_variables) =>
       apiDelete<ApplicationIntent>(
         `/applications/${encodeURIComponent(recommendationId)}/applied`,
+      ),
+    invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
+  });
+}
+
+/** Variables d'ajout d'un événement de suivi : type requis, date et commentaire optionnels. */
+export interface AddTrackingVariables {
+  kind: TrackingEventKind;
+  event_date?: string; // ISO 8601 (date de l'entretien, éventuellement future)
+  comment?: string;
+}
+
+/**
+ * Ajout d'un événement de suivi post-candidature : `POST /applications/{id}/tracking` (OPP-223).
+ * Pointage déclaratif, pas un envoi. Exige une candidature déclarée côté back (sinon 409, remonté
+ * tel quel). Au succès, invalide le détail : la frise et la section de suivi se rafraîchissent
+ * sans rechargement. Le back renvoie l'historique à jour (`{events}`).
+ */
+export function useAddTrackingEvent(recommendationId: string) {
+  return useApiMutation<{ events: TrackingEvent[] }, AddTrackingVariables>({
+    mutationFn: (variables) =>
+      apiPost<{ events: TrackingEvent[] }>(
+        `/applications/${encodeURIComponent(recommendationId)}/tracking`,
+        variables,
       ),
     invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
   });
