@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAdzunaSettings, useSaveAdzunaSettings } from "../api/settings";
 import { useIsReviewer } from "../auth/roles";
 import { ErrorNotice, Hint, Loading } from "./States";
+import { openExternal } from "../lib/openExternal";
 
 /**
  * Réglage des identifiants Adzuna (OPP-222) : l'utilisateur saisit ses propres `app_id` + `app_key`
@@ -70,7 +71,10 @@ export function AdzunaSettings() {
             Crée un compte gratuit sur{" "}
             <a
               href="https://developer.adzuna.com/signup"
-              target="_blank"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal("https://developer.adzuna.com/signup");
+              }}
               rel="noreferrer"
               className="font-medium text-brand hover:underline"
             >
@@ -82,7 +86,10 @@ export function AdzunaSettings() {
             Une fois connecté, ouvre{" "}
             <a
               href="https://developer.adzuna.com/admin/access_details"
-              target="_blank"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal("https://developer.adzuna.com/admin/access_details");
+              }}
               rel="noreferrer"
               className="font-medium text-brand hover:underline"
             >

@@ -14,6 +14,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# Ouvre les liens d'offres dans le navigateur système. La fenêtre charge une page distante
+# (le front servi par l'API sur 127.0.0.1) : un <a target="_blank"> y tente une popup que la
+# webview WebKitGTK ne sait pas afficher (warning Gdk sous Linux) et n'atteint jamais le
+# navigateur. Le front appelle donc openUrl() de ce plugin, qui délègue au système — OPP-194.
+tauri-plugin-opener = "2"
 # Capture SIGINT/SIGTERM (feature « termination ») pour tuer le sidecar même quand l'app
 # est arrêtée par signal (kill, crash) et non par fermeture de fenêtre — sinon le binaire API
 # resterait orphelin à tenir le port, et le lancement suivant échouerait.

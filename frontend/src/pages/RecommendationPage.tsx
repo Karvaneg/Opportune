@@ -30,6 +30,7 @@ import type {
   TrackingEventKind,
 } from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
+import { openExternal } from "../lib/openExternal";
 import { LlmRequiredNotice } from "../components/LlmRequiredNotice";
 import { StatusBadge } from "../components/StatusBadge";
 
@@ -108,7 +109,10 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
             {reco.url && (
               <a
                 href={reco.url}
-                target="_blank"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void openExternal(reco.url!);
+                }}
                 rel="noreferrer"
                 className="mt-1 inline-block text-sm text-ink-muted hover:text-ink hover:underline"
                 title="Voir l'offre sur le site"
@@ -208,7 +212,10 @@ function OfferSkills({ skills, url }: { skills: string[]; url: string | null }) 
           {url ? (
             <a
               href={url}
-              target="_blank"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal(url);
+              }}
               rel="noreferrer"
               className="font-medium text-brand underline hover:text-brand-strong"
             >

@@ -100,6 +100,10 @@ Transport = Callable[[str, dict], dict]
 # donc sur la loopback correspondante.
 _BIND_ALL_TO_LOOPBACK = {"0.0.0.0": "127.0.0.1", "::": "[::1]"}
 
+# Port d'écoute par défaut d'Ollama. Une adresse de bind nue (``OLLAMA_HOST=0.0.0.0``) sous-entend
+# ce port, pas le 80 implicite d'une URL HTTP : sans lui, le client taperait un endpoint mort.
+_DEFAULT_OLLAMA_PORT = 11434
+
 
 def ollama_url(path: str, *, host: str | None = None) -> str:
     """Compose l'URL d'un endpoint Ollama (``/api/...``) sur l'hôte configuré.
@@ -112,16 +116,25 @@ def ollama_url(path: str, *, host: str | None = None) -> str:
     (``0.0.0.0:11434``, ``localhost``) ou pointer une adresse de bind « toutes interfaces ».
     ``urllib`` exige une URL absolue → on garantit un ``http://`` et on ramène ``0.0.0.0``/``::``
     sur la loopback, sinon la connexion lève ``ValueError`` (scheme absent) ou échoue (Windows).
+    Une adresse de bind **sans port** (``0.0.0.0``, ``[::]``) reçoit le port Ollama par défaut :
+    sinon l'URL retomberait sur le port 80 implicite et taperait un endpoint mort.
     """
     base = (host or DEFAULT_OLLAMA_HOST).strip().rstrip("/")
     if "://" not in base:
         base = f"http://{base}"
     parts = urlsplit(base)
+    # IPv6 nu (``::``) : sans crochets, ``urllib`` ne sait pas séparer hôte et port et renvoie un
+    # hostname vide (≥2 ``:`` dans le netloc ⇒ forcément de l'IPv6). On réécrit en forme crochetée
+    # (``[::]``), seule forme valide en URL, avant de reconnaître l'adresse de bind.
+    if parts.hostname is None and parts.netloc.count(":") >= 2 and not parts.netloc.startswith("["):
+        parts = urlsplit(f"{parts.scheme}://[{parts.netloc}]")
     hostname = (parts.hostname or "").lower()
     if hostname in _BIND_ALL_TO_LOOPBACK:
         loopback = _BIND_ALL_TO_LOOPBACK[hostname]
-        netloc = loopback if parts.port is None else f"{loopback}:{parts.port}"
-        parts = parts._replace(netloc=netloc)
+        # Pas de port explicite sur une adresse de bind ⇒ port Ollama par défaut (et non le 80
+        # qu'impliquerait l'URL HTTP nue, qui ne joindrait jamais le moteur).
+        port = parts.port or _DEFAULT_OLLAMA_PORT
+        parts = parts._replace(netloc=f"{loopback}:{port}")
     base_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", "")).rstrip("/")
     return f"{base_url}/{path.lstrip('/')}"
 

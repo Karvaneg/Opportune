@@ -315,6 +315,10 @@ fn main() {
     });
 
     tauri::Builder::default()
+        // Ouverture des liens externes via le navigateur système (openUrl côté front). La page
+        // étant distante (127.0.0.1), l'accès à cette commande est autorisé par `remote.urls`
+        // dans capabilities/default.json.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -329,6 +333,10 @@ fn main() {
             // Message explicite si le binaire API est absent (sync-sidecar.sh pas lancé) : sans ça,
             // l'échec remonte en panic brute « échec de l'initialisation de Tauri ».
             spawn_api(&handle).map_err(|e| {
+                // L'API n'a pas démarré : on arrête l'Ollama déjà lancé pour ne pas le laisser
+                // orphelin. Le filet `kill_all()` en fin de `main` n'est pas atteint ici — l'erreur
+                // du setup fait paniquer `build().expect(...)` plus bas, ce qui déroule par-dessus.
+                kill_all();
                 format!("Impossible de lancer le service Opportune ({e}). Lance d'abord sync-sidecar.sh.")
             })?;
 

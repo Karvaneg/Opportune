@@ -8,6 +8,7 @@ import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types
 import { CollectOffers } from "../components/CollectOffers";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
+import { openExternal } from "../lib/openExternal";
 
 /**
  * Catalogue des offres (GET /offers, OPP-146) : toutes les offres du pool, plus récentes
@@ -156,7 +157,10 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
           {offer.url && (
             <a
               href={offer.url}
-              target="_blank"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal(offer.url!);
+              }}
               rel="noreferrer"
               className="text-ink-muted hover:text-ink hover:underline"
               title="Voir l'offre sur le site"
