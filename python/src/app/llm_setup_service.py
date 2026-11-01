@@ -67,26 +67,22 @@ class LLMSetupService:
         self._spawn = spawn or _spawn_daemon
         self._lock = threading.Lock()
         self._snapshot = SetupSnapshot(IDLE, "", 0.0)
-        # Mémoïsations de ``status`` (sondé en boucle par le front). La RAM totale est une
-        # constante de la machine → lue une seule fois. La présence du modèle ne bascule qu'une
-        # fois (fin du téléchargement) et le modèle ne se désinstalle pas au runtime → dès qu'elle
-        # est confirmée, on ne réinterroge plus Ollama (``/api/tags``) à chaque sondage.
-        self._model_ready = False
+        # Mémoïsation de la RAM totale : constante de la machine, lue une seule fois (sous macOS
+        # via un sous-processus ``sysctl``) plutôt qu'à chaque sondage de ``status`` par le front.
+        # La disponibilité d'Ollama et la présence du modèle, elles, sont **re-sondées à chaque
+        # appel** : ce sont les seules sources de vérité (un Ollama peut tomber, un modèle être
+        # absent), et le sondage s'arrête de lui-même dès que le modèle est présent — le front
+        # cesse alors d'interroger et la porte s'ouvre.
         self._memory_read = False
         self._memory_value: int | None = None
 
     def status(self) -> dict:
         """État de disponibilité du LLM : Ollama joignable, modèle présent, verdict RAM."""
-        if self._model_ready:
-            present, reachable = True, True
-        else:
-            try:
-                present = self._present(self._model, host=self._host)
-                reachable = True
-            except OllamaUnreachable:
-                present, reachable = False, False
-            if present:
-                self._model_ready = True
+        try:
+            present = self._present(self._model, host=self._host)
+            reachable = True
+        except OllamaUnreachable:
+            present, reachable = False, False
         memory = assess_memory(self._memory_total_bytes())
         with self._lock:
             setup = self._snapshot
@@ -118,15 +114,12 @@ class LLMSetupService:
             # deux téléchargements du même modèle.
             self._snapshot = SetupSnapshot(RUNNING, "pulling manifest", 0.0)
 
-        if self._model_ready:
-            return self._set(SetupSnapshot(DONE, "success", 1.0))
         # L'état vient d'être posé à RUNNING sous le verrou : toute sortie de ce bloc doit le
         # résoudre (``done``/``failed``), sinon un échec avant le spawn le laisserait figé sur
         # RUNNING à vie (les ``start`` suivants renoncent par idempotence → porte bloquée). On
         # rattrape donc aussi l'inattendu, pas seulement ``OllamaUnreachable``.
         try:
             if self._present(self._model, host=self._host):
-                self._model_ready = True
                 return self._set(SetupSnapshot(DONE, "success", 1.0))
             self._spawn(self._run)
         except OllamaUnreachable as exc:
@@ -155,7 +148,6 @@ class LLMSetupService:
         if result.error is not None:
             self._set(SetupSnapshot(FAILED, result.status, result.fraction, error=result.error))
         else:
-            self._model_ready = True  # téléchargé : inutile de réinterroger Ollama ensuite
             self._set(SetupSnapshot(DONE, result.status, 1.0))
 
     def _on_progress(self, progress: PullProgress) -> None:

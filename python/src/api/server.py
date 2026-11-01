@@ -163,11 +163,23 @@ def make_handler(
             if static_dir is None:
                 self._write(404, {"error": "route inconnue"})
                 return
-            target = resolve_static_file(static_dir, self.path)
-            if target is None:
-                self._write(404, {"error": "route inconnue"})
+            # Même filet transport que ``_dispatch`` (OPP-207) : la résolution de chemin ou la
+            # lecture disque peuvent lever (URL malformée avec octet nul → ``ValueError`` dans
+            # ``resolve``, fichier retiré en pleine requête → ``OSError``). Sans ce garde,
+            # l'exception remonterait à http.server qui fermerait la connexion sans réponse.
+            try:
+                target = resolve_static_file(static_dir, self.path)
+                if target is None:
+                    self._write(404, {"error": "route inconnue"})
+                    return
+                etag, payload = cached_asset(target)
+            except ValueError:
+                self._write(400, {"error": "chemin invalide"})
                 return
-            etag, payload = cached_asset(target)
+            except Exception:
+                traceback.print_exc()
+                self._write(500, {"error": "Erreur interne du serveur."})
+                return
             # Revalidation par ETag : le navigateur garde l'asset en cache et ne reçoit que le
             # statut 304 (sans corps) tant que le fichier n'a pas changé — évite de renvoyer le
             # bundle à chaque rechargement.

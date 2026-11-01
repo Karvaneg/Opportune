@@ -20,6 +20,7 @@
 //! lancement suivant échouerait. On lance donc **chaque** sidecar dans son **propre groupe de
 //! processus** (`setsid`) et on tue le **groupe entier** à la sortie.
 
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -134,6 +135,29 @@ fn spawn_in_group(mut command: Command) -> std::io::Result<Child> {
     command.spawn()
 }
 
+/// Vérifie qu'un serveur **Ollama** (et pas un autre service qui occuperait le port) répond sur
+/// `addr` : on interroge `/api/version` en HTTP/1.0 et on exige un statut 200. Timeouts courts
+/// pour qu'un port tenu par un process non-HTTP ne fasse pas pendre le démarrage.
+fn ollama_is_responding(addr: &str) -> bool {
+    let Ok(mut stream) = TcpStream::connect(addr) else {
+        return false;
+    };
+    let timeout = Some(Duration::from_secs(2));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
+    let request = format!("GET /api/version HTTP/1.0\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    // La ligne de statut (« HTTP/1.1 200 OK ») tient largement dans ce tampon.
+    let mut head = [0u8; 64];
+    let Ok(read) = stream.read(&mut head) else {
+        return false;
+    };
+    let status_line = String::from_utf8_lossy(&head[..read]);
+    status_line.starts_with("HTTP/") && status_line.contains(" 200")
+}
+
 /// Démarre Ollama en sidecar, sauf si un serveur répond déjà sur `OLLAMA_ADDR` (on le réutilise
 /// alors). Quand on lance **notre** process, les modèles sont rangés dans le dossier de données
 /// de l'app (`OLLAMA_MODELS`) : supprimés avec l'app, sans toucher au `~/.ollama` de l'utilisateur.
@@ -141,8 +165,17 @@ fn spawn_in_group(mut command: Command) -> std::io::Result<Child> {
 /// de *ce* serveur (typiquement son propre `~/.ollama`) : on ne contrôle pas son `OLLAMA_MODELS`.
 /// Renvoie `Ok(true)` si on a bien lancé notre propre process (à arrêter à la sortie).
 fn spawn_ollama(app: &tauri::AppHandle) -> std::io::Result<bool> {
-    // Un Ollama déjà en écoute (dev, utilisateur équipé) : ne pas en lancer un second.
+    // Un serveur déjà en écoute sur le port : on ne lance pas de second Ollama (il ne pourrait de
+    // toute façon pas se lier au port occupé). On vérifie toutefois que c'en est bien un : sinon on
+    // avertit explicitement, car l'API tapera dans le vide et le moteur restera indisponible — mieux
+    // vaut un message clair qu'un « injoignable » opaque plus tard.
     if TcpStream::connect(OLLAMA_ADDR).is_ok() {
+        if !ollama_is_responding(OLLAMA_ADDR) {
+            eprintln!(
+                "Un service répond sur {OLLAMA_ADDR} sans ressembler à Ollama : le moteur LLM \
+                 risque d'être indisponible (port occupé par une autre application ?)."
+            );
+        }
         return Ok(false);
     }
 
