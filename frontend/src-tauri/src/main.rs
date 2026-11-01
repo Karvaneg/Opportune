@@ -149,12 +149,21 @@ fn ollama_is_responding(addr: &str) -> bool {
     if stream.write_all(request.as_bytes()).is_err() {
         return false;
     }
-    // La ligne de statut (« HTTP/1.1 200 OK ») tient largement dans ce tampon.
-    let mut head = [0u8; 64];
-    let Ok(read) = stream.read(&mut head) else {
-        return false;
-    };
-    let status_line = String::from_utf8_lossy(&head[..read]);
+    // On lit **en boucle** jusqu'à tenir toute la ligne de statut (jusqu'au premier `\n`) : un
+    // seul `read` peut rendre un segment tronqué avant « 200 » et classer à tort un vrai Ollama.
+    // Le tampon est plafonné (la ligne de statut tient largement dedans) pour ne pas lire sans fin
+    // un service bavard. Timeouts courts : un read qui expire rompt la boucle.
+    let mut head = Vec::with_capacity(64);
+    let mut chunk = [0u8; 64];
+    while head.len() < 256 && !head.contains(&b'\n') {
+        match stream.read(&mut chunk) {
+            Ok(0) => break,                              // connexion fermée
+            Ok(n) => head.extend_from_slice(&chunk[..n]),
+            Err(_) => return false,                      // timeout ou erreur
+        }
+    }
+    let status_line = String::from_utf8_lossy(&head);
+    let status_line = status_line.lines().next().unwrap_or("");
     status_line.starts_with("HTTP/") && status_line.contains(" 200")
 }
 
@@ -226,49 +235,61 @@ fn spawn_api(app: &tauri::AppHandle) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Arrête un sidecar. Sous Unix, SIGTERM au **groupe** entier (`kill(-pgid)`) : atteint le
-/// bootloader ET les process enfants. Ailleurs, `kill` du process.
+/// Arrête tous les sidecars encore en vie (idempotent). `drain` garantit qu'un seul chemin
+/// d'arrêt les emporte, même si deux se déclenchent (fermeture + signal).
 ///
-/// Après le SIGTERM, on laisse ~5 s au groupe pour s'arrêter proprement (flush SQLite, etc.),
-/// puis on **force avec SIGKILL** : sinon un sidecar lent ou bloqué (requête LLM/scrape en cours
-/// qui ignore SIGTERM) ferait pendre `wait()` indéfiniment et la fenêtre ne se fermerait jamais.
-fn kill_child(mut child: Child) {
+/// Sous Unix, SIGTERM au **groupe** entier de chaque sidecar (`kill(-pgid)`, grâce au `setsid` du
+/// spawn) : atteint le bootloader ET les process enfants. L'arrêt est **parallèle** : on signale
+/// d'abord *tous* les groupes, puis on attend leur sortie propre (flush SQLite, etc.) sous une
+/// **seule** échéance de ~5 s partagée avant de forcer au SIGKILL ceux qui traînent. Un arrêt
+/// séquentiel cumulerait l'échéance par sidecar (jusqu'à 5 s chacun) et retarderait d'autant la
+/// fermeture de la fenêtre. L'échéance évite aussi qu'un sidecar bloqué (requête LLM/scrape qui
+/// ignore SIGTERM) fasse pendre `wait()` indéfiniment. Ailleurs, `kill` direct de chaque process.
+fn kill_all() {
+    let drained: Vec<Child> = children().lock().unwrap().drain(..).collect();
+
     #[cfg(unix)]
     {
-        // Le sidecar est chef de son groupe (setsid), donc pgid == child.id().
-        let pgid = child.id() as i32;
-        unsafe {
-            libc::kill(-pgid, libc::SIGTERM);
-        }
+        // Le sidecar est chef de son groupe (setsid), donc pgid == child.id(). On envoie SIGTERM à
+        // tous les groupes d'abord, puis on attend sous une échéance commune.
+        let mut pending: Vec<(i32, Child)> = drained
+            .into_iter()
+            .map(|child| {
+                let pgid = child.id() as i32;
+                unsafe {
+                    libc::kill(-pgid, libc::SIGTERM);
+                }
+                (pgid, child)
+            })
+            .collect();
+
         let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => break, // le process s'est arrêté
-                Ok(None) if Instant::now() >= deadline => {
+        while !pending.is_empty() {
+            // On retire ceux qui se sont arrêtés proprement (ou qu'on ne peut plus attendre).
+            pending.retain_mut(|(_, child)| matches!(child.try_wait(), Ok(None)));
+            if pending.is_empty() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                // Échéance partagée dépassée : on force d'un coup le reste au SIGKILL.
+                for (pgid, mut child) in pending.drain(..) {
                     unsafe {
                         libc::kill(-pgid, libc::SIGKILL);
                     }
                     let _ = child.wait();
-                    break;
                 }
-                Ok(None) => std::thread::sleep(Duration::from_millis(100)),
-                Err(_) => break,
+                break;
             }
+            std::thread::sleep(Duration::from_millis(100));
         }
     }
+
     #[cfg(not(unix))]
     {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-}
-
-/// Arrête tous les sidecars encore en vie (idempotent). `drain` garantit qu'un seul chemin
-/// d'arrêt les emporte, même si deux se déclenchent (fermeture + signal).
-fn kill_all() {
-    let drained: Vec<Child> = children().lock().unwrap().drain(..).collect();
-    for child in drained {
-        kill_child(child);
+        for mut child in drained {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 

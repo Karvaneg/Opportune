@@ -18,7 +18,6 @@ de l'entrée/sortie réseau :
 from __future__ import annotations
 
 import json
-import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -158,10 +157,12 @@ def _get_json(url: str, *, timeout: int = _PROBE_TIMEOUT_SECONDS) -> dict:
     ça ``json.loads`` lèverait une exception brute qui fait faussement planter ``status()`` (500)
     et laisse ``LLMSetupService.start`` figé. Tout ça veut dire la même chose : pas d'Ollama.
     """
+    # ``OSError`` couvre déjà ``URLError`` (sous-classe) ; ``ValueError`` couvre ``JSONDecodeError``
+    # et ``UnicodeDecodeError`` (sous-classes). Deux familles suffisent : panne réseau, corps illisible.
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 (URL interne)
             return json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, OSError, ValueError, UnicodeDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         raise OllamaUnreachable(str(exc)) from exc
 
 
@@ -177,7 +178,7 @@ def _post_stream(url: str, payload: dict, *, timeout: int = 3600) -> Iterator[di
                 line = raw.decode("utf-8").strip()
                 if line:
                     yield json.loads(line)
-    except (urllib.error.URLError, OSError, ValueError, UnicodeDecodeError) as exc:
-        # Idem ``_get_json`` : panne réseau comme corps non-JSON (service tiers sur le port)
-        # remontent en :class:`OllamaUnreachable`, pas en exception brute.
+    except (OSError, ValueError) as exc:
+        # Idem ``_get_json`` : panne réseau (``OSError``, dont ``URLError``) comme corps non-JSON
+        # (``ValueError``, service tiers sur le port) remontent en :class:`OllamaUnreachable`.
         raise OllamaUnreachable(str(exc)) from exc

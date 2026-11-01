@@ -41,13 +41,16 @@ def _is_api_path(path: str) -> bool:
 def _strip_api_prefix(path: str) -> str:
     """Retire le préfixe ``/api`` du chemin avant dispatch.
 
-    ``/api/offers`` → ``/offers`` ; ``/api`` → ``/``. Un chemin hors ``/api`` (appel au dispatcher
-    direct, tests) est rendu tel quel — le préfixe est une convention du front, pas du dispatcher.
+    ``/api/offers`` → ``/offers`` ; ``/api`` → ``/`` ; ``/api?x=1`` → ``/?x=1`` (query préservée).
+    Un chemin hors ``/api`` (appel au dispatcher direct, tests) est rendu tel quel — le préfixe est
+    une convention du front, pas du dispatcher.
     """
     if not _is_api_path(path):
         return path
     rest = path[len(_API_PREFIX):]
-    return rest if rest.startswith("/") else "/"
+    # ``_is_api_path`` garantit que ``rest`` vaut ``""``, ``?...`` (``/api`` nu + query) ou ``/...``.
+    # On préfixe un ``/`` dans les deux premiers cas pour ne jamais perdre la query string.
+    return rest if rest.startswith("/") else "/" + rest
 
 
 def make_handler(
