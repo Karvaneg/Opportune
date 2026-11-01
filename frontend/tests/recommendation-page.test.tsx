@@ -504,6 +504,77 @@ describe("RecommendationPage — intention de candidater (OPP-110)", () => {
   });
 });
 
+describe("RecommendationPage — suivi post-candidature (OPP-223)", () => {
+  it("le suivi n'apparaît pas tant que la candidature n'est pas déclarée", async () => {
+    // Intention notée mais pas encore candidatée : pas de formulaire de suivi.
+    stubFetch(200, {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-18T12:00:00+00:00",
+        status: "simulated",
+        applied: false,
+        applied_at: null,
+        tracking: [],
+      },
+    });
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    expect(screen.queryByRole("button", { name: "Ajouter" })).toBeNull();
+    expect(screen.queryByLabelText("Date de l'entretien")).toBeNull();
+  });
+
+  it("candidaté → ajouter un entretien daté l'envoie et l'affiche dans la frise", async () => {
+    const bodies: Array<{ kind?: string; event_date?: string }> = [];
+    const interview = {
+      kind: "interview",
+      at: "2026-10-10T09:00:00+00:00",
+      event_date: "2026-11-15",
+      comment: null,
+    };
+    let detail: Record<string, unknown> = {
+      ...DETAIL,
+      application: {
+        confirmed: true,
+        confirmed_at: "2026-10-04T12:00:00+00:00",
+        status: "simulated",
+        applied: true,
+        applied_at: "2026-10-05T09:00:00+00:00",
+        tracking: [],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        const ok = (b: unknown) =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/tracking")) {
+          bodies.push(JSON.parse(String(init?.body ?? "{}")));
+          detail = {
+            ...detail,
+            application: { ...(detail.application as object), tracking: [interview] },
+          };
+          return ok({ events: [interview] });
+        }
+        return ok(detail); // GET détail (reflète l'état courant après invalidation)
+      }),
+    );
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    await userEvent.type(screen.getByLabelText("Date de l'entretien"), "2026-11-15");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter" }));
+
+    await waitFor(() => expect(bodies.at(-1)?.kind).toBe("interview"));
+    expect(bodies.at(-1)?.event_date).toBe("2026-11-15");
+    // L'événement rejoint la frise, avec sa date prévue explicitée.
+    expect(await screen.findByText(/prévu le/)).toBeInTheDocument();
+  });
+});
+
 /** fetch factice à état : /me, GET détail (status/score paramétrables), POST /rescore → 90. */
 function stubRescoreFlow(status = "pending") {
   let current = { ...DETAIL, status, score: 50, comment: null as string | null };

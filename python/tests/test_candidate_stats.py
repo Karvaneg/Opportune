@@ -3,11 +3,37 @@
 Fonctions pures : on classe des offres et on agrège, sans aucun stockage.
 """
 
+from datetime import date
+
+from app.application_tracking import create_tracking_event
 from app.candidate_stats import (
     CandidateStats,
     build_candidate_stats,
+    count_upcoming_interviews,
     funnel_stage,
 )
+
+
+def test_count_upcoming_interviews_counts_today_and_future_only():
+    today = date(2026, 11, 1)
+    events = [
+        create_tracking_event("interview", event_date="2026-11-01", now=lambda: "t"),  # aujourd'hui
+        create_tracking_event("interview", event_date="2026-12-15", now=lambda: "t"),  # futur
+        create_tracking_event("interview", event_date="2026-10-01", now=lambda: "t"),  # passé
+    ]
+
+    assert count_upcoming_interviews(events, today) == 2
+
+
+def test_count_upcoming_interviews_ignores_dateless_and_non_interviews():
+    today = date(2026, 11, 1)
+    events = [
+        create_tracking_event("interview", now=lambda: "t"),  # entretien sans date prévue
+        create_tracking_event("rejected", now=lambda: "t"),  # autre type
+        create_tracking_event("offer", now=lambda: "t"),
+    ]
+
+    assert count_upcoming_interviews(events, today) == 0
 
 
 def test_funnel_stage_applied_is_postule_even_if_approved():

@@ -19,6 +19,8 @@ Endpoints :
     POST /applications/{recommendation_id}/confirm      (OPP-096, action sensible)
     POST   /applications/{recommendation_id}/applied    (suivi : « j'ai candidaté », date optionnelle)
     DELETE /applications/{recommendation_id}/applied    (annule la candidature déclarée)
+    GET    /applications/{recommendation_id}/tracking   (OPP-223, historique de suivi post-candidature)
+    POST   /applications/{recommendation_id}/tracking   (OPP-223, ajoute un événement : entretien/rejet/offre)
     POST /messages/{contact_id}/confirm                 (OPP-096, action sensible)
     POST /collect                                       (OPP-167, collecte réelle Adzuna → bilan)
 
@@ -71,6 +73,12 @@ if TYPE_CHECKING:
     from app.rss_feeds_store import RssFeedsStore
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
+from app.application_tracking import TrackingError
+from app.candidate_stats import count_upcoming_interviews
+from app.application_tracking_service import (
+    ApplicationTrackingService,
+    TrackingNotAllowedError,
+)
 from app.candidate_profile import ProfileValidationError
 from app.collection_jobs import CollectionAlreadyRunning
 from app.auth import LocalAuthProvider, User
@@ -170,6 +178,7 @@ _RECOMMENDATION_LETTER = re.compile(r"^/recommendations/(?P<rid>[^/]+)/letter$")
 _RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
 _APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
 _APPLICATION_APPLIED = re.compile(r"^/applications/(?P<rid>[^/]+)/applied$")
+_APPLICATION_TRACKING = re.compile(r"^/applications/(?P<rid>[^/]+)/tracking$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
 _OFFERS = re.compile(r"^/offers$")
 _COLLECT = re.compile(r"^/collect$")
@@ -259,12 +268,18 @@ class HermesApi:
         adzuna_credentials: "AdzunaCredentialsStore | None" = None,
         rss_feeds: "RssFeedsStore | None" = None,
         conn: "sqlite3.Connection | None" = None,
+        tracking: ApplicationTrackingService | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
         # routes /applications|/messages ne sont pas montées (404), l'API reste utilisable
         # pour la recommandation et les décisions.
         self.actions = actions
+        # Suivi post-candidature (OPP-223) : historique d'événements (entretien, rejet, offre
+        # reçue, relance) d'une candidature déclarée. Optionnel : si absent, les routes
+        # /applications/{id}/tracking ne sont pas montées (404) et le détail d'une reco ne
+        # porte pas d'historique de suivi. Injecté en prod, faux en test.
+        self.tracking = tracking
         # Intake d'offre collée (OPP-145). Optionnel : si absent (pas de LLM câblé), la route
         # POST /offers n'est pas montée (404). Injecté en prod, faux en test.
         self.offer_intake = offer_intake
@@ -581,6 +596,17 @@ class HermesApi:
                 self._require(method, "POST", path)
                 return self._post_message_confirm(unquote(match["cid"]), body, user)
 
+        # Suivi post-candidature : monté uniquement si le service est configuré (sinon 404).
+        if self.tracking is not None:
+            match = _APPLICATION_TRACKING.match(path)
+            if match:
+                rid = unquote(match["rid"])
+                if method == "GET":
+                    return self._get_application_tracking(rid, user)
+                if method == "POST":
+                    return self._post_application_tracking(rid, body, user)
+                raise ApiError(405, f"méthode {method} non autorisée sur {path}")
+
         raise ApiError(404, f"route inconnue : {method} {path}")
 
     @staticmethod
@@ -754,6 +780,16 @@ class HermesApi:
         stats = self.orchestrator.candidate_stats(
             candidate_id, applied_recommendation_ids=applied_ids
         )
+        # Entretiens prévus (OPP-223) : le suivi n'existe que pour des candidatures déclarées,
+        # donc on n'interroge que les ``applied_ids`` (pas de recommandation non postulée à sonder).
+        # Comptage « à venir » déterminé par la date du jour (UTC), cohérent avec la borne UI.
+        entretiens_prevus = 0
+        if self.tracking is not None and applied_ids:
+            histories = self.tracking.history_for(list(applied_ids))
+            today = datetime.now(timezone.utc).date()
+            entretiens_prevus = count_upcoming_interviews(
+                (event for events in histories.values() for event in events), today
+            )
         return Response(
             200,
             {
@@ -761,6 +797,7 @@ class HermesApi:
                 "a_postuler": stats.a_postuler,
                 "postule": stats.postule,
                 "offres_total": stats.offres_total,
+                "entretiens_prevus": entretiens_prevus,
             },
         )
 
@@ -779,10 +816,13 @@ class HermesApi:
         applied_at = (
             (lambda rids: self.actions.applied_at_for(rids)) if self.actions is not None else None
         )
+        tracking_for = (
+            (lambda rids: self.tracking.history_for(rids)) if self.tracking is not None else None
+        )
         # Pas d'exigence de profil (comme /stats) : un candidat du périmètre sans profil obtient
         # un flux (souvent vide), pas un 404 — le cockpit montre le guide, pas un bandeau rouge.
         events = self.orchestrator.candidate_activity(
-            candidate_id, letters_at=letters_at, applied_at=applied_at
+            candidate_id, letters_at=letters_at, applied_at=applied_at, tracking_for=tracking_for
         )
         return Response(200, {"items": [self._serialize_activity_event(e) for e in events]})
 
@@ -1028,6 +1068,20 @@ class HermesApi:
             else set()
         )
 
+        # Filtre « entretien à venir » (OPP-223) : on résout ici (suivi + date du jour) les
+        # ``recommendation_id`` dont la candidature a un entretien à venir, puis on les passe à
+        # l'orchestrateur. Calculé seulement quand ce filtre est demandé, et uniquement sur les
+        # candidatures déclarées (seules porteuses de suivi).
+        interview_ids: set[str] = set()
+        if stage == "entretien" and self.tracking is not None and applied_ids:
+            histories = self.tracking.history_for(list(applied_ids))
+            today = datetime.now(timezone.utc).date()
+            interview_ids = {
+                rid
+                for rid, events in histories.items()
+                if count_upcoming_interviews(events, today) > 0
+            }
+
         # Pas d'exigence de profil : un candidat possédé sans profil (« nouveau profil ») voit les
         # offres **sans score annoté** (cf. `_resolve_profile`), pas un 404 — le filtre par étape
         # reste calculé sur ses décisions. L'owner-gating ci-dessus garde seul le périmètre.
@@ -1037,6 +1091,7 @@ class HermesApi:
             candidate_id=candidate_id,
             stage=stage,
             applied_recommendation_ids=applied_ids,
+            interview_recommendation_ids=interview_ids,
         )
 
         total_pages = (total + page_size - 1) // page_size
@@ -1684,6 +1739,78 @@ class HermesApi:
             raise ApiError(400, "applied_at ne peut pas être dans le futur")
         return raw
 
+    def _get_application_tracking(
+        self, recommendation_id: str, user: User | None
+    ) -> Response:
+        """Historique de suivi post-candidature d'une recommandation (OPP-223).
+
+        Mêmes gardes d'accès que les autres routes de candidature (existence → propriété →
+        rôle ``reviewer``). Lecture pure : renvoie la liste des événements dans l'ordre
+        chronologique (vide si rien n'a encore été noté).
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        events = self.tracking.history(recommendation_id)
+        return Response(200, {"events": [self._serialize_tracking_event(e) for e in events]})
+
+    def _post_application_tracking(
+        self, recommendation_id: str, body: dict, user: User | None
+    ) -> Response:
+        """Ajoute un événement de suivi post-candidature (OPP-223).
+
+        Pointage déclaratif (aucune garde ``{"confirm": true}``), mêmes gardes d'accès que la
+        déclaration de candidature. ``kind`` est requis (entretien/rejet/offre/relance) : un type
+        inconnu est un 400 (``TrackingError``). ``event_date`` (optionnel) date un entretien prévu,
+        éventuellement **futur** ; ``comment`` (optionnel) est libre. Exige une candidature
+        **déclarée candidatée** (sinon 409). Renvoie l'historique à jour (201).
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        kind = body.get("kind")
+        if not isinstance(kind, str) or kind.strip() == "":
+            raise ApiError(400, "kind est requis (entretien, rejet, offre, relance)")
+        event_date = self._parse_event_date(body)
+        comment = body.get("comment")
+        if comment is not None and not isinstance(comment, str):
+            raise ApiError(400, "comment doit être une chaîne")
+        try:
+            self.tracking.add_event(
+                recommendation_id, kind, event_date=event_date, comment=comment
+            )
+        except TrackingNotAllowedError as exc:
+            raise ApiError(409, str(exc))
+        except TrackingError as exc:
+            raise ApiError(400, str(exc))
+        events = self.tracking.history(recommendation_id)
+        return Response(201, {"events": [self._serialize_tracking_event(e) for e in events]})
+
+    @staticmethod
+    def _parse_event_date(body: dict) -> str | None:
+        """Valide la date métier optionnelle d'un événement de suivi (``event_date``).
+
+        ``None``/absent → pas de date métier distincte. Sinon, exige une chaîne ISO 8601
+        parseable (400 autrement). Contrairement à ``applied_at``, une date **future** est
+        permise : un entretien se planifie à l'avance.
+        """
+        raw = body.get("event_date")
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise ApiError(400, "event_date doit être une date ISO 8601 (chaîne)")
+        try:
+            datetime.fromisoformat(raw)
+        except ValueError:
+            raise ApiError(400, "event_date doit être une date ISO 8601 valide")
+        return raw
+
+    @staticmethod
+    def _serialize_tracking_event(event) -> dict:
+        """Représentation JSON d'un événement de suivi (OPP-223)."""
+        return {
+            "kind": event.kind,
+            "at": event.at,
+            "event_date": event.event_date,
+            "comment": event.comment,
+        }
+
     def _post_message_confirm(
         self, contact_id: str, body: dict, user: User | None
     ) -> Response:
@@ -1844,7 +1971,7 @@ class HermesApi:
         application = self.actions.get_application(recommendation_id)
         if application is None:
             return None
-        return {
+        payload = {
             "confirmed": True,
             "confirmed_at": application.confirmed_at,
             "status": application.status,
@@ -1852,3 +1979,18 @@ class HermesApi:
             "applied": application.applied_at is not None,
             "applied_at": application.applied_at,
         }
+        # Suivi post-candidature (OPP-223) : historique d'événements (entretien, rejet, offre
+        # reçue, relance). N'apparaît que si le service est câblé — sans quoi on n'affirme pas
+        # de section de suivi (cohérent avec ``application: None`` quand les actions manquent).
+        # Un historique n'existe que pour une candidature déclarée (``applied_at``) : inutile de
+        # requêter tant qu'on ne l'est pas, la liste est alors forcément vide.
+        if self.tracking is not None:
+            payload["tracking"] = (
+                [
+                    self._serialize_tracking_event(e)
+                    for e in self.tracking.history(recommendation_id)
+                ]
+                if application.applied_at is not None
+                else []
+            )
+        return payload

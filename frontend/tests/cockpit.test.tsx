@@ -7,7 +7,9 @@ import { CockpitPage } from "../src/pages/CockpitPage";
 import { AuthProvider } from "../src/auth/AuthContext";
 import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
 
-const STATS = { a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12 };
+const STATS = {
+  a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12, entretiens_prevus: 1,
+};
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
@@ -84,7 +86,7 @@ afterEach(() => {
 });
 
 describe("CockpitPage (OPP-164)", () => {
-  it("affiche les trois compteurs depuis GET /stats + le total du pool", async () => {
+  it("affiche les compteurs depuis GET /stats + le total du pool", async () => {
     stubFetch();
     renderCockpit();
 
@@ -95,7 +97,18 @@ describe("CockpitPage (OPP-164)", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Postulées")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
+    // Entretiens prévus (OPP-223) : 4e carte.
+    expect(screen.getByText("Entretiens prévus")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText(/12 offre\(s\) au total/)).toBeInTheDocument();
+  });
+
+  it("un clic sur « Entretiens prévus » ouvre Offres filtré sur « entretien » (OPP-223)", async () => {
+    stubFetch();
+    renderCockpit();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Entretiens prévus/ }));
+    expect(await screen.findByText(/PAGE OFFRES stage=entretien/)).toBeInTheDocument();
   });
 
   it("un clic sur « À postuler » ouvre Offres filtré sur cette étape", async () => {

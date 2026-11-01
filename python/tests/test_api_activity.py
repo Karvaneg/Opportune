@@ -12,6 +12,8 @@ import pytest
 from api.app import HermesApi
 from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
+from app.application_tracking_service import ApplicationTrackingService
+from app.application_tracking_store import ApplicationTrackingStore
 from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
@@ -58,9 +60,13 @@ def env():
         runs=RunStore(conn), run_id=lambda: "run-1", now=lambda: "2026-09-04T12:00:00+00:00",
     )
     ids = (str(n) for n in itertools.count(1))
+    applications = ApplicationActionStore(conn)
     actions = ActionService(
-        decisions, ApplicationActionStore(conn), OutboundMessageActionStore(conn),
+        decisions, applications, OutboundMessageActionStore(conn),
         new_id=lambda: next(ids), now=lambda: "2026-09-05T00:00:00+00:00",
+    )
+    tracking = ApplicationTrackingService(
+        applications, ApplicationTrackingStore(conn), now=lambda: "2026-09-07T00:00:00+00:00"
     )
     letters = LetterService(
         letters=letters_store, decisions=decisions, profiles=profiles, offers=offers, redacteur=None
@@ -68,7 +74,7 @@ def env():
     # Identité locale : propriétaire reviewer de cand-1 (et cand-2, sans profil, pour le cas
     # « candidat inconnu »).
     auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1", "cand-2"})))
-    api = HermesApi(orchestrator, actions, auth, letters=letters)
+    api = HermesApi(orchestrator, actions, auth, letters=letters, tracking=tracking)
     return api, letters_store
 
 
@@ -105,6 +111,28 @@ def test_activity_aggregates_all_event_types_sorted(env):
     # La décision pointe vers la fiche de recommandation.
     decision_item = next(i for i in items if i["type"] == "decision")
     assert decision_item["target_kind"] == "recommendation" and decision_item["target_id"] == rid
+
+
+def test_activity_includes_tracking_events(env):
+    api, _ = env
+    rid = decision_id("cand-1", "a")
+    # Amener la candidature jusqu'à « déclarée », puis noter un entretien.
+    api.dispatch("POST", "/candidates/cand-1/offers/a/rescore", {}, None)
+    api.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, None)
+    api.dispatch("POST", f"/applications/{rid}/confirm", {"confirm": True}, None)
+    api.dispatch("POST", f"/applications/{rid}/applied", {}, None)
+    api.dispatch(
+        "POST", f"/applications/{rid}/tracking",
+        {"kind": "interview", "event_date": "2026-11-15"}, None,
+    )
+
+    items = api.dispatch("GET", "/candidates/cand-1/activity", None, None).body["items"]
+
+    tracking_items = [i for i in items if i["type"] == "tracking"]
+    assert len(tracking_items) == 1
+    assert "Entretien" in tracking_items[0]["label"]
+    assert tracking_items[0]["target_kind"] == "recommendation"
+    assert tracking_items[0]["target_id"] == rid
 
 
 def test_activity_owned_candidate_without_profile_is_200(env):

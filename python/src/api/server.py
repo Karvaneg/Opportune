@@ -209,6 +209,8 @@ def assemble_api(
     """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
+    from app.application_tracking_service import ApplicationTrackingService
+    from app.application_tracking_store import ApplicationTrackingStore
     import os
 
     from app.decision_service import DecisionService
@@ -240,8 +242,14 @@ def assemble_api(
         decisions,
         runs=RunStore(conn),
     )
+    application_store = ApplicationActionStore(conn)
     actions = ActionService(
-        decisions, ApplicationActionStore(conn), OutboundMessageActionStore(conn)
+        decisions, application_store, OutboundMessageActionStore(conn)
+    )
+    # Suivi post-candidature (OPP-223) : partage le dépôt des candidatures (pour la garde
+    # « déclarée candidatée » et le candidate_id) et persiste ses événements à part.
+    tracking = ApplicationTrackingService(
+        application_store, ApplicationTrackingStore(conn)
     )
     # Consultation / édition du profil candidat (OPP-158) : même dépôt de profils que le scoring,
     # pour qu'une compétence ajoutée soit immédiatement prise en compte au prochain re-score.
@@ -398,6 +406,7 @@ def assemble_api(
         orchestrator,
         actions,
         auth,
+        tracking=tracking,
         offer_intake=offer_intake,
         letters=letters,
         offer_url_intake=offer_url_intake,

@@ -7,9 +7,14 @@ tri par date, annotation du score via ``?candidate_id`` et gardes (401 / owner-g
 import pytest
 
 from api.app import HermesApi
+from app.action_service import ActionService
+from app.action_store import ApplicationActionStore, OutboundMessageActionStore
+from app.application_tracking_service import ApplicationTrackingService
+from app.application_tracking_store import ApplicationTrackingStore
 from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
+from app.decision import decision_id
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
 from app.offer import Offer
@@ -137,6 +142,83 @@ def test_get_offers_stage_filter_paginates_subset():
     assert page1.body["total"] == 3 and page1.body["total_pages"] == 3
     page2 = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=a_etudier&page_size=1&page=2")
     assert [i["id"] for i in page2.body["items"]] == ["b"]
+
+
+def test_get_offers_filters_offers_with_upcoming_interview():
+    # OPP-223 : ?stage=entretien ne retient que les offres candidatées dont un entretien est à
+    # venir — filtre transverse (une telle offre est aussi « postulé »), résolu côté serveur.
+    conn = connect(":memory:")
+    offers = OfferStore(conn)
+    profiles = ProfileStore(conn)
+    profiles.save(create_profile(
+        id="cand-1", name="Marie", skills=["Python", "SQL"], contract_type="CDI",
+        location="Paris", total_experience_years=6,
+    ))
+    _seed_three(offers)
+    decisions = DecisionService(DecisionStore(conn))
+    orchestrator = HermesOrchestrator(
+        RecommendationService(profiles, offers), decisions, runs=RunStore(conn)
+    )
+    applications = ApplicationActionStore(conn)
+    actions = ActionService(decisions, applications, OutboundMessageActionStore(conn))
+    tracking = ApplicationTrackingService(applications, ApplicationTrackingStore(conn))
+    api = HermesApi(orchestrator, actions, tracking=tracking)
+
+    # Candidater à b, puis planifier un entretien à une date lointaine (toujours « à venir »).
+    rid_b = decision_id("cand-1", "b")
+    api.orchestrator.rescore_offer("cand-1", "b")
+    api.orchestrator.validate_decision("cand-1", "b", "approved")
+    api.dispatch("POST", f"/applications/{rid_b}/confirm", {"confirm": True})
+    api.dispatch("POST", f"/applications/{rid_b}/applied", {})
+    api.dispatch(
+        "POST", f"/applications/{rid_b}/tracking",
+        {"kind": "interview", "event_date": "2099-01-01"},
+    )
+
+    resp = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=entretien")
+
+    assert resp.status == 200
+    assert [i["id"] for i in resp.body["items"]] == ["b"]
+    assert resp.body["total"] == 1
+    conn.close()
+
+
+def test_applied_offer_with_interview_still_appears_in_postule():
+    # Régression (OPP-223) : un entretien ne sort PAS une offre de « Postulées ». Elle reste
+    # candidatée (``funnel_stage`` rend ``postule`` dès que ``applied``, quel que soit le suivi) ;
+    # « entretien à venir » est un filtre transverse, pas un retrait de l'entonnoir.
+    conn = connect(":memory:")
+    offers = OfferStore(conn)
+    profiles = ProfileStore(conn)
+    profiles.save(create_profile(
+        id="cand-1", name="Marie", skills=["Python", "SQL"], contract_type="CDI",
+        location="Paris", total_experience_years=6,
+    ))
+    _seed_three(offers)
+    decisions = DecisionService(DecisionStore(conn))
+    orchestrator = HermesOrchestrator(
+        RecommendationService(profiles, offers), decisions, runs=RunStore(conn)
+    )
+    applications = ApplicationActionStore(conn)
+    actions = ActionService(decisions, applications, OutboundMessageActionStore(conn))
+    tracking = ApplicationTrackingService(applications, ApplicationTrackingStore(conn))
+    api = HermesApi(orchestrator, actions, tracking=tracking)
+
+    rid_b = decision_id("cand-1", "b")
+    api.orchestrator.rescore_offer("cand-1", "b")
+    api.orchestrator.validate_decision("cand-1", "b", "approved")
+    api.dispatch("POST", f"/applications/{rid_b}/confirm", {"confirm": True})
+    api.dispatch("POST", f"/applications/{rid_b}/applied", {})
+    api.dispatch(
+        "POST", f"/applications/{rid_b}/tracking",
+        {"kind": "interview", "event_date": "2099-01-01"},
+    )
+
+    postule = api.dispatch("GET", "/offers?candidate_id=cand-1&stage=postule")
+
+    assert [i["id"] for i in postule.body["items"]] == ["b"]
+    assert postule.body["total"] == 1
+    conn.close()
 
 
 def test_get_offers_unknown_or_candidateless_stage_is_ignored():
