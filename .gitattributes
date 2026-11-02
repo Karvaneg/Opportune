@@ -1,0 +1,14 @@
+# Normalise toutes les fins de ligne en LF dans le dépôt, quelle que soit la
+# plateforme. Évite que les outils Windows (éditeurs, scripts PowerShell) ne
+# réécrivent les fichiers en CRLF et ne polluent le diff.
+* text=auto eol=lf
+
+# Scripts PowerShell : attendus en CRLF côté Windows.
+*.ps1 text eol=crlf
+
+# Fichiers binaires : jamais de conversion.
+*.png binary
+*.ico binary
+*.jpg binary
+*.woff binary
+*.woff2 binary
