@@ -17,11 +17,15 @@ Assistant de candidature **local-first et mono-utilisateur** (tourne sur la mach
 l'utilisateur, API sur `localhost`, sans login ni jeton — cf. `docs/adr/0003`).
 
 - **Back** (`python/`) : cœur métier + orchestrateur **Hermes** + API HTTP, écrits avec la
-  **bibliothèque standard** (zéro dépendance de prod ; extras `scrape`/`discord` confinés).
+  **bibliothèque standard** (zéro dépendance de prod ; extras `pdf`/`scrape`/`discord`/`build` confinés).
   Trois couches `app/` (métier) · `hermes/` (orchestration) · `api/` (HTTP). Détail :
   [`python/README.md`](python/README.md).
 - **Front** (`frontend/`) : dashboard React 19 + Vite + TypeScript + Tailwind v4 + TanStack
   Query. Détail : [`frontend/README.md`](frontend/README.md).
+- **App de bureau** (`frontend/src-tauri/`, épic E13) : coquille Tauri qui lance l'API
+  (binaire PyInstaller, `python/packaging/`) et un Ollama embarqué. Détail :
+  [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md). Les tickets E13 partent de
+  `epic/E13-opportune-1.0` et s'y re-mergent.
 - **V1 Node.js** (archivée sous `legacy/`) : MVP CLI historique, conservé pour
   référence — plus la cible produit.
 

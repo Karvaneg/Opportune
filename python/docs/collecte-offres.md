@@ -13,6 +13,12 @@ les échecs d'analyse **par offre** sont consignés sans interrompre la passe.
 > des flux). **France Travail**, l'API officielle, serait la plus riche mais n'est **pas
 > utilisable** aujourd'hui (voir plus bas) — d'où le choix d'Adzuna par défaut.
 
+> **Depuis l'app** : la collecte se lance aussi depuis le catalogue d'offres (`POST /collect`,
+> job de fond annulable, sources `adzuna` et `rss`). Elle utilise alors les **clés Adzuna** et
+> les **URLs de flux RSS** saisies dans la page Réglages (OPP-195 / OPP-222) ; les clés saisies
+> priment sur `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Les runners ci-dessous restent la voie en
+> ligne de commande et lisent l'environnement.
+
 ## RSS — connecteur actif, sans secret
 
 `app.rss_runner` ingère des offres depuis des **flux RSS/Atom** d'alertes emploi (`app.rss_feed`
