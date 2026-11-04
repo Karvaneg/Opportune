@@ -83,6 +83,55 @@ describe("RssSettings (OPP-195)", () => {
     );
   });
 
+  it("supprime tous les flux quand on vide le champ et confirme (PUT feeds vide)", async () => {
+    const puts = stubSettings("reviewer", ["https://a.example/f"]);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    renderSettings();
+    const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
+
+    await userEvent.clear(field);
+    await userEvent.click(screen.getByRole("button", { name: "Supprimer tous les flux" }));
+
+    expect(await screen.findByText("Flux RSS supprimés.")).toBeInTheDocument();
+    expect(puts).toEqual([{ feeds: [] }]);
+    expect(await screen.findByText("Aucun flux")).toBeInTheDocument();
+  });
+
+  it("n'envoie rien si l'utilisateur annule la confirmation de suppression", async () => {
+    const puts = stubSettings("reviewer", ["https://a.example/f"]);
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    renderSettings();
+    const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
+
+    await userEvent.clear(field);
+    await userEvent.click(screen.getByRole("button", { name: "Supprimer tous les flux" }));
+
+    expect(puts).toEqual([]);
+    expect(screen.getByText("1 flux configuré")).toBeInTheDocument();
+  });
+
+  it("efface le message de succès dès qu'on modifie le champ", async () => {
+    stubSettings("reviewer", []);
+    renderSettings();
+    const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
+    await userEvent.type(field, "https://ok.example/f");
+    await userEvent.click(screen.getByRole("button", { name: /Enregistrer les flux/ }));
+    await screen.findByText("Flux RSS enregistrés.");
+
+    await userEvent.type(field, "\nhttps://autre.example/f");
+
+    expect(screen.queryByText("Flux RSS enregistrés.")).not.toBeInTheDocument();
+  });
+
+  it("garde le bouton inactif sur champ vide quand aucun flux n'est enregistré", async () => {
+    stubSettings("reviewer", []);
+    renderSettings();
+
+    await screen.findByLabelText("URLs des flux RSS");
+
+    expect(screen.getByRole("button", { name: /Enregistrer les flux/ })).toBeDisabled();
+  });
+
   it("n'expose pas de champ à un non-reviewer", async () => {
     stubSettings("viewer", []);
     renderSettings();

@@ -40,9 +40,14 @@ function RssForm({ initialFeeds }: { initialFeeds: string[] }) {
     .map((line) => line.trim())
     .filter((line) => line !== "");
   const configuredCount = initialFeeds.length;
-  const canSave = feeds.length > 0 && !save.isPending;
+  // Champ vide = demande de tout supprimer (OPP-225) : permise dès qu'au moins un flux est
+  // enregistré (sinon il n'y a rien à supprimer et le bouton reste inactif).
+  const removesAll = feeds.length === 0 && configuredCount > 0;
+  const canSave = (feeds.length > 0 || removesAll) && !save.isPending;
 
-  const submit = () =>
+  const submit = () => {
+    // Tout supprimer est irréversible : on demande confirmation avant d'envoyer la liste vide.
+    if (removesAll && !window.confirm("Supprimer tous les flux RSS enregistrés ?")) return;
     save.mutate(
       { feeds },
       {
@@ -51,6 +56,7 @@ function RssForm({ initialFeeds }: { initialFeeds: string[] }) {
         onSuccess: (saved: RssData) => setText(saved.feeds.join("\n")),
       },
     );
+  };
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-surface-raised p-4">
@@ -74,9 +80,10 @@ function RssForm({ initialFeeds }: { initialFeeds: string[] }) {
       <div className="space-y-2 text-sm text-ink-muted">
         <p>
           Colle l'URL d'un flux RSS/Atom d'offres par ligne. La collecte « flux RSS » parcourt ces
-          flux et ajoute les offres neuves au catalogue. La plupart des grands sites d'emploi, en
-          France notamment, n'exposent plus de flux RSS public : cherche un flux proposé par un
-          site ou un agrégateur d'offres de ton secteur.
+          flux et ajoute les offres neuves au catalogue. Pour supprimer tous les flux, vide le
+          champ puis enregistre. La plupart des grands sites d'emploi, en France notamment,
+          n'exposent plus de flux RSS public : cherche un flux proposé par un site ou un
+          agrégateur d'offres de ton secteur.
         </p>
       </div>
 
@@ -84,7 +91,11 @@ function RssForm({ initialFeeds }: { initialFeeds: string[] }) {
         URLs des flux (une par ligne)
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            // Le message du dernier enregistrement ne vaut plus pour une saisie modifiée.
+            if (save.isSuccess || save.isError) save.reset();
+          }}
           rows={5}
           spellCheck={false}
           placeholder="https://exemple.fr/offres.rss"
@@ -100,10 +111,16 @@ function RssForm({ initialFeeds }: { initialFeeds: string[] }) {
           disabled={!canSave}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
-          {save.isPending ? "Enregistrement…" : "Enregistrer les flux"}
+          {save.isPending
+            ? "Enregistrement…"
+            : removesAll
+              ? "Supprimer tous les flux"
+              : "Enregistrer les flux"}
         </button>
         {save.isSuccess && (
-          <span className="text-sm text-success-text">Flux RSS enregistrés.</span>
+          <span className="text-sm text-success-text">
+            {save.data.feeds.length === 0 ? "Flux RSS supprimés." : "Flux RSS enregistrés."}
+          </span>
         )}
         {save.isError && <ErrorNotice error={save.error} />}
       </div>

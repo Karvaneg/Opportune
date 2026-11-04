@@ -1309,7 +1309,8 @@ class HermesApi:
         """Enregistre la liste des URLs de flux RSS saisies par l'utilisateur (OPP-195).
 
         Réservé au ``reviewer``. ``feeds`` doit être une liste (400 sinon) ; le store ne retient
-        que les URLs ``http(s)`` exploitables et refuse une liste qui n'en contient aucune (400).
+        que les URLs ``http(s)`` exploitables. Une liste vide supprime tous les flux (OPP-225) ;
+        une saisie non vide sans aucune URL exploitable est refusée (400).
         Réponse : la liste **réellement enregistrée** (après nettoyage), que l'UI réaffiche.
         """
         self._guard_reviewer(user)
@@ -1321,6 +1322,9 @@ class HermesApi:
             saved = self.rss_feeds.save(feeds)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from exc
+        except OSError as exc:
+            # Fichier verrouillé (Windows), droits manquants… : on le dit plutôt qu'une 500 muette.
+            raise ApiError(500, f"enregistrement des flux RSS impossible : {exc}") from exc
         return Response(200, {"feeds": saved})
 
     def _post_collect_cancel(self, job_id: str, user: User | None) -> Response:
