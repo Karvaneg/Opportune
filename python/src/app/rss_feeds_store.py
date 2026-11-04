@@ -51,6 +51,15 @@ def _clean(urls: object) -> list[str]:
     return cleaned
 
 
+def _has_input(urls: list[object]) -> bool:
+    """Vrai si la liste contient au moins une chaîne non blanche (une saisie à valider).
+
+    Sinon (liste vide, lignes blanches, éléments non-chaînes), il n'y a rien de saisi : c'est
+    une demande de tout supprimer.
+    """
+    return any(isinstance(item, str) and item.strip() for item in urls)
+
+
 class RssFeedsStore:
     """Lit/écrit la liste des URLs de flux RSS dans un fichier JSON local (hors dépôt)."""
 
@@ -70,13 +79,20 @@ class RssFeedsStore:
     def save(self, feeds: list[str]) -> list[str]:
         """Persiste les URLs (après nettoyage) et rend la liste réellement enregistrée.
 
-        Validation ici : une liste sans aucune URL ``http(s)`` exploitable → ``ValueError``
-        (enregistrer « rien » rendrait la collecte muette sans que l'utilisateur comprenne).
-        Le dossier parent est créé au besoin (1er lancement).
+        Une liste **sans aucune saisie** (vide, ou faite uniquement de lignes blanches) est une
+        demande explicite de tout supprimer (OPP-225) : on efface les flux et on rend ``[]``. En
+        revanche, une saisie non vide sans aucune URL ``http(s)`` exploitable → ``ValueError`` :
+        l'utilisateur a tapé quelque chose d'invalide, l'effacer en silence lui ferait perdre sa
+        configuration sans qu'il comprenne. Le dossier parent est créé au besoin (1er lancement).
         """
+        if not _has_input(feeds):
+            self.clear()
+            return []
         cleaned = _clean(feeds)
         if not cleaned:
-            raise ValueError("au moins une URL de flux http(s) est requise")
+            raise ValueError(
+                "aucune URL de flux valide : chaque ligne doit commencer par http:// ou https://"
+            )
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(json.dumps({"feeds": cleaned}), encoding="utf-8")
         return cleaned

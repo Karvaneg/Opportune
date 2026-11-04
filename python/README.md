@@ -76,7 +76,7 @@ inchangées par décision).
 | `GET /settings/adzuna` | Clés Adzuna configurées ou non (jamais les clés elles-mêmes, OPP-222) |
 | `PUT /settings/adzuna` | Enregistre les clés Adzuna saisies dans l'app |
 | `GET /settings/rss` | URLs de flux RSS enregistrées (OPP-195) |
-| `PUT /settings/rss` | Remplace la liste des flux RSS |
+| `PUT /settings/rss` | Remplace la liste des flux RSS (liste vide = tout supprimer, OPP-225) |
 | `POST /applications/{recommendation_id}/confirm` | Action sensible : candidature (confirmation explicite + décision `approved` + rôle `reviewer`) |
 | `POST /applications/{recommendation_id}/applied` | Suivi : « j'ai candidaté » (date optionnelle) |
 | `DELETE /applications/{recommendation_id}/applied` | Annule la candidature déclarée |

@@ -63,11 +63,36 @@ def test_get_returns_saved_feeds(tmp_path):
     assert response.body == {"feeds": ["https://a.example/f"]}
 
 
-def test_put_rejects_non_list_or_empty_usable(tmp_path):
+def test_put_rejects_non_list_or_no_usable_url(tmp_path):
     api = _api(RssFeedsStore(tmp_path / "rss.json"))
 
     assert api.dispatch("PUT", "/settings/rss", {"feeds": "https://a.example/f"}).status == 400
     assert api.dispatch("PUT", "/settings/rss", {"feeds": ["ftp://nope", ""]}).status == 400
+
+
+def test_put_empty_list_removes_all_feeds(tmp_path):
+    store = RssFeedsStore(tmp_path / "rss.json")
+    api = _api(store)
+    api.dispatch("PUT", "/settings/rss", {"feeds": ["https://a.example/f"]})
+
+    response = api.dispatch("PUT", "/settings/rss", {"feeds": []})
+
+    assert response.status == 200
+    assert response.body == {"feeds": []}
+    assert store.load() == []
+
+
+def test_put_reports_file_system_error_with_message(tmp_path):
+    class LockedStore(RssFeedsStore):
+        def clear(self):
+            raise PermissionError("fichier verrouillé")
+
+    api = _api(LockedStore(tmp_path / "rss.json"))
+
+    response = api.dispatch("PUT", "/settings/rss", {"feeds": []})
+
+    assert response.status == 500
+    assert "fichier verrouillé" in response.body["error"]
 
 
 def test_requires_reviewer_role(tmp_path):

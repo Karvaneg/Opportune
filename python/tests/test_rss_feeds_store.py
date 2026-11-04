@@ -49,6 +49,27 @@ def test_save_rejects_when_no_usable_url(tmp_path):
         store.save(["", "ftp://nope", "mailto:x@y.z"])
 
 
+def test_save_empty_list_clears_stored_feeds(tmp_path):
+    store = RssFeedsStore(tmp_path / "rss.json")
+    store.save(["https://ok.example/feed"])
+
+    saved = store.save([])
+
+    assert saved == []
+    assert store.load() == []
+    assert not (tmp_path / "rss.json").exists()
+
+
+def test_save_blank_lines_only_clears_stored_feeds(tmp_path):
+    store = RssFeedsStore(tmp_path / "rss.json")
+    store.save(["https://ok.example/feed"])
+
+    saved = store.save(["", "   "])
+
+    assert saved == []
+    assert store.load() == []
+
+
 def test_load_ignores_non_string_and_schemeless_entries(tmp_path):
     path = tmp_path / "mixed.json"
     path.write_text(
@@ -90,3 +111,20 @@ def test_default_path_honours_data_dir(tmp_path):
     from app.rss_feeds_store import default_rss_feeds_path
 
     assert default_rss_feeds_path(tmp_path).parent == tmp_path
+
+
+def test_save_without_any_string_input_clears_stored_feeds(tmp_path):
+    store = RssFeedsStore(tmp_path / "rss.json")
+    store.save(["https://ok.example/feed"])
+
+    saved = store.save([None, 3])
+
+    assert saved == []
+    assert store.load() == []
+
+
+def test_save_rejection_message_names_the_expected_scheme(tmp_path):
+    store = RssFeedsStore(tmp_path / "rss.json")
+
+    with pytest.raises(ValueError, match="http:// ou https://"):
+        store.save(["exemple.fr/flux"])
