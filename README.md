@@ -40,11 +40,11 @@ Opportune s'installe **par double-clic, sans terminal**, avec son assistant IA l
 1. Ouvre la page **[Télécharger Opportune](https://github.com/Karvaneg/Opportune/releases/latest)**
    (dernière version publiée) et, dans la partie **Assets**, prends le fichier de ton système :
 
-   | Système | Fichier à télécharger |
-   |---|---|
-   | Windows | `.exe` (installeur classique) ou `.msi` |
-   | Linux (Debian, Ubuntu…) | `.deb` |
-   | Linux (Fedora, openSUSE…) | `.rpm` |
+   | Système                    | Fichier à télécharger                             |
+   | -------------------------- | ------------------------------------------------- |
+   | Windows                    | `.exe` (installeur classique) ou `.msi`           |
+   | Linux (Debian, Ubuntu…)    | `.deb`                                            |
+   | Linux (Fedora, openSUSE…)  | `.rpm`                                            |
    | Linux (toute distribution) | `.AppImage` (rendre exécutable, puis double-clic) |
 
 2. Lance l'installeur. Les installeurs ne sont **pas encore signés** : Windows peut afficher
@@ -72,6 +72,7 @@ Mac n'est pas encore disponible. Pour lancer Opportune depuis les sources (déve
 - [Feuille de route](#feuille-de-route)
 - [Documentation](#documentation)
 - [Prototype Node.js (archivé)](#prototype-nodejs-archivé)
+- [Autrice](#autrice)
 
 ## Du prototype Node.js à Opportune
 
@@ -147,26 +148,26 @@ Interface **React/Vite**, **thèmes clair et sombre** (bascule auto / clair / so
 pilotées par des **jetons sémantiques**. Design system complet :
 [`frontend/src/styles/README.md`](frontend/src/styles/README.md).
 
-| Jeton | Rôle | Clair | Sombre |
-|---|---|---|---|
-| `brand` | marque — mèche, liens, action principale | `#4f46e5` | `#818cf8` |
-| `ink` | texte | `#0f172a` | `#f8fafc` |
-| `surface` | fond | `#f8fafc` | `#0f172a` |
-| `success` | succès | `#059669` | `#34d399` |
-| `warning` | alerte | `#d97706` | `#fbbf24` |
-| `danger` | erreur | `#dc2626` | `#f87171` |
+| Jeton     | Rôle                                     | Clair     | Sombre    |
+| --------- | ---------------------------------------- | --------- | --------- |
+| `brand`   | marque — mèche, liens, action principale | `#4f46e5` | `#818cf8` |
+| `ink`     | texte                                    | `#0f172a` | `#f8fafc` |
+| `surface` | fond                                     | `#f8fafc` | `#0f172a` |
+| `success` | succès                                   | `#059669` | `#34d399` |
+| `warning` | alerte                                   | `#d97706` | `#fbbf24` |
+| `danger`  | erreur                                   | `#dc2626` | `#f87171` |
 
 ### Captures d'écran
 
-*Captures prises dans l'espace Démo (aucune donnée personnelle).*
+_Captures prises dans l'espace Démo (aucune donnée personnelle)._
 
-| Écran d'accueil — Démo / Mon espace | Cockpit — guide de démarrage |
-|:---:|:---:|
-| ![Écran d'accueil Démo / Mon espace](docs/images/WelcomeScreen.png) | ![Cockpit avec le guide « Nouveau profil » en 3 étapes](docs/images/guide.png) |
-| **Cockpit — synthèse** | **Profil — CV & compétences** |
-| ![Cockpit de synthèse : compteurs et activité récente](docs/images/accueil.png) | ![Profil : import de CV, compétences et parcours](docs/images/profil.png) |
-| **Offres scorées** | **Recommandation + lettre** |
-| ![Catalogue d'offres scorées](docs/images/offres.png) | ![Fiche recommandation : score, lettre et validation](docs/images/recommandation.png) |
+|                       Écran d'accueil — Démo / Mon espace                       |                             Cockpit — guide de démarrage                              |
+| :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
+|       ![Écran d'accueil Démo / Mon espace](docs/images/WelcomeScreen.png)       |    ![Cockpit avec le guide « Nouveau profil » en 3 étapes](docs/images/guide.png)     |
+|                             **Cockpit — synthèse**                              |                             **Profil — CV & compétences**                             |
+| ![Cockpit de synthèse : compteurs et activité récente](docs/images/accueil.png) |       ![Profil : import de CV, compétences et parcours](docs/images/profil.png)       |
+|                               **Offres scorées**                                |                              **Recommandation + lettre**                              |
+|              ![Catalogue d'offres scorées](docs/images/offres.png)              | ![Fiche recommandation : score, lettre et validation](docs/images/recommandation.png) |
 
 ## Prérequis
 
@@ -306,3 +307,10 @@ npm test                     # suite du prototype via node --test
 
 Détails dans [`legacy/README.md`](legacy/README.md). Les données locales du prototype sont stockées
 en JSON sous `data/` (gitignoré) et ne quittent pas votre machine.
+
+## Autrice
+
+Opportune est conçu et développé par **Marie Le Carvennec** @karvaneg.<br />
+🌐 [Portfolio Karvaneg](https://portfolio-karvaneg.vercel.app) ·
+[LinkedIn](https://linkedin.com/in/marielecarvennec) ·
+[Playbook IA](https://portfolio-karvaneg.vercel.app/playbook)
