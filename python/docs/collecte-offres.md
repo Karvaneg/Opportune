@@ -15,9 +15,11 @@ les échecs d'analyse **par offre** sont consignés sans interrompre la passe.
 
 > **Depuis l'app** : la collecte se lance aussi depuis le catalogue d'offres (`POST /collect`,
 > job de fond annulable, sources `adzuna` et `rss`). Elle utilise alors les **clés Adzuna** et
-> les **URLs de flux RSS** saisies dans la page Réglages (OPP-195 / OPP-222) ; les clés saisies
-> priment sur `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`. Les runners ci-dessous restent la voie en
-> ligne de commande et lisent l'environnement.
+> les **URLs de flux RSS** saisies dans la page Réglages (OPP-195 / OPP-222). L'app n'utilise
+> **que** les clés saisies dans les Réglages de l'espace : `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`
+> ne servent plus de repli (OPP-227). Sans clés saisies, le bouton de collecte Adzuna est
+> désactivé. Les runners ci-dessous restent la voie en ligne de commande et lisent
+> l'environnement.
 
 ## RSS — connecteur actif, sans secret
 

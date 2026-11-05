@@ -72,32 +72,22 @@ def test_save_rejects_empty_credentials(tmp_path, app_id, app_key):
         store.save(app_id, app_key)
 
 
-def test_resolve_prefers_stored_credentials_over_env(tmp_path):
+def test_resolve_returns_the_stored_credentials(tmp_path):
     store = AdzunaCredentialsStore(tmp_path / "adzuna.json")
     store.save("stored-id", "stored-key")
 
-    resolved = resolve_adzuna_credentials(
-        store, {"ADZUNA_APP_ID": "env-id", "ADZUNA_APP_KEY": "env-key"}
-    )
+    resolved = resolve_adzuna_credentials(store)
 
     assert resolved == AdzunaCredentials(app_id="stored-id", app_key="stored-key")
 
 
-def test_resolve_falls_back_to_env_when_store_empty(tmp_path):
+def test_resolve_ignores_the_environment_when_nothing_is_stored(tmp_path, monkeypatch):
     store = AdzunaCredentialsStore(tmp_path / "absent.json")
+    monkeypatch.setenv("ADZUNA_APP_ID", "env-id")
+    monkeypatch.setenv("ADZUNA_APP_KEY", "env-key")
 
-    resolved = resolve_adzuna_credentials(
-        store, {"ADZUNA_APP_ID": "env-id", "ADZUNA_APP_KEY": "env-key"}
-    )
-
-    assert resolved == AdzunaCredentials(app_id="env-id", app_key="env-key")
-
-
-def test_resolve_raises_when_neither_store_nor_env(tmp_path):
-    store = AdzunaCredentialsStore(tmp_path / "absent.json")
-
-    with pytest.raises(AdzunaAuthError):
-        resolve_adzuna_credentials(store, {})
+    with pytest.raises(AdzunaAuthError, match="Réglages"):
+        resolve_adzuna_credentials(store)
 
 
 def test_clear_removes_stored_credentials(tmp_path):

@@ -20,6 +20,9 @@ import { RecommendationPage } from "./pages/RecommendationPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsListPage } from "./pages/RunsListPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { attentionClass, useSettingsAttention } from "./lib/settingsAttention";
+
+const SETTINGS_PATH = "/reglages";
 
 /** Onglets de navigation, partagés entre le header (desktop) et la barre du bas (mobile). */
 const NAV_ITEMS: { to: string; label: string; end: boolean; icon: LucideIcon }[] = [
@@ -27,7 +30,7 @@ const NAV_ITEMS: { to: string; label: string; end: boolean; icon: LucideIcon }[]
   { to: "/profil", label: "Profil", end: false, icon: User },
   { to: "/offres", label: "Offres", end: false, icon: Briefcase },
   { to: "/historique", label: "Historique", end: false, icon: History },
-  { to: "/reglages", label: "Réglages", end: false, icon: Settings },
+  { to: SETTINGS_PATH, label: "Réglages", end: false, icon: Settings },
 ];
 
 /**
@@ -49,17 +52,32 @@ function ScopeSearchBar() {
 }
 
 /** Style d'un onglet du header (desktop) en « pill » : fond accent quand actif. */
+// Bordure transparente (padding réduit d'autant) : invisible au repos, elle porte le clignotement
+// de l'onglet « Réglages » (OPP-227) sans décaler la mise en page.
 function navClass({ isActive }: { isActive: boolean }): string {
   return isActive
-    ? "rounded-md bg-brand/10 px-3 py-1.5 font-medium text-brand"
-    : "rounded-md px-3 py-1.5 text-ink-muted transition-colors hover:bg-ink/5 hover:text-ink";
+    ? "rounded-md border border-transparent bg-brand/10 px-[11px] py-[5px] font-medium text-brand"
+    : "rounded-md border border-transparent px-[11px] py-[5px] text-ink-muted transition-colors hover:bg-ink/5 hover:text-ink";
 }
 
 /** Style d'un onglet de la barre du bas (mobile) : pleine largeur, icône + label, accent si actif. */
 function tabClass({ isActive }: { isActive: boolean }): string {
   return isActive
-    ? "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium text-brand"
-    : "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs text-ink-muted";
+    ? "flex flex-1 flex-col items-center gap-0.5 rounded-md border border-transparent py-[7px] text-xs font-medium text-brand"
+    : "flex flex-1 flex-col items-center gap-0.5 rounded-md border border-transparent py-[7px] text-xs text-ink-muted";
+}
+
+/**
+ * Clé d'un onglet : celle de « Réglages » change à chaque demande d'attention, ce qui remonte
+ * l'onglet et rejoue son clignotement (OPP-227). Les autres onglets gardent une clé fixe.
+ */
+function navKey(to: string, settingsAttention: number): string {
+  return to === SETTINGS_PATH ? `${to}#${settingsAttention}` : to;
+}
+
+/** Classe de clignotement de l'onglet « Réglages » après une demande d'attention (OPP-227). */
+function navAttentionClass(to: string, settingsAttention: number): string {
+  return to === SETTINGS_PATH ? attentionClass(settingsAttention) : "";
 }
 
 export function App() {
@@ -123,6 +141,8 @@ function AuthenticatedApp() {
   const { space, resetSpace } = useSpace();
   // Cache créé une fois au montage (local-first : plus de cycle de session à gérer).
   const queryClient = useMemo(() => createQueryClient(), []);
+  // Demandes « regarde les Réglages » (OPP-227) : font clignoter l'onglet Réglages.
+  const settingsAttention = useSettingsAttention();
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -138,7 +158,14 @@ function AuthenticatedApp() {
                   {/* Nav dans le header en desktop uniquement ; sur mobile elle passe en barre du bas. */}
                   <nav className="hidden items-center gap-1 text-sm sm:flex">
                     {NAV_ITEMS.map((item) => (
-                      <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>
+                      <NavLink
+                        key={navKey(item.to, settingsAttention)}
+                        to={item.to}
+                        end={item.end}
+                        className={(state) =>
+                          `${navClass(state)} ${navAttentionClass(item.to, settingsAttention)}`
+                        }
+                      >
                         {item.label}
                       </NavLink>
                     ))}
@@ -193,7 +220,12 @@ function AuthenticatedApp() {
             {/* Barre d'onglets fixe en bas, mobile uniquement : accès au pouce, pattern « app ». */}
             <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-surface-raised/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
               {NAV_ITEMS.map(({ to, label, end, icon: Icon }) => (
-                <NavLink key={to} to={to} end={end} className={tabClass}>
+                <NavLink
+                  key={navKey(to, settingsAttention)}
+                  to={to}
+                  end={end}
+                  className={(state) => `${tabClass(state)} ${navAttentionClass(to, settingsAttention)}`}
+                >
                   <Icon className="h-5 w-5" aria-hidden />
                   {label}
                 </NavLink>

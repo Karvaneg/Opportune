@@ -7,9 +7,11 @@ import { ApiHttpError } from "../api/client";
  * reviewer. Centralise le style partagé par ces encarts, pour qu'un ajustement de tokens (bord,
  * fond, espacement) se fasse à un seul endroit plutôt que recopié dans chaque composant.
  */
-export function Hint({ children }: { children: ReactNode }) {
+export function Hint({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <p className="rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted">
+    <p
+      className={`rounded-md border border-dashed border-border bg-surface p-3 text-sm text-ink-muted ${className}`}
+    >
       {children}
     </p>
   );
