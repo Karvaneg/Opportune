@@ -122,3 +122,14 @@ def test_dispatch_rollback_unpoisons_shared_connection(tmp_path):
 
     # La connexion de l'API n'est pas figée : elle voit bien l'offre écrite ailleurs.
     assert conn.execute("SELECT COUNT(*) FROM offers").fetchone()[0] == 1
+
+
+def test_oversized_body_is_refused_before_being_read(monkeypatch):
+    from api import server
+
+    monkeypatch.setattr(server, "MAX_REQUEST_BYTES", 1)
+
+    status, body = _post_once(_RaisingApi(RuntimeError("ne doit pas être appelé")))
+
+    assert status == 413
+    assert "error" in body

@@ -27,6 +27,9 @@ from app.auth import REVIEWER, LocalAuthProvider, User
 # assets statiques. Le front envoie toujours ce préfixe ; on le retire avant dispatch, car
 # les routes du dispatcher sont à la racine (``/offers``, pas ``/api/offers``).
 _API_PREFIX = "/api"
+# Taille max d'un corps de requête : l'import d'un export (200 Mo max) encodé en base64 (+33 %)
+# dans du JSON, avec une marge. Au-delà, 413 sans lire le corps.
+MAX_REQUEST_BYTES = 280 * 1024 * 1024
 
 
 def _is_api_path(path: str) -> bool:
@@ -91,6 +94,12 @@ def make_handler(
                 length = -1
             if length < 0:
                 self._write(400, {"error": "en-tête Content-Length invalide"})
+                return
+            if length > MAX_REQUEST_BYTES:
+                # Refusé **avant** lecture : un corps démesuré ne doit pas occuper la mémoire ni
+                # bloquer l'unique thread du serveur pendant qu'on le lit.
+                self.close_connection = True
+                self._write(413, {"error": "requête trop volumineuse"})
                 return
             raw = self.rfile.read(length) if length else b""
             try:
@@ -546,6 +555,32 @@ def build_local_auth(owned_provider) -> LocalAuthProvider:
     return LocalAuthProvider(user, owned_provider=owned_provider)
 
 
+def _data_transfer_for(api, conn, *, settings_dir: "Path | None"):
+    """Service d'export / import (OPP-232) d'un espace : sa base et ses fichiers de réglages.
+
+    ``settings_dir`` ``None`` = dossier de réglages par défaut (« Mon espace »). L'import est
+    refusé pendant une collecte de l'espace (elle écrit dans la base).
+    """
+    from app import __version__
+    from app.adzuna_credentials_store import default_credentials_path
+    from app.ats_companies_store import default_ats_companies_path
+    from app.data_transfer_service import DataTransferService
+    from app.database_schema import ensure_schema
+    from app.rss_feeds_store import default_rss_feeds_path
+
+    return DataTransferService(
+        conn=conn,
+        settings_files=[
+            default_credentials_path(settings_dir),
+            default_rss_feeds_path(settings_dir),
+            default_ats_companies_path(settings_dir),
+        ],
+        app_version=__version__,
+        ensure_schema=ensure_schema,
+        is_busy=lambda: api.collections is not None and api.collections.active_job() is not None,
+    )
+
+
 def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     import os
     from pathlib import Path
@@ -573,6 +608,9 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     mine = assemble_api(
         mine_conn, build_local_auth(mine_registry.list_ids), searches=mine_registry
     )
+    # Export / import des données (OPP-232), pour chaque espace sur sa propre base et ses propres
+    # réglages : « Mon espace » ici, la Démo plus bas (import après un « repartir de zéro »).
+    mine.data_transfer = _data_transfer_for(mine, mine_conn, settings_dir=None)
 
     # Espace démo (OPP-182) : une base d'exemple **séparée** (jamais mélangée au réel). On la
     # seede au **tout premier lancement seulement** (fichier absent) : ainsi un « repartir de
@@ -610,6 +648,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
         searches=demo_registry,
         settings_dir=demo_settings_dir,
     )
+    demo.data_transfer = _data_transfer_for(demo, demo_conn, settings_dir=demo_settings_dir)
     # Réglages de collecte pré-remplis (OPP-226), pour essayer RSS et ATS sans rien saisir :
     # posés une fois (témoin dans le dossier des réglages démo, indépendant de la base), puis à
     # « Restaurer l'exemple ». Un échec d'écriture ne bloque pas le démarrage : sans témoin posé,

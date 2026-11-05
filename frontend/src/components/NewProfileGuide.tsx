@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { KeyRound } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { FolderInput, KeyRound } from "lucide-react";
 import { useProfile } from "../api/profile";
 import { useRuns } from "../api/runs";
-import { useAdzunaSettings } from "../api/settings";
+import { useAdzunaSettings, useAtsSettings, useRssSettings } from "../api/settings";
 import { useLlmStatus } from "../api/system";
 import { useIsReviewer } from "../auth/roles";
+import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { ImportDataPicker } from "./ImportDataPicker";
 import type { CandidateStats } from "../api/types";
 
 /** Fait défiler jusqu'à un ancrage de la page, en douceur. Pur confort de navigation (pas de
@@ -21,9 +24,13 @@ function scrollToTop() {
   window.scrollTo?.({ top: 0, behavior: "smooth" });
 }
 
-/** Une étape du guide : son libellé, son état, et l'action qui y mène — soit un lien vers une
- * autre page (`to`), soit un défilement intra-page (`onClick`). */
-type StepAction = { label: string; to: string } | { label: string; onClick: () => void };
+/** Une étape du guide : son libellé, son état, et l'action qui y mène : un lien vers une autre
+ * page (`to`), un défilement intra-page (`onClick`), ou un contrôle complet (`control`, ex. le
+ * choix de fichier de l'import). */
+type StepAction =
+  | { label: string; to: string }
+  | { label: string; onClick: () => void }
+  | { control: ReactNode };
 type Step = {
   title: string;
   description: string;
@@ -37,7 +44,8 @@ type Step = {
  * l'assistant local, ajouter un CV, récupérer des offres, lancer une analyse — voient leur
  * avancement **déduit de l'état réel** (statut LLM, profil, pool d'offres, runs du candidat),
  * sans drapeau persistant. S'y ajoute une invite **optionnelle** à saisir les clés Adzuna pour de
- * vraies offres. Chaque étape à faire renvoie à l'action existante (navigation guidée, pas de
+ * vraies offres, et, tant que l'espace est vide, une invite **optionnelle** à importer un export
+ * (OPP-232). Chaque étape à faire renvoie à l'action existante (navigation guidée, pas de
  * duplication d'UI).
  *
  * Le guide disparaît dès que la **boucle métier** (CV → offres → analyse) est complète : c'est
@@ -69,6 +77,13 @@ export function NewProfileGuide({
   // explicitement « non configuré » (pas de clignotement au chargement).
   const adzuna = useAdzunaSettings();
   const adzunaMissing = adzuna.data?.configured === false;
+  // Réglages de collecte : l'import les remplace aussi (et supprime ceux absents de l'export).
+  const rss = useRssSettings();
+  const ats = useAtsSettings();
+  const settingsEmpty =
+    adzunaMissing && rss.data?.feeds.length === 0 && ats.data?.companies.length === 0;
+  const { searches } = useTargetCandidate();
+  const queryClient = useQueryClient();
 
   // On attend que chaque signal **de la boucle métier** soit résolu (succès ou erreur) avant de
   // décider : sinon l'encart apparaîtrait puis disparaîtrait (flash) au fil des réponses réseau.
@@ -122,6 +137,14 @@ export function NewProfileGuide({
   };
   const steps: Step[] = llmReady ? coreSteps : [llmStep, ...coreSteps];
 
+  // Import d'un export (OPP-232), proposé **seulement si l'espace est vide** : une seule recherche,
+  // sans CV, sans offre ni analyse, et aucun réglage de collecte (clés Adzuna, flux RSS,
+  // entreprises ciblées). L'import remplace tout l'espace ; le proposer dès qu'une recherche
+  // vide s'ajoute à d'autres, ou après une saisie de réglages, risquerait de les effacer. Couvre
+  // « Mon espace » au premier lancement et la Démo après « repartir de zéro ».
+  const spaceIsEmpty =
+    searches.length === 1 && coreSteps.every((s) => !s.done) && settingsEmpty;
+
   // Première étape non faite : mise en avant (« à faire maintenant »).
   const currentIndex = steps.findIndex((s) => !s.done);
 
@@ -149,6 +172,28 @@ export function NewProfileGuide({
           />
         ))}
       </ol>
+      {spaceIsEmpty && (
+        <ol className="space-y-2">
+          <StepRow
+            marker={<FolderInput className="h-3.5 w-3.5" aria-hidden />}
+            title="Importer vos données"
+            description="Optionnel : vous changez d'ordinateur ? Reprenez les données d'un export Opportune. Elles remplacent celles de cet espace."
+            done={false}
+            highlight={false}
+            optional
+            action={{
+              control: (
+                <ImportDataPicker
+                  label="Importer mes données"
+                  className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
+                  // Toutes les données affichées viennent de changer : on rafraîchit tout.
+                  onImported={() => queryClient.invalidateQueries()}
+                />
+              ),
+            }}
+          />
+        </ol>
+      )}
       {/* Invite optionnelle (OPP-195) : saisir des clés Adzuna pour récupérer de vraies offres en
           ligne. Sans clés, l'app reste utile (espace Démo). Non comptée dans la complétion. */}
       {adzunaMissing && (
@@ -211,7 +256,9 @@ function StepRow({
         {!done && <p className="text-sm text-ink-muted">{description}</p>}
       </div>
       {!done &&
-        ("to" in action ? (
+        ("control" in action ? (
+          <div className="shrink-0">{action.control}</div>
+        ) : "to" in action ? (
           <Link
             to={action.to}
             className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong"

@@ -330,6 +330,9 @@ fn main() {
         // étant distante (127.0.0.1), l'accès à cette commande est autorisé par `remote.urls`
         // dans capabilities/default.json.
         .plugin(tauri_plugin_opener::init())
+        // Export des données (OPP-232) : fenêtre « Enregistrer sous » puis écriture du fichier.
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let handle = app.handle().clone();
 
