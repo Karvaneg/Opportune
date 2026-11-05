@@ -19,6 +19,8 @@ Endpoints :
     POST /applications/{recommendation_id}/confirm      (OPP-096, action sensible)
     POST   /applications/{recommendation_id}/applied    (suivi : « j'ai candidaté », date optionnelle)
     DELETE /applications/{recommendation_id}/applied    (annule la candidature déclarée)
+    GET    /applications/{recommendation_id}/tracking   (OPP-223, historique de suivi post-candidature)
+    POST   /applications/{recommendation_id}/tracking   (OPP-223, ajoute un événement : entretien/rejet/offre)
     POST /messages/{contact_id}/confirm                 (OPP-096, action sensible)
     POST /collect                                       (OPP-167, collecte réelle Adzuna → bilan)
 
@@ -61,13 +63,24 @@ from urllib.parse import parse_qs, unquote
 if TYPE_CHECKING:
     import sqlite3
 
+    from app.adzuna_credentials_store import AdzunaCredentialsStore
     from app.candidate_profile import CandidateProfile
     from app.candidate_registry import CandidateRegistry
     from app.collection_jobs import CollectionJob, CollectionJobRegistry
+    from app.llm_setup_service import LLMSetupService
     from app.offer_collection import CollectionReport
     from app.profile_service import ProfileService
+    from app.rss_feeds_store import RssFeedsStore
+    from app.ats_client import AtsClient
+    from app.ats_companies_store import AtsCompaniesStore
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
+from app.application_tracking import TrackingError
+from app.candidate_stats import count_upcoming_interviews
+from app.application_tracking_service import (
+    ApplicationTrackingService,
+    TrackingNotAllowedError,
+)
 from app.candidate_profile import ProfileValidationError
 from app.collection_jobs import CollectionAlreadyRunning
 from app.auth import LocalAuthProvider, User
@@ -167,11 +180,17 @@ _RECOMMENDATION_LETTER = re.compile(r"^/recommendations/(?P<rid>[^/]+)/letter$")
 _RECOMMENDATION = re.compile(r"^/recommendations/(?P<rid>[^/]+)$")
 _APPLICATION_CONFIRM = re.compile(r"^/applications/(?P<rid>[^/]+)/confirm$")
 _APPLICATION_APPLIED = re.compile(r"^/applications/(?P<rid>[^/]+)/applied$")
+_APPLICATION_TRACKING = re.compile(r"^/applications/(?P<rid>[^/]+)/tracking$")
 _MESSAGE_CONFIRM = re.compile(r"^/messages/(?P<cid>[^/]+)/confirm$")
 _OFFERS = re.compile(r"^/offers$")
 _COLLECT = re.compile(r"^/collect$")
 _COLLECT_JOB_CANCEL = re.compile(r"^/collect/(?P<job_id>[^/]+)/cancel$")
 _COLLECT_JOB = re.compile(r"^/collect/(?P<job_id>[^/]+)$")
+_LLM_STATUS = re.compile(r"^/system/llm/status$")
+_LLM_SETUP = re.compile(r"^/system/llm/setup$")
+_SETTINGS_ADZUNA = re.compile(r"^/settings/adzuna$")
+_SETTINGS_RSS = re.compile(r"^/settings/rss$")
+_SETTINGS_ATS = re.compile(r"^/settings/ats$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -248,13 +267,24 @@ class HermesApi:
         profiles: "ProfileService | None" = None,
         cv_intake: "CvIntake | None" = None,
         searches: "CandidateRegistry | None" = None,
+        llm_setup: "LLMSetupService | None" = None,
+        adzuna_credentials: "AdzunaCredentialsStore | None" = None,
+        rss_feeds: "RssFeedsStore | None" = None,
+        ats_companies: "AtsCompaniesStore | None" = None,
+        ats_client: "AtsClient | None" = None,
         conn: "sqlite3.Connection | None" = None,
+        tracking: ApplicationTrackingService | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
         # routes /applications|/messages ne sont pas montées (404), l'API reste utilisable
         # pour la recommandation et les décisions.
         self.actions = actions
+        # Suivi post-candidature (OPP-223) : historique d'événements (entretien, rejet, offre
+        # reçue, relance) d'une candidature déclarée. Optionnel : si absent, les routes
+        # /applications/{id}/tracking ne sont pas montées (404) et le détail d'une reco ne
+        # porte pas d'historique de suivi. Injecté en prod, faux en test.
+        self.tracking = tracking
         # Intake d'offre collée (OPP-145). Optionnel : si absent (pas de LLM câblé), la route
         # POST /offers n'est pas montée (404). Injecté en prod, faux en test.
         self.offer_intake = offer_intake
@@ -281,6 +311,24 @@ class HermesApi:
         # monté (404 neutre). C'est **le même registre** que celui dont l'auth dérive le
         # périmètre — une recherche créée ici entre donc aussitôt dans ``owned_candidates``.
         self.searches = searches
+        # Mise en route du LLM local au 1er lancement (OPP-193) : statut (Ollama joignable,
+        # modèle présent, RAM) et téléchargement du modèle suivi par sondage. Optionnel : si
+        # absent, les routes /system/llm/* ne sont pas montées (404). Injecté en prod, faux en test.
+        self.llm_setup = llm_setup
+        # Identifiants Adzuna saisis par l'utilisateur (OPP-222) : store fichier dans le dossier de
+        # données de l'app. Optionnel : si absent, /settings/adzuna n'est pas monté (404 neutre).
+        # Les routes n'exposent jamais les clés (secret) — seulement l'état « configuré ».
+        self.adzuna_credentials = adzuna_credentials
+        # URLs de flux RSS saisies par l'utilisateur (OPP-195) : store fichier dans le dossier de
+        # données de l'app. Optionnel : si absent, /settings/rss n'est pas monté (404 neutre).
+        # Contrairement aux clés Adzuna, ces URLs ne sont pas des secrets : les routes les relisent.
+        self.rss_feeds = rss_feeds
+        # Entreprises ciblées sur un ATS (OPP-226) : store fichier dans le dossier de données de
+        # l'espace. Optionnel : si absent, /settings/ats n'est pas monté (404 neutre). Le client
+        # sert à vérifier chaque nouvelle entreprise auprès de son ATS à l'enregistrement ;
+        # injectable (faux en test), défaut = transport HTTP réel.
+        self.ats_companies = ats_companies
+        self.ats_client = ats_client
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
@@ -500,6 +548,54 @@ class HermesApi:
             self._require(method, "GET", path)
             return self._get_collect_job(unquote(match["job_id"]), user)
 
+        if _LLM_STATUS.match(path):
+            # Mise en route du LLM local (OPP-193). Montée uniquement si le service est câblé.
+            if self.llm_setup is None:
+                raise self._not_found(user, "mise en route du LLM non disponible")
+            self._require(method, "GET", path)
+            return Response(200, self.llm_setup.status())
+
+        if _LLM_SETUP.match(path):
+            if self.llm_setup is None:
+                raise self._not_found(user, "mise en route du LLM non disponible")
+            from app.llm_setup_service import serialize_snapshot
+
+            # GET : avancement courant (sondage) ; POST : lance le téléchargement du modèle.
+            if method.upper() == "GET":
+                return Response(200, serialize_snapshot(self.llm_setup.progress()))
+            self._require(method, "POST", path)
+            return Response(202, serialize_snapshot(self.llm_setup.start()))
+
+        if _SETTINGS_ADZUNA.match(path):
+            # Identifiants Adzuna saisis par l'utilisateur (OPP-222). Montée uniquement si le store
+            # est câblé (sinon 404 neutre). GET : état « configuré » (jamais les clés) ; PUT : saisie.
+            if self.adzuna_credentials is None:
+                raise self._not_found(user, "réglages Adzuna non disponibles")
+            if method.upper() == "GET":
+                return self._get_adzuna_settings(user)
+            self._require(method, "PUT", path)
+            return self._put_adzuna_settings(body, user)
+
+        if _SETTINGS_RSS.match(path):
+            # URLs de flux RSS saisies par l'utilisateur (OPP-195). Montée uniquement si le store
+            # est câblé (sinon 404 neutre). GET : les URLs enregistrées ; PUT : la nouvelle liste.
+            if self.rss_feeds is None:
+                raise self._not_found(user, "réglages RSS non disponibles")
+            if method.upper() == "GET":
+                return self._get_rss_settings(user)
+            self._require(method, "PUT", path)
+            return self._put_rss_settings(body, user)
+
+        if _SETTINGS_ATS.match(path):
+            # Entreprises ciblées sur un ATS (OPP-226). Montée uniquement si le store est câblé
+            # (sinon 404 neutre). GET : les entreprises enregistrées ; PUT : la nouvelle liste.
+            if self.ats_companies is None:
+                raise self._not_found(user, "réglages des entreprises ciblées non disponibles")
+            if method.upper() == "GET":
+                return self._get_ats_settings(user)
+            self._require(method, "PUT", path)
+            return self._put_ats_settings(body, user)
+
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
             match = _APPLICATION_CONFIRM.match(path)
@@ -520,6 +616,17 @@ class HermesApi:
             if match:
                 self._require(method, "POST", path)
                 return self._post_message_confirm(unquote(match["cid"]), body, user)
+
+        # Suivi post-candidature : monté uniquement si le service est configuré (sinon 404).
+        if self.tracking is not None:
+            match = _APPLICATION_TRACKING.match(path)
+            if match:
+                rid = unquote(match["rid"])
+                if method == "GET":
+                    return self._get_application_tracking(rid, user)
+                if method == "POST":
+                    return self._post_application_tracking(rid, body, user)
+                raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
         raise ApiError(404, f"route inconnue : {method} {path}")
 
@@ -694,6 +801,16 @@ class HermesApi:
         stats = self.orchestrator.candidate_stats(
             candidate_id, applied_recommendation_ids=applied_ids
         )
+        # Entretiens prévus (OPP-223) : le suivi n'existe que pour des candidatures déclarées,
+        # donc on n'interroge que les ``applied_ids`` (pas de recommandation non postulée à sonder).
+        # Comptage « à venir » déterminé par la date du jour (UTC), cohérent avec la borne UI.
+        entretiens_prevus = 0
+        if self.tracking is not None and applied_ids:
+            histories = self.tracking.history_for(list(applied_ids))
+            today = datetime.now(timezone.utc).date()
+            entretiens_prevus = count_upcoming_interviews(
+                (event for events in histories.values() for event in events), today
+            )
         return Response(
             200,
             {
@@ -701,6 +818,7 @@ class HermesApi:
                 "a_postuler": stats.a_postuler,
                 "postule": stats.postule,
                 "offres_total": stats.offres_total,
+                "entretiens_prevus": entretiens_prevus,
             },
         )
 
@@ -719,10 +837,13 @@ class HermesApi:
         applied_at = (
             (lambda rids: self.actions.applied_at_for(rids)) if self.actions is not None else None
         )
+        tracking_for = (
+            (lambda rids: self.tracking.history_for(rids)) if self.tracking is not None else None
+        )
         # Pas d'exigence de profil (comme /stats) : un candidat du périmètre sans profil obtient
         # un flux (souvent vide), pas un 404 — le cockpit montre le guide, pas un bandeau rouge.
         events = self.orchestrator.candidate_activity(
-            candidate_id, letters_at=letters_at, applied_at=applied_at
+            candidate_id, letters_at=letters_at, applied_at=applied_at, tracking_for=tracking_for
         )
         return Response(200, {"items": [self._serialize_activity_event(e) for e in events]})
 
@@ -741,14 +862,38 @@ class HermesApi:
         """Profil du candidat (OPP-158) : lecture owner-gated pour consultation/édition côté UI.
 
         Owner-gated (``_guard_owner`` : 404 neutre hors périmètre ; 401 sans jeton en amont),
-        cohérent avec /stats et /activity. 404 si le candidat n'a pas de profil.
+        cohérent avec /stats et /activity.
+
+        Un candidat **du périmètre mais sans profil encore** (recherche neuve, pas de CV importé)
+        renvoie un **profil vide en 200**, pas un 404 (OPP-195) : un profil pas encore créé est un
+        état *nominal*, pas une erreur. Le front affiche alors le formulaire d'import, et la
+        console du navigateur ne se salit pas d'un 404 rouge pour un cas normal. Le 404 reste
+        réservé au candidat **hors périmètre** (géré par ``_guard_owner``, anti-énumération).
         """
         self._guard_owner(user, candidate_id)
         assert self.profiles is not None  # garanti par le dispatch (404 sinon)
         profile = self.profiles.get(candidate_id)
         if profile is None:
-            raise self._not_found(user, f"profil introuvable : {candidate_id}")
+            return Response(200, self._empty_profile_payload(candidate_id))
         return Response(200, self._serialize_profile(profile))
+
+    @staticmethod
+    def _empty_profile_payload(candidate_id: str) -> dict:
+        """Profil **vierge** exposé au front : mêmes champs que ``_serialize_profile``, tous vides.
+
+        Un candidat du périmètre sans profil encore (OPP-195). Le front le reconnaît comme vierge
+        (ni compétence ni expérience) et propose l'import CV, au lieu d'un 404 pour un état normal.
+        """
+        return {
+            "id": candidate_id,
+            "name": "",
+            "skills": [],
+            "contract_type": "",
+            "location": None,
+            "languages": [],
+            "total_experience_years": None,
+            "experiences": [],
+        }
 
     def _put_profile(self, candidate_id: str, body: dict, user: User | None) -> Response:
         """Édite les compétences du profil (OPP-158) : remplacement de la liste ``skills``.
@@ -944,6 +1089,20 @@ class HermesApi:
             else set()
         )
 
+        # Filtre « entretien à venir » (OPP-223) : on résout ici (suivi + date du jour) les
+        # ``recommendation_id`` dont la candidature a un entretien à venir, puis on les passe à
+        # l'orchestrateur. Calculé seulement quand ce filtre est demandé, et uniquement sur les
+        # candidatures déclarées (seules porteuses de suivi).
+        interview_ids: set[str] = set()
+        if stage == "entretien" and self.tracking is not None and applied_ids:
+            histories = self.tracking.history_for(list(applied_ids))
+            today = datetime.now(timezone.utc).date()
+            interview_ids = {
+                rid
+                for rid, events in histories.items()
+                if count_upcoming_interviews(events, today) > 0
+            }
+
         # Pas d'exigence de profil : un candidat possédé sans profil (« nouveau profil ») voit les
         # offres **sans score annoté** (cf. `_resolve_profile`), pas un 404 — le filtre par étape
         # reste calculé sur ses décisions. L'owner-gating ci-dessus garde seul le périmètre.
@@ -953,6 +1112,7 @@ class HermesApi:
             candidate_id=candidate_id,
             stage=stage,
             applied_recommendation_ids=applied_ids,
+            interview_recommendation_ids=interview_ids,
         )
 
         total_pages = (total + page_size - 1) // page_size
@@ -1106,23 +1266,157 @@ class HermesApi:
 
         Curation du **pool partagé** d'offres, comme POST /offers : réservée au rôle
         ``reviewer`` (401 sans jeton géré en amont, 403 si le rôle manque). ``what`` /
-        ``where`` ciblent la recherche (optionnels) ; ``max`` plafonne la passe (défaut
+        ``where`` ciblent la recherche ; ``what`` est **requis** pour Adzuna (400 sinon) et
+        filtre les intitulés pour ATS (facultatif) ; ``max`` plafonne la passe (défaut
         ``_COLLECT_MAX_DEFAULT``, écrêté à ``_COLLECT_MAX_CAP``). Le job tourne en fond : on
         répond **202** aussitôt avec ``job_id``, puis le client sonde GET /collect/{job_id}.
         Si une collecte est déjà en cours (unicité de l'écrivain), on répond **409**.
         """
         self._guard_reviewer(user)
+        source = self._collect_source(body)
         what = self._collect_param(body, "what")
         where = self._collect_param(body, "where")
+        # Poste requis pour Adzuna (OPP-226) : un ``what`` vide collecterait toutes les offres de
+        # France, chacune passant par le LLM. Le front grise déjà le bouton ; on refuse aussi ici
+        # pour tout autre client. RSS (ciblage dans l'URL du flux) et ATS (filtre facultatif)
+        # n'en ont pas besoin.
+        if source == "adzuna" and not what:
+            raise ApiError(400, "what (poste recherché) est requis pour une collecte Adzuna")
         max_offers = self._collect_max(body)
         assert self.collections is not None  # garanti par le dispatch (404 sinon)
         try:
             job_id = self.collections.start(
-                what=what, where=where, max_offers=max_offers
+                source=source, what=what, where=where, max_offers=max_offers
             )
         except CollectionAlreadyRunning as exc:
             raise ApiError(409, str(exc)) from exc
         return Response(202, {"job_id": job_id})
+
+    def _get_adzuna_settings(self, user: User | None) -> Response:
+        """État des identifiants Adzuna (OPP-222) : **configuré ou non**, jamais les clés.
+
+        Réservé au ``reviewer`` (saisie de secrets = curation, comme la collecte). On n'expose
+        que le booléen ``configured`` : les clés sont des secrets, elles ne ressortent jamais de
+        l'API (ni en clair, ni masquées).
+        """
+        self._guard_reviewer(user)
+        assert self.adzuna_credentials is not None  # garanti par le dispatch (404 sinon)
+        return Response(200, {"configured": self.adzuna_credentials.is_configured()})
+
+    def _put_adzuna_settings(self, body: dict, user: User | None) -> Response:
+        """Enregistre les identifiants Adzuna saisis par l'utilisateur (OPP-222).
+
+        Réservé au ``reviewer``. ``app_id`` et ``app_key`` sont requis (chaînes non vides, 400
+        sinon). Les clés sont rangées dans le dossier de données de l'app (secret, hors dépôt) et
+        ne sont **jamais** renvoyées ni journalisées. Réponse : l'état ``configured`` (pas les clés).
+        """
+        self._guard_reviewer(user)
+        assert self.adzuna_credentials is not None  # garanti par le dispatch (404 sinon)
+        app_id = body.get("app_id")
+        app_key = body.get("app_key")
+        if not isinstance(app_id, str) or not isinstance(app_key, str):
+            raise ApiError(400, "app_id et app_key doivent être des chaînes")
+        try:
+            self.adzuna_credentials.save(app_id, app_key)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        return Response(200, {"configured": True})
+
+    def _get_rss_settings(self, user: User | None) -> Response:
+        """URLs de flux RSS enregistrées (OPP-195) : ``{"feeds": [...]}``.
+
+        Réservé au ``reviewer`` (curation du pool, comme la collecte). Les URLs ne sont **pas**
+        des secrets : on les renvoie telles quelles pour que l'UI puisse les réafficher et les
+        éditer (différence avec Adzuna, qui ne rend jamais que l'état « configuré »).
+        """
+        self._guard_reviewer(user)
+        assert self.rss_feeds is not None  # garanti par le dispatch (404 sinon)
+        return Response(200, {"feeds": self.rss_feeds.load()})
+
+    def _put_rss_settings(self, body: dict, user: User | None) -> Response:
+        """Enregistre la liste des URLs de flux RSS saisies par l'utilisateur (OPP-195).
+
+        Réservé au ``reviewer``. ``feeds`` doit être une liste (400 sinon) ; le store ne retient
+        que les URLs ``http(s)`` exploitables. Une liste vide supprime tous les flux (OPP-225) ;
+        une saisie non vide sans aucune URL exploitable est refusée (400).
+        Réponse : la liste **réellement enregistrée** (après nettoyage), que l'UI réaffiche.
+        """
+        self._guard_reviewer(user)
+        assert self.rss_feeds is not None  # garanti par le dispatch (404 sinon)
+        feeds = body.get("feeds")
+        if not isinstance(feeds, list):
+            raise ApiError(400, "feeds doit être une liste d'URLs")
+        try:
+            saved = self.rss_feeds.save(feeds)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        except OSError as exc:
+            # Fichier verrouillé (Windows), droits manquants… : on le dit plutôt qu'une 500 muette.
+            raise ApiError(500, f"enregistrement des flux RSS impossible : {exc}") from exc
+        return Response(200, {"feeds": saved})
+
+    @staticmethod
+    def _serialize_ats_company(company, offers_in_france: int | None = None) -> dict:
+        """Entreprise ciblée exposée au front : URL de page carrière, ATS, identifiant, offres FR."""
+        return {
+            "url": company.career_url,
+            "ats": company.ats,
+            "slug": company.slug,
+            "offers_in_france": offers_in_france,
+        }
+
+    def _get_ats_settings(self, user: User | None) -> Response:
+        """Entreprises ciblées enregistrées (OPP-226) : ``{"companies": [...]}``.
+
+        Réservé au ``reviewer`` (curation du pool, comme la collecte). Pas des secrets (RG-9) :
+        on rend l'URL canonique de chaque page carrière pour que l'UI la réaffiche. Le nombre
+        d'offres n'est connu qu'à l'enregistrement (``null`` ici : aucune requête aux ATS).
+        """
+        self._guard_reviewer(user)
+        assert self.ats_companies is not None  # garanti par le dispatch (404 sinon)
+        companies = self.ats_companies.load()
+        return Response(200, {"companies": [self._serialize_ats_company(c) for c in companies]})
+
+    def _put_ats_settings(self, body: dict, user: User | None) -> Response:
+        """Enregistre les entreprises ciblées à partir des URLs de pages carrière (OPP-226).
+
+        Réservé au ``reviewer``. ``companies`` doit être une liste (400 sinon). Liste sans saisie →
+        tout supprimer. URL non reconnue, entreprise introuvable sur son ATS ou plafond dépassé →
+        400 (rien n'est enregistré). ATS injoignable pendant la vérification → 502. Erreur
+        d'écriture du fichier → 500 lisible. Réponse : les entreprises retenues, avec le nombre
+        d'offres en France de celles qui viennent d'être vérifiées.
+        """
+        from app.ats_client import AtsClient
+        from app.ats_companies_service import (
+            AtsCompaniesWriteError,
+            AtsVerificationUnavailable,
+            update_companies,
+        )
+
+        self._guard_reviewer(user)
+        assert self.ats_companies is not None  # garanti par le dispatch (404 sinon)
+        lines = body.get("companies")
+        if not isinstance(lines, list):
+            raise ApiError(400, "companies doit être une liste d'URLs de pages carrière")
+        try:
+            checks = update_companies(
+                lines, store=self.ats_companies, client=self.ats_client or AtsClient()
+            )
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        except AtsVerificationUnavailable as exc:
+            raise ApiError(502, str(exc)) from exc
+        except AtsCompaniesWriteError as exc:
+            raise ApiError(500, f"enregistrement des entreprises impossible : {exc}") from exc
+        return Response(
+            200,
+            {
+                "companies": [
+                    self._serialize_ats_company(check.company, check.offers_in_france)
+                    for check in checks
+                ]
+            },
+        )
 
     def _post_collect_cancel(self, job_id: str, user: User | None) -> Response:
         """Demande l'arrêt **coopératif** d'une collecte en cours (OPP-209).
@@ -1167,6 +1461,19 @@ class HermesApi:
         return Response(200, self._serialize_job(job))
 
     @staticmethod
+    def _collect_source(body: dict) -> str:
+        """Connecteur à employer : ``adzuna`` (défaut), ``rss`` ou ``ats`` (OPP-226) ; 400 sinon.
+
+        Le défaut préserve le contrat historique (un POST /collect sans ``source`` reste une
+        collecte Adzuna). Une valeur inconnue est refusée tôt (400) plutôt que silencieusement
+        retombée sur Adzuna, qui masquerait une erreur d'appel côté client.
+        """
+        raw = body.get("source", "adzuna")
+        if raw not in ("adzuna", "rss", "ats"):
+            raise ApiError(400, "source doit être 'adzuna', 'rss' ou 'ats'")
+        return raw
+
+    @staticmethod
     def _collect_param(body: dict, key: str) -> str:
         """Lit un critère texte optionnel de la collecte (``what``/``where``) ; 400 si non-chaîne."""
         raw = body.get(key, "")
@@ -1205,6 +1512,11 @@ class HermesApi:
             "source_error": report.source_error,
             "enriched": report.enriched,
             "enriched_recovered": report.enriched_recovered,
+            # Source « entreprises ciblées » (OPP-226) : offres écartées car hors France, et
+            # entreprises en échec pendant la passe (la passe a continué sans elles).
+            "excluded": report.excluded,
+            "off_target": report.off_target,
+            "warnings": list(report.warnings),
         }
 
     @classmethod
@@ -1527,6 +1839,78 @@ class HermesApi:
             raise ApiError(400, "applied_at ne peut pas être dans le futur")
         return raw
 
+    def _get_application_tracking(
+        self, recommendation_id: str, user: User | None
+    ) -> Response:
+        """Historique de suivi post-candidature d'une recommandation (OPP-223).
+
+        Mêmes gardes d'accès que les autres routes de candidature (existence → propriété →
+        rôle ``reviewer``). Lecture pure : renvoie la liste des événements dans l'ordre
+        chronologique (vide si rien n'a encore été noté).
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        events = self.tracking.history(recommendation_id)
+        return Response(200, {"events": [self._serialize_tracking_event(e) for e in events]})
+
+    def _post_application_tracking(
+        self, recommendation_id: str, body: dict, user: User | None
+    ) -> Response:
+        """Ajoute un événement de suivi post-candidature (OPP-223).
+
+        Pointage déclaratif (aucune garde ``{"confirm": true}``), mêmes gardes d'accès que la
+        déclaration de candidature. ``kind`` est requis (entretien/rejet/offre/relance) : un type
+        inconnu est un 400 (``TrackingError``). ``event_date`` (optionnel) date un entretien prévu,
+        éventuellement **futur** ; ``comment`` (optionnel) est libre. Exige une candidature
+        **déclarée candidatée** (sinon 409). Renvoie l'historique à jour (201).
+        """
+        self._guard_sensitive_target(user, recommendation_id)
+        kind = body.get("kind")
+        if not isinstance(kind, str) or kind.strip() == "":
+            raise ApiError(400, "kind est requis (entretien, rejet, offre, relance)")
+        event_date = self._parse_event_date(body)
+        comment = body.get("comment")
+        if comment is not None and not isinstance(comment, str):
+            raise ApiError(400, "comment doit être une chaîne")
+        try:
+            self.tracking.add_event(
+                recommendation_id, kind, event_date=event_date, comment=comment
+            )
+        except TrackingNotAllowedError as exc:
+            raise ApiError(409, str(exc))
+        except TrackingError as exc:
+            raise ApiError(400, str(exc))
+        events = self.tracking.history(recommendation_id)
+        return Response(201, {"events": [self._serialize_tracking_event(e) for e in events]})
+
+    @staticmethod
+    def _parse_event_date(body: dict) -> str | None:
+        """Valide la date métier optionnelle d'un événement de suivi (``event_date``).
+
+        ``None``/absent → pas de date métier distincte. Sinon, exige une chaîne ISO 8601
+        parseable (400 autrement). Contrairement à ``applied_at``, une date **future** est
+        permise : un entretien se planifie à l'avance.
+        """
+        raw = body.get("event_date")
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise ApiError(400, "event_date doit être une date ISO 8601 (chaîne)")
+        try:
+            datetime.fromisoformat(raw)
+        except ValueError:
+            raise ApiError(400, "event_date doit être une date ISO 8601 valide")
+        return raw
+
+    @staticmethod
+    def _serialize_tracking_event(event) -> dict:
+        """Représentation JSON d'un événement de suivi (OPP-223)."""
+        return {
+            "kind": event.kind,
+            "at": event.at,
+            "event_date": event.event_date,
+            "comment": event.comment,
+        }
+
     def _post_message_confirm(
         self, contact_id: str, body: dict, user: User | None
     ) -> Response:
@@ -1687,7 +2071,7 @@ class HermesApi:
         application = self.actions.get_application(recommendation_id)
         if application is None:
             return None
-        return {
+        payload = {
             "confirmed": True,
             "confirmed_at": application.confirmed_at,
             "status": application.status,
@@ -1695,3 +2079,18 @@ class HermesApi:
             "applied": application.applied_at is not None,
             "applied_at": application.applied_at,
         }
+        # Suivi post-candidature (OPP-223) : historique d'événements (entretien, rejet, offre
+        # reçue, relance). N'apparaît que si le service est câblé — sans quoi on n'affirme pas
+        # de section de suivi (cohérent avec ``application: None`` quand les actions manquent).
+        # Un historique n'existe que pour une candidature déclarée (``applied_at``) : inutile de
+        # requêter tant qu'on ne l'est pas, la liste est alors forcément vide.
+        if self.tracking is not None:
+            payload["tracking"] = (
+                [
+                    self._serialize_tracking_event(e)
+                    for e in self.tracking.history(recommendation_id)
+                ]
+                if application.applied_at is not None
+                else []
+            )
+        return payload

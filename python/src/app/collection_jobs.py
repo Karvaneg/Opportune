@@ -65,6 +65,7 @@ class CollectionRunner(Protocol):
     def __call__(
         self,
         *,
+        source: str,
         what: str,
         where: str,
         max_offers: int,
@@ -107,10 +108,15 @@ class CollectionJobRegistry:
         # runner via ``should_cancel``. Retiré à la fin du job (``_finish``).
         self._cancel_events: dict[str, threading.Event] = {}
 
-    def start(self, *, what: str, where: str, max_offers: int) -> str:
+    def start(
+        self, *, what: str, where: str, max_offers: int, source: str = "adzuna"
+    ) -> str:
         """Enregistre un job ``running`` et lance la passe en fond ; rend son ``job_id``.
 
-        Lève ``CollectionAlreadyRunning`` si un job est déjà en cours (unicité de l'écrivain).
+        ``source`` sélectionne le connecteur (Adzuna par défaut, ou ``rss``) : le registre reste
+        agnostique et se contente de transmettre l'étiquette au runner, qui assemble la bonne
+        source. Lève ``CollectionAlreadyRunning`` si un job est déjà en cours (unicité de
+        l'écrivain, **toutes sources confondues** : une seule écriture SQLite à la fois).
         """
         with self._lock:
             if self._active is not None:
@@ -126,7 +132,12 @@ class CollectionJobRegistry:
             self._cancel_events[job_id] = cancel_event
             self._prune_locked()
 
-        params = {"what": what, "where": where, "max_offers": max_offers}
+        params = {
+            "source": source,
+            "what": what,
+            "where": where,
+            "max_offers": max_offers,
+        }
         self._spawn(lambda: self._run(job_id, params, cancel_event))
         return job_id
 

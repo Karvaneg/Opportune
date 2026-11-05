@@ -7,6 +7,7 @@ from app.candidate_activity import (
     letter_event,
     most_recent,
     offer_event,
+    tracking_event,
 )
 
 
@@ -27,6 +28,16 @@ def test_letter_application_offer_events():
     assert application_event("t", "Dev", "r").label == "Candidature déclarée — Dev"
     o = offer_event("t", "Lead Java", "off-1")
     assert o.type == "offer" and o.target_kind == "offer" and o.target_id == "off-1"
+
+
+def test_tracking_event_labels_by_kind():
+    interview = tracking_event("interview", "2026-10-01T00:00:00+00:00", "Dev Python", "cand:off")
+    assert interview.type == "tracking"
+    assert interview.label == "Entretien — Dev Python"
+    assert interview.target_kind == "recommendation" and interview.target_id == "cand:off"
+
+    assert tracking_event("rejected", "t", "X", "r").label.startswith("Candidature rejetée")
+    assert tracking_event("offer", "t", "X", "r").label.startswith("Offre reçue")
 
 
 def test_most_recent_sorts_desc_and_truncates():

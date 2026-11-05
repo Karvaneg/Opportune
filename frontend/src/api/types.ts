@@ -106,6 +106,30 @@ export interface ApplicationIntent {
   status: string;
   applied: boolean;
   applied_at: string | null; // ISO 8601, ou null si pas encore candidaté
+  /**
+   * Suivi post-candidature (OPP-223) : historique d'événements datés (entretien, rejet, offre
+   * reçue, relance), dans l'ordre chronologique. Présent dès que le service est câblé (liste
+   * vide tant que rien n'est noté), absent si le back ne le monte pas.
+   */
+  tracking?: TrackingEvent[];
+}
+
+/**
+ * Type d'un événement de suivi post-candidature (OPP-223). Distinct de `DecisionStatus` : ici
+ * c'est la **réponse du recruteur / la suite du process**, pas la décision de l'utilisateur de
+ * postuler. `interview` est répétable.
+ */
+export type TrackingEventKind = "interview" | "rejected" | "offer" | "no_response";
+
+/**
+ * Un événement de l'historique de suivi (OPP-223). `at` = date d'enregistrement ; `event_date`
+ * = date métier quand elle diffère (entretien prévu, éventuellement futur), sinon `null`.
+ */
+export interface TrackingEvent {
+  kind: TrackingEventKind;
+  at: string; // ISO 8601
+  event_date: string | null; // ISO 8601, ou null
+  comment: string | null;
 }
 
 /** Réponse paginée de `GET /runs/{run_id}/recommendations`. */
@@ -205,13 +229,16 @@ export interface CatalogOffer {
  * Agrégats de décision d'un candidat (`GET /candidates/{id}/stats`, OPP-163) — alimente les
  * cartes du cockpit. `a_etudier` / `a_postuler` : offres à l'action recommandée correspondante
  * et non encore tranchées (piles « à traiter ») ; `postule` : candidatures déclarées ;
- * `offres_total` : taille du pool évalué (formations comprises).
+ * `offres_total` : taille du pool évalué (formations comprises). `entretiens_prevus` : nombre
+ * d'entretiens à venir (événements de suivi `interview` dont la date prévue est aujourd'hui ou
+ * plus tard, OPP-223).
  */
 export interface CandidateStats {
   a_etudier: number;
   a_postuler: number;
   postule: number;
   offres_total: number;
+  entretiens_prevus: number;
 }
 
 /**
@@ -221,7 +248,7 @@ export interface CandidateStats {
  * `offer` → catalogue).
  */
 export interface ActivityEvent {
-  type: "letter" | "decision" | "application" | "offer";
+  type: "letter" | "decision" | "application" | "offer" | "tracking";
   at: string; // ISO 8601
   label: string;
   target_kind: "recommendation" | "offer";
@@ -254,6 +281,15 @@ export interface CollectionReport {
   enriched: number;
   /** Parmi `enriched`, combien ont effectivement gagné des compétences après ré-analyse. */
   enriched_recovered: number;
+  /** Source « entreprises ciblées » (OPP-226) : offres écartées car situées hors de France.
+   *  Absent d'un vieux back. */
+  excluded?: number;
+  /** Source « entreprises ciblées » : offres en France écartées car leur intitulé ne contient
+   *  pas le poste saisi (RG-11). Absent d'un vieux back. */
+  off_target?: number;
+  /** Source « entreprises ciblées » : entreprises en échec pendant la passe (qui a continué).
+   *  Absent d'un vieux back. */
+  warnings?: string[];
 }
 
 /**

@@ -22,6 +22,14 @@ const EXPERIENCE = {
 const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
 
+/** Profil **vierge** renvoyé en 200 par le back pour un candidat sans profil encore (recherche
+ * tout juste créée, OPP-195) : ni compétence ni parcours. Le front le reconnaît comme vide et
+ * oriente vers l'import CV, sans 404 en console. */
+const EMPTY_PROFILE = {
+  id: "cand-1", name: "", skills: [], contract_type: "",
+  location: null, languages: [], total_experience_years: null, experiences: [],
+};
+
 /** fetch factice renvoyant un profil **figé** (lecture seule), paramétrable — pour les cas
  * d'affichage (parcours, état vide) qui n'exercent ni édition ni upload. */
 function stubProfile(profile: Record<string, unknown>, role = "reviewer") {
@@ -80,6 +88,29 @@ function stubFetchWithCv(role = "reviewer") {
       }
       if (s.includes("/profile")) return ok(current);
       return ok(current);
+    }),
+  );
+  return posts;
+}
+
+/** fetch factice pour un **profil encore inexistant** (OPP-218/195) : `GET /profile` renvoie un
+ * profil **vide en 200** tant qu'aucun CV n'a été importé ; le premier `POST /profile/cv` crée le
+ * profil, que les GET suivants renvoient alors rempli. Enregistre les corps postés. */
+function stubNewProfileWithCv(role = "reviewer") {
+  const posts: Array<Record<string, unknown>> = [];
+  let profile: Record<string, unknown> = EMPTY_PROFILE; // profil vierge au départ
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, init?: RequestInit) => {
+      const s = String(url);
+      if (s.includes("/me"))
+        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+      if (s.includes("/profile/cv")) {
+        posts.push(JSON.parse(String(init?.body ?? "{}")));
+        profile = { ...PROFILE, name: "Marie (depuis CV)", skills: ["Python", "SQL"] };
+        return ok(profile);
+      }
+      return ok(profile);
     }),
   );
   return posts;
@@ -222,6 +253,50 @@ describe("ProfilePanel (OPP-158)", () => {
     expect(await screen.findByText(/Ton profil est encore vide/)).toBeInTheDocument();
     // Pas de section Parcours quand il n'y a aucune expérience.
     expect(screen.queryByText("Parcours")).not.toBeInTheDocument();
+  });
+
+  it("accueille un profil vierge (200 vide) par l'import, sans message d'erreur (OPP-218/195)", async () => {
+    stubNewProfileWithCv("reviewer");
+    renderPanel();
+
+    // L'orientation et les contrôles d'import, pas le message « Ressource introuvable ».
+    expect(await screen.findByText(/Ton profil est encore vide/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Importer un CV PDF")).toBeInTheDocument();
+    expect(screen.getByLabelText("Type de contrat recherché")).toBeInTheDocument();
+    expect(screen.queryByText(/Ressource introuvable/)).not.toBeInTheDocument();
+  });
+
+  it("profil vierge (200 vide) : l'éditeur de compétences reste masqué tant qu'aucun CV ne l'a créé (OPP-195)", async () => {
+    stubProfile(EMPTY_PROFILE, "reviewer");
+
+    renderPanel();
+
+    await screen.findByText(/Ton profil est encore vide/);
+    expect(screen.queryByLabelText("Ajouter une compétence")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Enregistrer les compétences/ }),
+    ).toBeNull();
+  });
+
+  it("importe un premier CV avec le type de contrat choisi, puis affiche le profil (OPP-218)", async () => {
+    const posts = stubNewProfileWithCv("reviewer");
+    renderPanel();
+    await screen.findByLabelText("Importer un CV PDF");
+
+    await userEvent.selectOptions(
+      screen.getByLabelText("Type de contrat recherché"),
+      "freelance",
+    );
+    const file = new File([new Uint8Array([37, 80, 68, 70])], "cv.pdf", {
+      type: "application/pdf",
+    });
+    await userEvent.upload(screen.getByLabelText("Importer un CV PDF"), file);
+
+    // Le profil reconstitué s'affiche (refetch après invalidation) et le sélecteur disparaît.
+    expect(await screen.findByText("Python")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Type de contrat recherché")).not.toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect(posts[0].contract_type).toBe("freelance");
   });
 
   it("annonce une attente de plusieurs minutes pendant l'analyse (OPP-176)", async () => {

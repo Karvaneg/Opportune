@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capacités de la fenêtre principale. Le front est servi par l'API sur 127.0.0.1:<port> (port configurable via OPPORTUNE_API_PORT) : la page est distante, d'où le bloc remote (joker de port) sans lequel elle ne pourrait appeler aucune commande Tauri, dont openUrl. opener:allow-open-url (restreint à http/https) autorise l'ouverture des liens d'offres dans le navigateur système.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "http://*" }, { "url": "https://*" }]
+    }
+  ]
+}

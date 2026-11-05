@@ -17,6 +17,7 @@ import os
 import urllib.request
 from functools import partial
 from typing import Callable, Mapping
+from urllib.parse import urlsplit, urlunsplit
 
 # Hôte du serveur Ollama et modèle par défaut, surchargeables par variables d'env
 # (voir docker-compose : OLLAMA_HOST pointe sur l'Ollama natif de l'hôte via
@@ -93,6 +94,51 @@ def resolve_llm_timeout(env: Mapping[str, str]) -> int:
 Transport = Callable[[str, dict], dict]
 
 
+# Adresses de *bind* « toutes interfaces » : valides pour un serveur qui écoute, pas comme
+# cible d'un client. Ollama les accepte dans ``OLLAMA_HOST`` (convention de bind), et sous
+# Windows un client qui tente de se connecter à ``0.0.0.0`` échoue. Côté client on les ramène
+# donc sur la loopback correspondante.
+_BIND_ALL_TO_LOOPBACK = {"0.0.0.0": "127.0.0.1", "::": "[::1]"}
+
+# Port d'écoute par défaut d'Ollama. Une adresse de bind nue (``OLLAMA_HOST=0.0.0.0``) sous-entend
+# ce port, pas le 80 implicite d'une URL HTTP : sans lui, le client taperait un endpoint mort.
+_DEFAULT_OLLAMA_PORT = 11434
+
+
+def ollama_url(path: str, *, host: str | None = None) -> str:
+    """Compose l'URL d'un endpoint Ollama (``/api/...``) sur l'hôte configuré.
+
+    Source unique de la normalisation hôte + chemin (défaut :data:`DEFAULT_OLLAMA_HOST`, slash
+    final rogné), partagée par la génération et le provisioning (:mod:`app.ollama_provision`).
+    ``path`` est toléré avec ou sans slash de tête (``api/tags`` comme ``/api/tags``).
+
+    ``OLLAMA_HOST`` suit la convention d'Ollama : il peut arriver **sans scheme**
+    (``0.0.0.0:11434``, ``localhost``) ou pointer une adresse de bind « toutes interfaces ».
+    ``urllib`` exige une URL absolue → on garantit un ``http://`` et on ramène ``0.0.0.0``/``::``
+    sur la loopback, sinon la connexion lève ``ValueError`` (scheme absent) ou échoue (Windows).
+    Une adresse de bind **sans port** (``0.0.0.0``, ``[::]``) reçoit le port Ollama par défaut :
+    sinon l'URL retomberait sur le port 80 implicite et taperait un endpoint mort.
+    """
+    base = (host or DEFAULT_OLLAMA_HOST).strip().rstrip("/")
+    if "://" not in base:
+        base = f"http://{base}"
+    parts = urlsplit(base)
+    # IPv6 nu (``::``) : sans crochets, ``urllib`` ne sait pas séparer hôte et port et renvoie un
+    # hostname vide (≥2 ``:`` dans le netloc ⇒ forcément de l'IPv6). On réécrit en forme crochetée
+    # (``[::]``), seule forme valide en URL, avant de reconnaître l'adresse de bind.
+    if parts.hostname is None and parts.netloc.count(":") >= 2 and not parts.netloc.startswith("["):
+        parts = urlsplit(f"{parts.scheme}://[{parts.netloc}]")
+    hostname = (parts.hostname or "").lower()
+    if hostname in _BIND_ALL_TO_LOOPBACK:
+        loopback = _BIND_ALL_TO_LOOPBACK[hostname]
+        # Pas de port explicite sur une adresse de bind ⇒ port Ollama par défaut (et non le 80
+        # qu'impliquerait l'URL HTTP nue, qui ne joindrait jamais le moteur).
+        port = parts.port or _DEFAULT_OLLAMA_PORT
+        parts = parts._replace(netloc=f"{loopback}:{port}")
+    base_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", "")).rstrip("/")
+    return f"{base_url}/{path.lstrip('/')}"
+
+
 def build_generate_request(
     prompt: str,
     *,
@@ -121,7 +167,7 @@ def build_generate_request(
     if not isinstance(prompt, str) or prompt.strip() == "":
         raise ValueError("Le prompt est requis")
 
-    url = f"{(host or DEFAULT_OLLAMA_HOST).rstrip('/')}/api/generate"
+    url = ollama_url("api/generate", host=host)
     payload = {"model": model or DEFAULT_MODEL, "prompt": prompt, "stream": False}
     if fmt is not None:
         payload["format"] = fmt

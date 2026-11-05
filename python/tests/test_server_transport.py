@@ -37,7 +37,9 @@ def _post_once(api) -> tuple[int, dict]:
     thread.start()
     port = server.server_address[1]
     request = urllib.request.Request(
-        f"http://127.0.0.1:{port}/x",
+        # Les écritures passent par ``/api`` (frontière unifiée OPP-194) : c'est là que vit le
+        # filet transport de ``_dispatch`` qu'on teste ici.
+        f"http://127.0.0.1:{port}/api/x",
         data=b"{}",
         method="POST",
         headers={"Content-Type": "application/json"},

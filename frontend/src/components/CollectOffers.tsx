@@ -7,8 +7,16 @@ import {
   useCollectJob,
   useStartCollect,
 } from "../api/offers";
+import { useProfileReady } from "../api/profile";
+import { useAdzunaSettings, useAtsSettings, useRssSettings } from "../api/settings";
+import { useLlmReady } from "../api/system";
+import type { CollectOffersVariables } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
+import { useTargetCandidate } from "../auth/useTargetCandidate";
 import type { CollectionReport } from "../api/types";
+import { AdzunaRequiredNotice } from "./AdzunaRequiredNotice";
+import { LlmRequiredNotice } from "./LlmRequiredNotice";
+import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
 import { ErrorNotice } from "./States";
 
 /**
@@ -22,15 +30,32 @@ import { ErrorNotice } from "./States";
  * manquants, quota) revient dans `source_error` du bilan, pas en erreur HTTP — on l'affiche
  * distinctement ; un `409` au démarrage signale qu'une collecte est déjà en cours.
  */
-// Poste recherché par défaut (OPP-167). Le profil décrit les compétences du candidat mais
-// pas l'intitulé de poste visé, et les skills bruts font de mauvais mots-clés Adzuna : on
-// préremplit donc un libellé métier large, modifiable. À remplacer par un champ « poste cible »
-// du profil le jour où il existera (cf. ticket scoring/profil).
-const DEFAULT_WHAT = "développeur informatique, web, d'application";
-
 export function CollectOffers() {
   const isReviewer = useIsReviewer();
-  const [what, setWhat] = useState(DEFAULT_WHAT);
+  // Profil de la recherche active : la collecte n'a de sens qu'une fois le profil renseigné
+  // (OPP-219). On la bloque tant qu'il est vierge et on oriente vers l'import CV.
+  const { target } = useTargetCandidate();
+  const { ready, isPending: profilePending } = useProfileReady(target);
+  // Clés Adzuna (OPP-195) : la collecte réelle échoue sans elles. On prévient plutôt que de
+  // bloquer — `configured` ne reflète que le store, pas un éventuel fallback `.env` de dev.
+  const adzuna = useAdzunaSettings();
+  // Flux RSS saisis par l'utilisateur (OPP-195) : on propose une collecte « flux RSS » seulement
+  // s'il en a configuré au moins un (sinon la passe ne rapporterait qu'un `source_error`).
+  const rss = useRssSettings();
+  const hasRssFeeds = (rss.data?.feeds?.length ?? 0) > 0;
+  // Entreprises ciblées (OPP-226) : même logique, la collecte n'est proposée que s'il y en a.
+  const ats = useAtsSettings();
+  const hasAtsCompanies = (ats.data?.companies?.length ?? 0) > 0;
+  // Chaque offre neuve passe par le LLM local (intake structuré) : on désactive la collecte tant
+  // qu'il n'est pas prêt (OPP-195), en orientant vers le bandeau d'installation.
+  const llm = useLlmReady();
+  // Poste recherché : vide par défaut et **requis** (OPP-195). On ne préremplit plus un intitulé
+  // (c'était « développeur… », un biais pour un outil censé servir tous les métiers) ; et un
+  // `what` vide collecterait toute la France sans cible, chaque offre passant par le LLM. On
+  // laisse donc l'utilisateur saisir son propre intitulé et on bloque la collecte Adzuna tant
+  // qu'il est vide (le back la refuse aussi, OPP-226). La collecte RSS ne dépend pas de ce champ ;
+  // la collecte des entreprises ciblées s'en sert comme filtre facultatif des intitulés.
+  const [what, setWhat] = useState("");
   const [where, setWhere] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
   const start = useStartCollect();
@@ -62,19 +87,38 @@ export function CollectOffers() {
     }
   }, [jobId, status, job.data, queryClient]);
 
+  // Profil vierge (résolu, pas en cours de chargement) → on bloque la collecte et on oriente.
+  // Sans recherche active (`target === ""` : périmètre vide, en cours de chargement ou API HS),
+  // on ne bloque pas : l'invite « profil vierge » serait trompeuse et clignoterait au démarrage.
+  const profileBlocked = target !== "" && !ready && !profilePending;
+  // Une invite à la fois, dans l'ordre des prérequis : d'abord le CV, puis l'assistant local, et
+  // enfin les clés Adzuna. Le profil et le LLM désactivent le bouton ; l'absence de clés se
+  // contente d'avertir (non bloquant : `configured` ignore le fallback `.env` de dev).
+  const blocked = profileBlocked || !llm.ready;
+  // N'avertir sur les clés Adzuna qu'une fois l'état résolu (évite le clignotement au chargement)
+  // et seulement si aucun prérequis plus prioritaire ne manque.
+  const adzunaMissing = !blocked && adzuna.data?.configured === false;
+
   if (!isReviewer) return null;
 
-  const submit = () =>
-    start.mutate(
-      { what: what.trim(), where: where.trim() },
-      {
-        onSuccess: (data) => {
-          setJobId(data.job_id);
-          // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
-          queryClient.invalidateQueries({ queryKey: activeCollectKey });
-        },
+  const launch = (variables: CollectOffersVariables) =>
+    start.mutate(variables, {
+      onSuccess: (data) => {
+        setJobId(data.job_id);
+        // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
+        queryClient.invalidateQueries({ queryKey: activeCollectKey });
       },
-    );
+    });
+  const submit = () => launch({ what: what.trim(), where: where.trim() });
+  // Collecte depuis les flux RSS configurés : `what`/`where` ne s'appliquent pas (OPP-195).
+  const submitRss = () => launch({ source: "rss" });
+  // Collecte des entreprises ciblées (OPP-226) : le poste, s'il est saisi, filtre les intitulés
+  // avant l'analyse LLM (RG-11) ; vide, toutes les offres en France sont gardées. `where` ne
+  // s'applique pas (la source ne garde que la France).
+  const submitAts = () => {
+    const title = what.trim();
+    launch(title ? { source: "ats", what: title } : { source: "ats" });
+  };
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-4">
@@ -82,15 +126,15 @@ export function CollectOffers() {
         Récupérer de nouvelles offres
       </h3>
       <p className="text-sm text-ink-muted">
-        Interroge Adzuna et ajoute les offres neuves au catalogue. Le poste recherché est
-        prérempli (modifiable) ; précise un lieu pour cibler, ou laisse vide pour toute la France.
+        Interroge Adzuna et ajoute les offres neuves au catalogue. Indique le poste que tu
+        recherches ; précise un lieu pour cibler, ou laisse vide pour toute la France.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={what}
           onChange={(e) => setWhat(e.target.value)}
-          placeholder="Poste recherché (ex. développeur web)"
+          placeholder="Poste recherché (ex. ton intitulé de poste)"
           aria-label="Poste recherché"
           className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
         />
@@ -107,11 +151,37 @@ export function CollectOffers() {
         <button
           type="button"
           onClick={submit}
-          disabled={running}
+          // Poste requis (OPP-195) : pas de collecte Adzuna « tous métiers » déclenchée à vide.
+          disabled={running || blocked || what.trim() === ""}
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
         >
           {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
         </button>
+        {/* Collecte depuis les flux RSS configurés (OPP-195) : proposée seulement si l'utilisateur
+            en a enregistré au moins un dans les Réglages. Même verrou que la collecte Adzuna
+            (profil + LLM requis, un seul job à la fois). */}
+        {hasRssFeeds && (
+          <button
+            type="button"
+            onClick={submitRss}
+            disabled={running || blocked}
+            className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/10 disabled:opacity-50"
+          >
+            Collecter mes flux RSS
+          </button>
+        )}
+        {/* Collecte des entreprises ciblées (OPP-226) : proposée seulement si au moins une est
+            enregistrée dans les Réglages. Même verrou que les autres collectes. */}
+        {hasAtsCompanies && (
+          <button
+            type="button"
+            onClick={submitAts}
+            disabled={running || blocked}
+            className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/10 disabled:opacity-50"
+          >
+            Collecter mes entreprises ciblées
+          </button>
+        )}
         {/* La progression d'une passe en cours est affichée par le bandeau global persistant
             (`CollectionBanner`, OPP-208) — on ne la duplique plus ici (OPP-215). Le bilan final
             et l'échec restent affichés à côté du bouton : le bandeau, lui, disparaît à la fin. */}
@@ -122,6 +192,21 @@ export function CollectOffers() {
           </span>
         )}
       </div>
+      {profileBlocked ? (
+        <ProfileRequiredNotice />
+      ) : (
+        !llm.ready && llm.reason && <LlmRequiredNotice reason={llm.reason} />
+      )}
+      {hasAtsCompanies && (
+        <p className="text-xs text-ink-muted">
+          « Collecter mes entreprises ciblées » récupère les offres en France de tes entreprises.
+          Si un poste est saisi ci-dessus, seules les offres dont l'intitulé contient chacun de ses
+          mots sont gardées (« dev » garde « Développeur ») ; laisse-le vide pour tout récupérer
+          (beaucoup d'intitulés sont en anglais).
+          Le lieu ne s'applique pas.
+        </p>
+      )}
+      {adzunaMissing && <AdzunaRequiredNotice />}
       {start.isError && <ErrorNotice error={start.error} />}
       {job.isError && <ErrorNotice error={job.error} />}
     </div>
@@ -141,6 +226,26 @@ function CollectSummary({ report }: { report: CollectionReport }) {
       </span>
     );
   }
+  // Source « entreprises ciblées » (OPP-226) : entreprises en échec (la passe a continué sans
+  // elles). Champ absent d'un vieux back → rien à afficher.
+  const warnings = report.warnings ?? [];
+  return (
+    <>
+      <CollectCountsSummary report={report} />
+      {warnings.length > 0 && (
+        <span className="w-full text-sm text-warning-text">
+          Entreprises non interrogées : {warnings.join(" ; ")}
+        </span>
+      )}
+    </>
+  );
+}
+
+function CollectCountsSummary({ report }: { report: CollectionReport }) {
+  // Source « entreprises ciblées » (OPP-226) : offres écartées hors France ou hors poste.
+  // Champs absents d'un vieux back → rien à afficher.
+  const excluded = report.excluded ?? 0;
+  const offTarget = report.off_target ?? 0;
   return (
     <span className="text-sm text-success-text">
       {report.stored} nouvelle{report.stored > 1 ? "s" : ""} offre
@@ -150,6 +255,8 @@ function CollectSummary({ report }: { report: CollectionReport }) {
       {report.failures > 0 && ` · ${report.failures} échec${report.failures > 1 ? "s" : ""}`}
       {report.enriched > 0 &&
         ` · ${report.enriched} enrichie${report.enriched > 1 ? "s" : ""} (${report.enriched_recovered} récupérée${report.enriched_recovered > 1 ? "s" : ""})`}
+      {excluded > 0 && ` · ${excluded} hors France`}
+      {offTarget > 0 && ` · ${offTarget} hors poste`}
     </span>
   );
 }

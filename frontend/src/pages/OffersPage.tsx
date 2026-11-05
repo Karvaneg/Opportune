@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEvaluateOffer, useOffers } from "../api/offers";
-import { FUNNEL_LABELS, isFunnelStage } from "../api/funnel";
+import { CATALOG_STAGE_LABELS, isCatalogStage } from "../api/funnel";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { useIsReviewer } from "../auth/roles";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
 import { CollectOffers } from "../components/CollectOffers";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
+import { openExternal } from "../lib/openExternal";
 
 /**
  * Catalogue des offres (GET /offers, OPP-146) : toutes les offres du pool, plus récentes
@@ -27,7 +28,7 @@ export function OffersPage() {
   const [page, setPage] = useState(1);
   // Filtre par étape d'entonnoir, piloté par l'URL (clic sur une carte du cockpit, OPP-164).
   const rawStage = searchParams.get("stage");
-  const stageFilter = isFunnelStage(rawStage) ? rawStage : null;
+  const stageFilter = isCatalogStage(rawStage) ? rawStage : null;
   // Bascule de recherche (sélecteur global) : on revient en page 1, sinon on resterait sur une
   // page hors bornes pour une recherche au catalogue plus court.
   useEffect(() => setPage(1), [target]);
@@ -60,7 +61,7 @@ export function OffersPage() {
       {stageFilter && (
         <div className="flex items-center gap-2 text-sm">
           <span className="rounded-full bg-ink/5 px-3 py-1 text-ink">
-            Filtré : {FUNNEL_LABELS[stageFilter]}
+            Filtré : {CATALOG_STAGE_LABELS[stageFilter]}
           </span>
           <button type="button" onClick={clearFilter} className="text-ink-muted hover:underline">
             effacer le filtre
@@ -76,7 +77,7 @@ export function OffersPage() {
         (data.total === 0 ? (
           <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
             {stageFilter
-              ? `Aucune offre « ${FUNNEL_LABELS[stageFilter]} » pour cette recherche.`
+              ? `Aucune offre « ${CATALOG_STAGE_LABELS[stageFilter]} » pour cette recherche.`
               : isReviewer
                 ? "Aucune offre dans le catalogue. Récupère-en de nouvelles ci-dessus, ou ajoute-en une depuis l'accueil."
                 : "Aucune offre dans le catalogue pour le moment."}
@@ -156,7 +157,10 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
           {offer.url && (
             <a
               href={offer.url}
-              target="_blank"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal(offer.url!);
+              }}
               rel="noreferrer"
               className="text-ink-muted hover:text-ink hover:underline"
               title="Voir l'offre sur le site"

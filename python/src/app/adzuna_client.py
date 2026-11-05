@@ -20,11 +20,12 @@ l'analyse d'intake, qui ré-exploite ensuite ce texte via le socle OPP-119.
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Mapping
 from urllib.parse import urlencode
+
+# ``HttpResponse`` reste importable depuis ce module (anciens appelants et tests).
+from app.http_get import HttpResponse, HttpUnavailableError, http_get
 
 # Base de l'API Job Search ; le pays et le numéro de page complètent le chemin. Surchargeable
 # à la construction (tests, bac à sable).
@@ -52,14 +53,6 @@ class AdzunaQuotaError(AdzunaError):
 
 class AdzunaUnavailableError(AdzunaError):
     """L'API n'a pu être atteinte : DNS, timeout, coupure réseau ou 5xx."""
-
-
-@dataclass(frozen=True)
-class HttpResponse:
-    """Réponse HTTP brute vue par le client, indépendante du transport sous-jacent."""
-
-    status: int
-    body: str
 
 
 # Transport : (url) -> HttpResponse. Les statuts d'erreur HTTP sont rendus comme des
@@ -108,14 +101,9 @@ def _default_transport(url: str) -> HttpResponse:
     client décide par statut. Une panne de transport (DNS, timeout, connexion) lève
     ``AdzunaUnavailableError`` — il n'y a pas de statut à inspecter.
     """
-    request = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
     try:
-        # URL = endpoint officiel https, pas une URL arbitraire utilisateur (pas de SSRF).
-        with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:  # noqa: S310
-            return HttpResponse(response.status, response.read().decode("utf-8", errors="replace"))
-    except urllib.error.HTTPError as exc:
-        return HttpResponse(exc.code, exc.read().decode("utf-8", errors="replace") if exc.fp else "")
-    except (urllib.error.URLError, TimeoutError) as exc:
+        return http_get(url, headers={"Accept": "application/json"}, timeout=DEFAULT_TIMEOUT)
+    except HttpUnavailableError as exc:
         raise AdzunaUnavailableError(f"API Adzuna injoignable : {exc}") from exc
 
 

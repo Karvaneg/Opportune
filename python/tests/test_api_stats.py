@@ -12,6 +12,8 @@ import pytest
 from api.app import HermesApi
 from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
+from app.application_tracking_service import ApplicationTrackingService
+from app.application_tracking_store import ApplicationTrackingStore
 from app.auth import REVIEWER, LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
@@ -62,10 +64,13 @@ def env():
         decisions, applications, OutboundMessageActionStore(conn),
         new_id=lambda: next(ids), now=lambda: "2026-09-05T00:00:00+00:00",
     )
+    tracking = ApplicationTrackingService(
+        applications, ApplicationTrackingStore(conn), now=lambda: "2026-09-07T00:00:00+00:00"
+    )
     # Identité locale : propriétaire reviewer de cand-1 (et cand-2, laissé sans profil pour le
     # cas « candidat inconnu »).
     auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1", "cand-2"})))
-    api = HermesApi(orchestrator, actions, auth)
+    api = HermesApi(orchestrator, actions, auth, tracking=tracking)
     yield api
     conn.close()
 
@@ -74,7 +79,10 @@ def test_stats_all_undecided_are_a_etudier(env):
     # Entonnoir piloté par les décisions : sans décision, les 3 offres sont « à étudier ».
     resp = env.dispatch("GET", "/candidates/cand-1/stats", None, None)
     assert resp.status == 200
-    assert resp.body == {"a_etudier": 3, "a_postuler": 0, "postule": 0, "offres_total": 3}
+    assert resp.body == {
+        "a_etudier": 3, "a_postuler": 0, "postule": 0, "offres_total": 3,
+        "entretiens_prevus": 0,
+    }
 
 
 def test_stats_funnel_follows_my_decisions(env):
@@ -88,7 +96,10 @@ def test_stats_funnel_follows_my_decisions(env):
     env.dispatch("POST", f"/applications/{rid_b}/applied", {}, None)
 
     stats = env.dispatch("GET", "/candidates/cand-1/stats", None, None).body
-    assert stats == {"a_etudier": 1, "a_postuler": 1, "postule": 1, "offres_total": 3}
+    assert stats == {
+        "a_etudier": 1, "a_postuler": 1, "postule": 1, "offres_total": 3,
+        "entretiens_prevus": 0,
+    }
 
 
 def test_stats_coherent_with_catalog_funnel(env):
@@ -115,6 +126,23 @@ def test_stats_coherent_with_catalog_funnel(env):
     assert stats["a_postuler"] == stages.count("a_postuler")
     assert stats["postule"] == stages.count("postule")
     assert stats["offres_total"] == catalog["total"]
+
+
+def test_stats_counts_upcoming_interviews(env):
+    # Candidater à a, puis planifier un entretien à une date lointaine (toujours « à venir »).
+    rid = decision_id("cand-1", "a")
+    env.dispatch("POST", "/candidates/cand-1/offers/a/rescore", {}, None)
+    env.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": "approve"}, None)
+    env.dispatch("POST", f"/applications/{rid}/confirm", {"confirm": True}, None)
+    env.dispatch("POST", f"/applications/{rid}/applied", {}, None)
+    env.dispatch(
+        "POST", f"/applications/{rid}/tracking",
+        {"kind": "interview", "event_date": "2099-01-01"}, None,
+    )
+
+    stats = env.dispatch("GET", "/candidates/cand-1/stats", None, None).body
+
+    assert stats["entretiens_prevus"] == 1
 
 
 def test_stats_owned_candidate_without_profile_is_200(env):

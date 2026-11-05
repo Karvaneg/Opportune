@@ -227,6 +227,6 @@ def test_collect_offers_records_source_error_on_quota():
     assert "429" in report.source_error
 
 
-def test_build_adzuna_source_from_env():
-    source = build_adzuna_source({"ADZUNA_APP_ID": "a", "ADZUNA_APP_KEY": "k"})
+def test_build_adzuna_source_from_credentials():
+    source = build_adzuna_source(AdzunaCredentials(app_id="a", app_key="k"))
     assert isinstance(source, AdzunaSource)

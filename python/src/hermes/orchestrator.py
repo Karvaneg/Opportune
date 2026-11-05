@@ -38,6 +38,7 @@ from app.candidate_activity import (
     letter_event,
     most_recent,
     offer_event,
+    tracking_event,
 )
 from app.candidate_stats import (
     A_ETUDIER,
@@ -47,7 +48,7 @@ from app.candidate_stats import (
     build_candidate_stats,
     funnel_stage,
 )
-from app.decision import HUMAN_STATUSES, Decision
+from app.decision import HUMAN_STATUSES, Decision, decision_id
 from app.decision_service import DecisionService
 from app.offer import Offer
 from app.recommendation_service import (
@@ -66,8 +67,14 @@ from hermes.models import (
 from hermes.run_store import RunRepository
 
 # Étapes d'entonnoir filtrables du catalogue (OPP-164) ; un ``stage`` hors de cet ensemble
-# est ignoré (catalogue complet), aligné sur ``isFunnelStage`` côté front.
+# (et différent de ``_STAGE_ENTRETIEN``) est ignoré (catalogue complet), aligné sur
+# ``isCatalogStage`` côté front.
 _FUNNEL_STAGES = frozenset({A_ETUDIER, A_POSTULER, POSTULE})
+
+# Filtre transverse (OPP-223) : les offres avec un **entretien à venir**. Pas une étape
+# d'entonnoir (une telle offre est aussi « postulé ») ; la sélection des id concernés est
+# calculée par la couche API (suivi + date du jour) et passée en argument.
+_STAGE_ENTRETIEN = "entretien"
 
 
 def _utcnow_iso() -> str:
@@ -305,6 +312,7 @@ class HermesOrchestrator:
         offer_limit: int = 5,
         letters_at: Callable[[list[str]], dict[str, str]] | None = None,
         applied_at: Callable[[list[str]], dict[str, str]] | None = None,
+        tracking_for: Callable[[list[str]], dict[str, tuple]] | None = None,
     ) -> list[ActivityEvent]:
         """Flux d'activité récente du candidat pour le cockpit (OPP-165).
 
@@ -332,6 +340,7 @@ class HermesOrchestrator:
         decision_ids = [decision.id for decision in decisions]
         letter_ts = (letters_at or (lambda _ids: {}))(decision_ids)
         applied_ts = (applied_at or (lambda _ids: {}))(decision_ids)
+        tracking_ts = (tracking_for or (lambda _ids: {}))(decision_ids)
 
         events: list[ActivityEvent] = []
         for decision in decisions:
@@ -343,6 +352,9 @@ class HermesOrchestrator:
                 events.append(letter_event(letter_ts[decision.id], title, decision.id))
             if applied_ts.get(decision.id):
                 events.append(application_event(applied_ts[decision.id], title, decision.id))
+            # Suivi post-candidature (OPP-223) : un événement d'activité par entretien/rejet/offre.
+            for tracked in tracking_ts.get(decision.id, ()):
+                events.append(tracking_event(tracked.kind, tracked.at, title, decision.id))
 
         offer_events = [offer_event(offer.created_at, offer.title, offer.id) for offer in offers]
         events.extend(most_recent(offer_events, limit=offer_limit))
@@ -528,6 +540,7 @@ class HermesOrchestrator:
         candidate_id: str | None = None,
         stage: str | None = None,
         applied_recommendation_ids: Collection[str] = (),
+        interview_recommendation_ids: Collection[str] = (),
     ) -> tuple[list[OfferCatalogEntry], int, dict[str, tuple[str | None, bool]]]:
         """Catalogue paginé des offres + score de match + état d'entonnoir pour ``candidate_id``.
 
@@ -546,17 +559,28 @@ class HermesOrchestrator:
             return entries, total, {}
 
         state = self.funnel_state_by_offer(candidate_id, applied_recommendation_ids)
-        if stage not in _FUNNEL_STAGES:
+        if stage in _FUNNEL_STAGES:
+            matching = [
+                offer_id
+                for offer_id, (status, applied) in state.items()
+                if funnel_stage(status, applied) == stage
+            ]
+        elif stage == _STAGE_ENTRETIEN:
+            # Offres dont la candidature a un entretien à venir : la couche API a résolu les
+            # ``recommendation_id`` concernés (suivi + date du jour). On préserve l'ordre du pool.
+            interview = set(interview_recommendation_ids)
+            matching = [
+                offer_id
+                for offer_id in state
+                if decision_id(candidate_id, offer_id) in interview
+            ]
+        else:
+            # ``stage`` inconnu (ou sans candidat déjà traité plus haut) → catalogue complet.
             entries, total = self.recommendations.list_catalog(
                 limit=limit, offset=offset, candidate_id=candidate_id
             )
             return entries, total, state
 
-        matching = [
-            offer_id
-            for offer_id, (status, applied) in state.items()
-            if funnel_stage(status, applied) == stage
-        ]
         page_ids = matching[offset : offset + limit]
         entries = self.recommendations.catalog_entries_for(page_ids, candidate_id=candidate_id)
         return entries, len(matching), state

@@ -1,7 +1,9 @@
 # Opportune — Frontend (Hermes)
 
 Dashboard local Hermes : consultation des runs **et** actions de candidature validées
-(décision, lettre de motivation, ajout d'offre). Consomme l'API Python (`python/src/api`).
+(décision, lettre de motivation, ajout d'offre, suivi). Consomme l'API Python
+(`python/src/api`). Le même front tourne en navigateur (dev) et dans l'app de bureau Tauri
+(`src-tauri/`, cf. [`src-tauri/README.md`](src-tauri/README.md)).
 Stack : React 19 + TypeScript + Vite, Tailwind v4, TanStack Query, React Router,
 Vitest + Testing Library.
 
@@ -25,7 +27,19 @@ Vitest + Testing Library.
 - **Historique** (`/historique`) : liste paginée des runs, et détail d'un run
   (`/runs/:runId`) — métadonnées, évaluations, erreurs, recommandations paginées.
 - **Recommandation** (`/recommendations/:id`) : détail, **panneau lettre** de motivation
-  (générer / éditer / supprimer) et **décision** humaine (réservée au rôle `reviewer`).
+  (générer / éditer / supprimer), **décision** humaine (réservée au rôle `reviewer`) et
+  **suivi post-candidature** : « j'ai candidaté », puis historique d'événements (entretien
+  daté, rejet, offre reçue, OPP-223).
+- **Réglages** (`/reglages`, OPP-195/222/226) : saisie des **clés Adzuna** (`AdzunaSettings`),
+  des **URLs de flux RSS** (`RssSettings`) et des **pages carrière des entreprises ciblées**
+  (`AtsSettings`, Greenhouse/Lever), enregistrées par l'API dans le dossier de données de
+  l'app. Plus besoin d'éditer un `.env` pour collecter.
+- **Mise en route du LLM** (`LlmBanner`, OPP-193/195) : tant que le modèle local n'est pas
+  installé, un bandeau propose de le télécharger (barre de progression) ou signale qu'Ollama
+  est injoignable, sans bloquer l'app ; seules les actions qui exigent le LLM se désactivent.
+- **Liens externes** (`lib/openExternal.ts`) : dans l'app de bureau, les liens d'offres
+  s'ouvrent dans le navigateur du système (plugin Tauri `opener`) ; en navigateur, dans un
+  nouvel onglet.
 
 ## Développement
 
@@ -34,18 +48,24 @@ npm install
 npm run dev        # Vite sur http://localhost:5173, proxy /api → http://localhost:8000
 ```
 
-L'API Python doit tourner en parallèle (`cd ../python && python -m api.server`).
+L'API Python doit tourner en parallèle (`bash scripts/serve-api.sh` depuis la racine, ou
+`cd ../python && python -m api.server`).
 Les appels front sont préfixés `/api` et réécrits vers l'API par le proxy Vite.
 
 ## Qualité
 
 ```bash
-npm run lint       # tsc -b (typecheck strict)
+npm run lint       # tsc -b --noEmit (typecheck strict)
 npm test           # Vitest (client API + composants)
-npm run build      # typecheck + build de production
+npm run build      # typecheck + build de production (dist/, embarqué dans le binaire API)
 ```
 
-## Docker
+En production, il n'y a plus de serveur Vite : le binaire API sert lui-même `dist/` sur le
+même origin que l'API (OPP-191).
+
+## Docker (optionnel)
+
+Image toujours fonctionnelle, mais plus utilisée par défaut (`npm` en local suffit).
 
 ```bash
 docker build -t opportune-frontend:dev .

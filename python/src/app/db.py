@@ -13,9 +13,16 @@ import os
 import sqlite3
 from pathlib import Path
 
+from app.paths import user_data_dir
+
 # Chemin de la base par défaut, surchargeable via la variable d'environnement
 # OPPORTUNE_DB_PATH (ex. dans docker-compose). ":memory:" est accepté (tests).
-DEFAULT_DB_PATH = os.environ.get("OPPORTUNE_DB_PATH", "data/opportune.db")
+# À défaut d'override, le dossier dépend du contexte (dev vs binaire gelé) : voir
+# ``app.paths.user_data_dir``. En mode packagé, ``data/`` relatif n'existe pas et
+# n'est pas inscriptible — la base est routée vers un répertoire par utilisateur.
+DEFAULT_DB_PATH = os.environ.get("OPPORTUNE_DB_PATH") or str(
+    user_data_dir() / "opportune.db"
+)
 
 
 # Attente max (ms) sur un verrou SQLite avant d'abandonner (``PRAGMA busy_timeout``).

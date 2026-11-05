@@ -2,7 +2,7 @@
 ## Workflow IA — Contexte projet
 
 - **Stack détectée :** monorepo — back Python (bibliothèque standard, `python/`) + front React/Vite/TypeScript (`frontend/`)
-- **Commande de test :** back `cd python && docker compose run --rm app pytest -q` · front `cd frontend && npm test`
+- **Commande de test :** back `cd python && .venv/bin/pytest -q` · front `cd frontend && npm test`
 - **Script de contexte :** `scripts/generate-ai-context.sh`
 - **Fichier de contexte :** `.claude/skills/project-context.md`
 
@@ -17,16 +17,19 @@ Assistant de candidature **local-first et mono-utilisateur** (tourne sur la mach
 l'utilisateur, API sur `localhost`, sans login ni jeton — cf. `docs/adr/0003`).
 
 - **Back** (`python/`) : cœur métier + orchestrateur **Hermes** + API HTTP, écrits avec la
-  **bibliothèque standard** (zéro dépendance de prod ; extras `scrape`/`discord` confinés).
+  **bibliothèque standard** (zéro dépendance de prod ; extras `pdf`/`scrape`/`discord`/`build` confinés).
   Trois couches `app/` (métier) · `hermes/` (orchestration) · `api/` (HTTP). Détail :
   [`python/README.md`](python/README.md).
 - **Front** (`frontend/`) : dashboard React 19 + Vite + TypeScript + Tailwind v4 + TanStack
   Query. Détail : [`frontend/README.md`](frontend/README.md).
+- **App de bureau** (`frontend/src-tauri/`, épic E13) : coquille Tauri qui lance l'API
+  (binaire PyInstaller, `python/packaging/`) et un Ollama embarqué. Détail :
+  [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md). Les tickets E13 partent de
+  `epic/E13-opportune-1.0` et s'y re-mergent.
 - **V1 Node.js** (archivée sous `legacy/`) : MVP CLI historique, conservé pour
   référence — plus la cible produit.
 
-**Tests** — back : `cd python && docker compose run --rm app pytest -q` (ou
-`python/.venv/bin/pytest`) ; front : `cd frontend && npm test` (Vitest), `npm run lint`
+**Tests** — back : `cd python && .venv/bin/pytest -q` (Docker existe encore mais seulement si Marie le demande) ; front : `cd frontend && npm test` (Vitest), `npm run lint`
 (typecheck `tsc`), `npm run build`.
 
 **Conventions** : voir [`docs/definition-of-done.md`](docs/definition-of-done.md) — une

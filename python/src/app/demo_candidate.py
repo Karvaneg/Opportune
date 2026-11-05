@@ -351,9 +351,11 @@ def reset_demo(conn: sqlite3.Connection) -> None:
     un vidage total est sûr et ne peut jamais rater une table (ni, par construction du routeur,
     atteindre la base réelle). ``restore`` = ``reset_demo`` puis ``seed_demo_candidate``.
 
-    Le **slot** du candidat démo est **réinséré** dans le registre après le vidage (OPP-183) :
-    le périmètre garde donc une recherche, vide de données, pour que le cockpit propose le guide
-    d'accueil (« nouveau profil ») plutôt qu'un « aucun candidat » — c'est le sens du reset.
+    Table rase **complète** : le registre des recherches est vidé lui aussi, candidat démo
+    compris (OPP-195). Le périmètre devient vide → le sélecteur invite à **créer une nouvelle
+    recherche**, au lieu de laisser une « Alex Demo » sans données (dont le profil répondrait 404).
+    « Restaurer l'exemple » (``reset_demo`` puis ``seed_demo_candidate``) réinsère le slot et la
+    vitrine canonique.
     """
     tables = [
         row[0]
@@ -364,4 +366,3 @@ def reset_demo(conn: sqlite3.Connection) -> None:
     for table in tables:
         conn.execute(f"DELETE FROM {table}")
     conn.commit()
-    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID, label=DEMO_CANDIDATE_NAME)

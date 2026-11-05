@@ -7,7 +7,9 @@ stack cible du projet (le V1 Node.js, archivé sous [`../legacy/`](../legacy/), 
 
 **Zéro dépendance de production** : tout le métier, l'orchestrateur et l'API sont écrits
 avec la **bibliothèque standard** (`sqlite3`, `urllib`, `http.server`). Seul `pytest` est
-requis, et seulement pour les tests.
+requis, et seulement pour les tests. Les fonctions optionnelles vivent dans des extras
+confinés : `pdf` (pypdf, import de CV), `scrape` (BeautifulSoup, intake par URL et RSS),
+`discord` (récepteur de clics historique) et `build` (PyInstaller, binaire autonome).
 
 ## Les trois couches
 
@@ -47,12 +49,13 @@ inchangées par décision).
 | `PUT /searches/{search_id}` | Renomme une recherche (rôle `reviewer`) |
 | `GET /runs` | Listing paginé des runs du périmètre |
 | `GET /runs/{run_id}` | Détail d'un run (évaluations, erreurs) |
+| `DELETE /runs/{run_id}` | Supprime un run de l'historique |
 | `GET /runs/{run_id}/recommendations` | Recommandations paginées + filtres `advisory_status`/`decision_status` |
 | `POST /candidates/{candidate_id}/recommendations` | Lance une recommandation |
 | `GET /candidates/{candidate_id}/stats` | Agrégats de décision du périmètre (OPP-163) |
 | `GET /candidates/{candidate_id}/activity` | Flux d'activité récente — lettres, décisions, ajouts (OPP-165) |
 | `GET /candidates/{candidate_id}/profile` | Lecture du profil candidat |
-| `POST /candidates/{candidate_id}/profile` | Création / mise à jour du profil |
+| `PUT /candidates/{candidate_id}/profile` | Création / mise à jour du profil |
 | `POST /candidates/{candidate_id}/profile/cv` | Import d'un CV PDF → extraction + profil (OPP-174, LLM) |
 | `POST /candidates/{candidate_id}/offers/{offer_id}/rescore` | Recalcule le score d'une offre |
 | `GET /recommendations/{recommendation_id}` | Détail d'une recommandation |
@@ -63,15 +66,34 @@ inchangées par décision).
 | `DELETE /recommendations/{recommendation_id}/letter` | Supprime la lettre (rôle `reviewer`) |
 | `GET /offers` | Catalogue du pool d'offres, annoté du score de match |
 | `POST /offers` | Intake d'une offre par texte collé (OPP-145) ou URL (OPP-148) |
-| `POST /collect` | Lance une collecte asynchrone (job de fond, OPP-170) |
+| `GET /collect` | État du job de collecte actif, s'il y en a un (OPP-208) |
+| `POST /collect` | Lance une collecte asynchrone, source `adzuna` (`what` requis), `rss` ou `ats` (job de fond, OPP-170) |
 | `GET /collect/{job_id}` | Sonde la progression d'un job de collecte |
+| `POST /collect/{job_id}/cancel` | Annule un job de collecte en cours |
+| `GET /system/llm/status` | État du LLM local : Ollama joignable, modèle présent (OPP-193) |
+| `GET /system/llm/setup` | Avancement du téléchargement du modèle |
+| `POST /system/llm/setup` | Lance le téléchargement du modèle (202) |
+| `GET /settings/adzuna` | Clés Adzuna configurées ou non (jamais les clés elles-mêmes, OPP-222) |
+| `PUT /settings/adzuna` | Enregistre les clés Adzuna saisies dans l'app |
+| `GET /settings/rss` | URLs de flux RSS enregistrées (OPP-195) |
+| `PUT /settings/rss` | Remplace la liste des flux RSS (liste vide = tout supprimer, OPP-225) |
+| `GET /settings/ats` | Entreprises ciblées enregistrées (pages carrière Greenhouse/Lever, OPP-226) |
+| `PUT /settings/ats` | Vérifie auprès de l'ATS puis enregistre les entreprises (liste vide = tout supprimer) |
 | `POST /applications/{recommendation_id}/confirm` | Action sensible : candidature (confirmation explicite + décision `approved` + rôle `reviewer`) |
 | `POST /applications/{recommendation_id}/applied` | Suivi : « j'ai candidaté » (date optionnelle) |
 | `DELETE /applications/{recommendation_id}/applied` | Annule la candidature déclarée |
+| `GET /applications/{recommendation_id}/tracking` | Historique de suivi post-candidature (OPP-223) |
+| `POST /applications/{recommendation_id}/tracking` | Ajoute un événement : entretien daté, rejet, offre reçue |
 | `POST /messages/{contact_id}/confirm` | Action sensible : message (mêmes gardes) |
+| `POST /demo/reset` · `POST /demo/restore` | Vide / restaure l'espace Démo (cf. « Deux espaces isolés ») |
 
-Certaines routes ne sont **montées que si leur service est câblé** (profil, lettre, intake
-`POST /offers`, `/collect`, actions sensibles) ; sinon elles répondent **404 neutre**.
+Certaines routes ne sont **montées que si leur service est câblé** (recherches, profil, CV,
+lettre, intake `POST /offers`, `/collect`, `/system/llm/*`, `/settings/*`, actions sensibles,
+suivi) ; sinon elles répondent **404 neutre**.
+
+Côté transport (`server.py`), les routes de l'API sont préfixées **`/api`** ; toute autre
+requête `GET` sert le **front compilé** (`frontend/dist`, OPP-191) quand il est présent, ce qui
+permet au binaire autonome de livrer front et API sur le même origin.
 
 Gardes de sécurité (OPP-181, local-first) : l'API est **mono-utilisateur sur `localhost` et
 sans jeton** — toute requête est servie comme l'unique utilisateur local (pas de 401 en
@@ -82,7 +104,8 @@ sont indistinguables (anti-énumération).
 
 ## Prérequis
 
-- **Python ≥ 3.11** (ou **Docker**, chemin recommandé — notamment sous WSL2).
+- **Python ≥ 3.11**. Docker reste possible en option (cf. [Environnement Docker](#environnement-docker-optionnel)),
+  mais ce n'est plus la voie utilisée par défaut.
 
 ## Installation
 
@@ -99,7 +122,7 @@ pip install -e ".[dev]"
 ## Exécution des tests
 
 ```bash
-pytest
+.venv/bin/pytest -q            # ou `pytest` si le venv est activé
 ```
 
 La suite couvre chaque brique métier, l'orchestrateur et l'API (services, pagination,
@@ -132,7 +155,7 @@ export OPPORTUNE_DB_PATH=data/opportune.db     # base SQLite (défaut : data/opp
 python -m api.server                           # écoute sur http://127.0.0.1:8000
 ```
 
-Le frontend React (`../frontend`) consomme cette API via un proxy `/api` (cf.
+Port surchargeable par `OPPORTUNE_API_PORT` (défaut `8000`). Le frontend React (`../frontend`) consomme cette API via un proxy `/api` (cf.
 `frontend/README.md`).
 
 ### Ajouter une offre (texte collé ou URL)
@@ -153,9 +176,11 @@ distincts : URL refusée/schéma invalide → 400 ; page injoignable, bloquée (
 vide → 502. Le JS côté client et les anti-bots sérieux ne sont pas contournés (fetch HTTP
 simple) : certains sites échoueront, c'est attendu.
 
-## Environnement Docker / WSL
+## Environnement Docker (optionnel)
 
-Conteneur reproductible (OPP-071). Le code (`src/`, `tests/`) est monté en volume : les
+Conteneur reproductible (OPP-071), toujours fonctionnel mais **plus utilisé par défaut** : le
+développement et les tests se font avec le venv local (cf. [Installation](#installation)).
+Le code (`src/`, `tests/`) est monté en volume : les
 modifications sont prises en compte sans reconstruire l'image.
 
 ### Avec Docker seul
@@ -178,8 +203,13 @@ docker compose run --rm app python -c "import app; print(app.healthcheck())"
 
 Accès configuré via la bibliothèque standard (`sqlite3`) — **aucun ORM**.
 
-- Chemin par défaut : `data/opportune.db`, surchargeable par `OPPORTUNE_DB_PATH`
-  (`:memory:` accepté pour les tests).
+- Chemin par défaut : `opportune.db` dans le **dossier de données** (cf. ci-dessous),
+  surchargeable par `OPPORTUNE_DB_PATH` (`:memory:` accepté pour les tests).
+- Dossier de données (`app.paths.user_data_dir`, OPP-190) : `OPPORTUNE_DATA_DIR` s'il est
+  défini ; sinon, en **binaire gelé** (PyInstaller), un dossier par utilisateur selon l'OS
+  (`%APPDATA%\Opportune`, `~/Library/Application Support/Opportune`,
+  `$XDG_DATA_HOME/opportune` ou `~/.local/share/opportune`) ; sinon `data/` relatif (dev).
+  L'app de bureau impose `OPPORTUNE_DATA_DIR` pour ranger bases et modèles ensemble.
 - `app.db.connect()` ouvre une connexion configurée (lignes `sqlite3.Row`, clés étrangères
   activées) et crée le dossier parent au besoin.
 - Sous Docker Compose, la base est persistée dans le volume `opportune-data`.
@@ -205,6 +235,36 @@ bases ne se mélangent jamais.
 Le routeur porte aussi deux **commandes réservées à la démo**, interceptées avant le routage :
 `POST /demo/reset` (vider l'espace démo) et `POST /demo/restore` (restaurer la vitrine).
 
+La vitrine inclut des **réglages de collecte pré-remplis** (`app.demo_settings`) : deux flux RSS
+(We Work Remotely full-stack, Remotive) et deux entreprises ciblées (Swile sur Lever, Mirakl sur
+Greenhouse). Ils sont posés au premier lancement et par `POST /demo/restore`, et vidés par
+`POST /demo/reset` comme le reste.
+
+## Réglages saisis dans l'app (OPP-195 / OPP-222)
+
+Les **clés Adzuna**, les **URLs de flux RSS** et les **pages carrière des entreprises
+ciblées** se saisissent dans la page Réglages du front (`PUT /settings/adzuna`,
+`PUT /settings/rss`, `PUT /settings/ats`). L'API les range dans des fichiers du dossier de
+données (`app.adzuna_credentials_store`, `app.rss_feeds_store`), hors dépôt. Les clés saisies
+**priment** sur `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` de l'environnement, qui restent un repli
+pour le dev. L'espace Démo a ses propres fichiers : ses réglages ne fuitent pas dans « Mon
+espace ».
+
+## Binaire autonome (PyInstaller, OPP-190 / OPP-191)
+
+`packaging/` construit un exécutable unique qui sert **front compilé + API**, sans Python ni
+Node installés. C'est le sidecar embarqué par l'app de bureau
+([`../frontend/src-tauri/README.md`](../frontend/src-tauri/README.md)).
+
+```bash
+cd python
+.venv/bin/pip install -e ".[build,scrape,pdf]"
+bash packaging/build-api.sh          # reconstruit le front puis produit dist/opportune-api
+```
+
+PyInstaller ne fait pas de cross-compilation : le binaire cible l'OS courant (sous Windows,
+passer par `frontend/src-tauri/sync-sidecar.ps1`).
+
 ## LLM local — Ollama / Ministral
 
 Accès au modèle via un client minimal (`app.llm` / `app.llm_client`) qui parle l'API HTTP
@@ -216,9 +276,12 @@ n'ont besoin d'aucun serveur Ollama.
 - `OPPORTUNE_LLM_TIMEOUT` (défaut `300` s) borne chaque appel LLM : un intake réaliste en
   sortie structurée prend ~85 s avec `ministral-3:3b` (le défaut brut de 60 s ne suffit pas).
   `OLLAMA_NUM_PREDICT` (défaut `2048`) plafonne les tokens générés, dimensionné sur la lettre.
-- Sous Docker Compose, l'app joint l'Ollama **natif de l'hôte** via `host.docker.internal:11434`
-  (`extra_hosts: host-gateway`). Le design conteneurisé reste dans l'historique git, à
-  réactiver au packaging portable (OPP-113).
+- Si l'on passe par Docker Compose (optionnel), l'app joint l'Ollama **natif de l'hôte** via `host.docker.internal:11434`
+  (`extra_hosts: host-gateway`).
+- Une adresse d'écoute sans port dans `OLLAMA_HOST` (`0.0.0.0`, `::`) est ramenée à
+  `127.0.0.1:11434` : c'est la valeur côté serveur Ollama, pas une adresse joignable.
+- Dans l'app de bureau, Ollama est **embarqué et lancé** par la coquille Tauri, et le modèle
+  se télécharge depuis l'app au premier lancement (`/system/llm/*`, OPP-193).
 
 Prérequis côté hôte : un serveur Ollama en écoute et le modèle déjà présent.
 
@@ -227,9 +290,8 @@ ollama serve                 # sur l'hôte (Windows/WSL), si pas déjà lancé
 ollama pull ministral-3:3b   # télécharge le modèle (une fois)
 ```
 
-Sous **Windows / WSL2** : installer Docker Desktop (backend WSL2) ou le moteur Docker dans la
-distribution ; travailler depuis le système de fichiers Linux (`~/Opportune`, pas `/mnt/c/...`)
-pour des montages rapides ; pour joindre l'Ollama natif Windows, lancer le serveur avec
+Sous **Windows / WSL2** : travailler depuis le système de fichiers Linux (`~/Opportune`, pas
+`/mnt/c/...`) ; pour joindre l'Ollama natif Windows, lancer le serveur avec
 `OLLAMA_HOST=0.0.0.0` et autoriser le port `11434` depuis le réseau Hyper-V/WSL dans le
 pare-feu Windows.
 
@@ -261,9 +323,12 @@ par offre sont consignés sans interrompre la passe.
 |---|---|---|---|
 | **Adzuna** (recommandée) | `app.adzuna_runner` | actif | clé gratuite **self-service instantanée** |
 | **RSS / Atom** | `app.rss_runner` | actif | aucun (vous fournissez les flux) ; extra `scrape` |
+| **Entreprises ciblées** (Greenhouse, Lever) | `app.ats_source` (depuis l'app) | actif | aucun (vous fournissez les pages carrière) |
 | **France Travail** | `app.france_travail_runner` | **dormant** | API retirée de `francetravail.io` (oct. 2026) |
 
-**Adzuna** est la source par défaut (clé instantanée). **France Travail**, plus riche, n'est
+**Adzuna** est la source par défaut (clé instantanée). Dans l'app, la collecte se lance depuis
+le catalogue d'offres (`POST /collect`) avec les clés et flux saisis dans les Réglages ; les
+runners en ligne de commande lisent toujours l'environnement. **France Travail**, plus riche, n'est
 **pas utilisable** aujourd'hui (API retirée ; futur accès « Restreint » sur autorisation au cas
 par cas, inadapté à une diffusion grand public).
 

@@ -9,6 +9,7 @@ unicité 409, et issue ``failed``). L'unicité utilise un vrai thread piloté pa
 
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -51,9 +52,13 @@ def _api(runner, *, auth=None, spawn=_sync_spawn) -> HermesApi:
 
 
 
+# Corps minimal d'une collecte Adzuna valide : le poste (``what``) y est requis (OPP-226).
+ADZUNA_BODY = {"what": "python"}
+
+
 def _start(api, body=None, headers=None):
     """POST /collect → renvoie (réponse, job_id) ; le spawn synchrone laisse le job terminé."""
-    resp = api.dispatch("POST", "/collect", body or {}, headers)
+    resp = api.dispatch("POST", "/collect", ADZUNA_BODY if body is None else body, headers)
     return resp, resp.body.get("job_id")
 
 
@@ -64,7 +69,7 @@ def test_post_collect_returns_202_with_job_id():
 
 
 def test_poll_done_job_serializes_report():
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=5, stored=3, duplicates=2)
 
     api = _api(runner)
@@ -81,12 +86,15 @@ def test_poll_done_job_serializes_report():
         "source_error": None,
         "enriched": 0,
         "enriched_recovered": 0,
+        "excluded": 0,
+        "off_target": 0,
+        "warnings": [],
     }
 
 
 def test_poll_reports_progress_snapshot():
     # L'avancement publié par le runner via ``on_progress`` est lisible dans l'état du job.
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         on_progress(
             CollectionProgress(
                 collected=4, stored=1, duplicates=2, failures=1, enriched=0, enriched_recovered=0
@@ -109,7 +117,7 @@ def test_poll_reports_progress_snapshot():
 
 def test_poll_serializes_enrichment_counts():
     # OPP-169 : les compteurs d'enrichissement non nuls remontent dans le bilan du job.
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=4, stored=4, duplicates=0, enriched=2, enriched_recovered=1)
 
     api = _api(runner)
@@ -122,7 +130,7 @@ def test_poll_serializes_enrichment_counts():
 def test_start_passes_criteria_and_default_max():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where, max_offers=max_offers)
         return _report()
 
@@ -130,21 +138,105 @@ def test_start_passes_criteria_and_default_max():
     assert captured == {"what": "python", "where": "Paris", "max_offers": _COLLECT_MAX_DEFAULT}
 
 
+def test_start_defaults_source_to_adzuna():
+    captured = {}
+
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        captured["source"] = source
+        return _report()
+
+    _start(_api(runner), {"what": "python"})
+
+    assert captured["source"] == "adzuna"
+
+
+def test_start_forwards_rss_source():
+    captured = {}
+
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        captured["source"] = source
+        return _report()
+
+    _start(_api(runner), {"source": "rss"})
+    assert captured["source"] == "rss"
+
+
+def test_start_forwards_ats_source():
+    captured = {}
+
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        captured["source"] = source
+        return _report()
+
+    _start(_api(runner), {"source": "ats"})
+
+    assert captured["source"] == "ats"
+
+
+def test_poll_done_job_serializes_excluded_and_warnings():
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        return replace(_report(), excluded=4, warnings=("entreprise introuvable sur Lever : x",))
+
+    api = _api(runner)
+    _, job_id = _start(api, {"source": "ats"})
+
+    resp = api.dispatch("GET", f"/collect/{job_id}", None, None)
+
+    assert resp.body["report"]["excluded"] == 4
+    assert resp.body["report"]["warnings"] == ["entreprise introuvable sur Lever : x"]
+
+
+@pytest.mark.parametrize("what", [None, "", "   "])
+def test_start_rejects_adzuna_without_job_title(what):
+    calls = []
+    body = {} if what is None else {"what": what}
+
+    resp, _ = _start(_api(lambda **k: calls.append(k) or _report()), body)
+
+    assert resp.status == 400
+    assert calls == []
+
+
+@pytest.mark.parametrize("source", ["rss", "ats"])
+def test_start_accepts_rss_and_ats_without_job_title(source):
+    resp, _ = _start(_api(lambda **k: _report()), {"source": source})
+
+    assert resp.status == 202
+
+
+def test_poll_done_job_serializes_off_target():
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        return replace(_report(), off_target=12)
+
+    api = _api(runner)
+    _, job_id = _start(api, {"source": "ats", "what": "data"})
+
+    resp = api.dispatch("GET", f"/collect/{job_id}", None, None)
+
+    assert resp.body["report"]["off_target"] == 12
+
+
+def test_start_rejects_unknown_source():
+    resp, _ = _start(_api(lambda **k: _report()), {"source": "linkedin"})
+    assert resp.status == 400
+
+
 def test_start_defaults_empty_criteria():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where)
         return _report()
 
-    _start(_api(runner), {})
+    _start(_api(runner), {"source": "rss"})
+
     assert captured == {"what": "", "where": ""}
 
 
 def test_start_strips_criteria():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where)
         return _report()
 
@@ -155,22 +247,22 @@ def test_start_strips_criteria():
 def test_start_clamps_max_to_cap():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured["max_offers"] = max_offers
         return _report()
 
-    _start(_api(runner), {"max": 10_000})
+    _start(_api(runner), {**ADZUNA_BODY, "max": 10_000})
     assert captured["max_offers"] == _COLLECT_MAX_CAP
 
 
 def test_start_honours_explicit_max_below_cap():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured["max_offers"] = max_offers
         return _report()
 
-    _start(_api(runner), {"max": 7})
+    _start(_api(runner), {**ADZUNA_BODY, "max": 7})
     assert captured["max_offers"] == 7
 
 
@@ -190,7 +282,7 @@ def test_source_error_surfaces_in_done_report_not_status():
     # Panne de la source (identifiants Adzuna manquants, quota…) : le runner rend un bilan
     # porteur de ``source_error`` — le job est ``done`` (pas ``failed``) et le détail est dans
     # le bilan. Une panne de source n'est pas un échec de job.
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=0, stored=0, duplicates=0, source_error="AdzunaAuthError: …")
 
     api = _api(runner)
@@ -201,7 +293,7 @@ def test_source_error_surfaces_in_done_report_not_status():
 
 
 def test_runner_exception_marks_job_failed():
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         raise RuntimeError("boom")
 
     api = _api(runner)
@@ -218,7 +310,7 @@ def test_done_report_counts_failures():
         CollectionFailure(raw=RawOffer(source="adzuna", raw_text="y", url="u2"), error="bam"),
     )
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=4, stored=1, duplicates=1, failures=failures)
 
     api = _api(runner)
@@ -232,23 +324,23 @@ def test_second_collect_while_running_returns_409():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         release.wait(timeout=5)
         return _report()
 
     api = _api(runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start())
     try:
-        first = api.dispatch("POST", "/collect", {}, None)
+        first = api.dispatch("POST", "/collect", ADZUNA_BODY, None)
         assert first.status == 202
         assert started.wait(timeout=5)
         # Un job tourne encore → second démarrage refusé.
-        assert api.dispatch("POST", "/collect", {}, None).status == 409
+        assert api.dispatch("POST", "/collect", ADZUNA_BODY, None).status == 409
     finally:
         release.set()
     # Une fois terminé, le créneau se libère : un nouveau démarrage repasse.
     for _ in range(200):
-        if api.dispatch("POST", "/collect", {}, None).status == 202:
+        if api.dispatch("POST", "/collect", ADZUNA_BODY, None).status == 202:
             break
         time.sleep(0.01)
     else:
@@ -265,7 +357,7 @@ def test_cancel_running_job_returns_202_then_job_cancelled():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         while not should_cancel():
             if release.wait(0.01):
@@ -275,7 +367,7 @@ def test_cancel_running_job_returns_202_then_job_cancelled():
 
     api = _api(runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start())
     try:
-        job_id = api.dispatch("POST", "/collect", {}, None).body["job_id"]
+        job_id = api.dispatch("POST", "/collect", ADZUNA_BODY, None).body["job_id"]
         assert started.wait(timeout=5)
         cancel = api.dispatch("POST", f"/collect/{job_id}/cancel", {}, None)
         assert cancel.status == 202
@@ -298,7 +390,7 @@ def test_cancel_unknown_job_is_404():
 def test_serialize_job_exposes_cancel_requested():
     # Le sondage expose le drapeau d'arrêt demandé (OPP-209) — ici faux (passe nominale).
     api = _api(lambda **k: _report())
-    job_id = api.dispatch("POST", "/collect", {}, None).body["job_id"]
+    job_id = api.dispatch("POST", "/collect", ADZUNA_BODY, None).body["job_id"]
     body = api.dispatch("GET", f"/collect/{job_id}", None, None).body
     assert body["cancel_requested"] is False
 
@@ -311,7 +403,7 @@ def test_collect_routes_absent_without_registry():
         runs=RunStore(conn),
     )
     api = HermesApi(orchestrator)  # pas de registre → routes non montées
-    assert api.dispatch("POST", "/collect", {}, None).status == 404
+    assert api.dispatch("POST", "/collect", ADZUNA_BODY, None).status == 404
     assert api.dispatch("GET", "/collect/x", None, None).status == 404
 
 
@@ -333,14 +425,14 @@ def test_get_active_collect_reflects_running_job():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         release.wait(timeout=5)
         return _report()
 
     api = _api(runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start())
     try:
-        start = api.dispatch("POST", "/collect", {}, None)
+        start = api.dispatch("POST", "/collect", ADZUNA_BODY, None)
         assert start.status == 202
         assert started.wait(timeout=5)
         active = api.dispatch("GET", "/collect", None, None)
@@ -374,7 +466,7 @@ def test_collect_requires_reviewer_role():
         lambda **k: _report(),
         auth=LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"}))),
     )
-    resp = reviewer.dispatch("POST", "/collect", {})
+    resp = reviewer.dispatch("POST", "/collect", ADZUNA_BODY)
     assert resp.status == 202
     job_id = resp.body["job_id"]
     assert reviewer.dispatch("GET", f"/collect/{job_id}", None).status == 200

@@ -7,7 +7,9 @@ import { CockpitPage } from "../src/pages/CockpitPage";
 import { AuthProvider } from "../src/auth/AuthContext";
 import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
 
-const STATS = { a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12 };
+const STATS = {
+  a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12, entretiens_prevus: 1,
+};
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
@@ -84,7 +86,7 @@ afterEach(() => {
 });
 
 describe("CockpitPage (OPP-164)", () => {
-  it("affiche les trois compteurs depuis GET /stats + le total du pool", async () => {
+  it("affiche les compteurs depuis GET /stats + le total du pool", async () => {
     stubFetch();
     renderCockpit();
 
@@ -95,7 +97,18 @@ describe("CockpitPage (OPP-164)", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Postulées")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
+    // Entretiens prévus (OPP-223) : 4e carte.
+    expect(screen.getByText("Entretiens prévus")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText(/12 offre\(s\) au total/)).toBeInTheDocument();
+  });
+
+  it("un clic sur « Entretiens prévus » ouvre Offres filtré sur « entretien » (OPP-223)", async () => {
+    stubFetch();
+    renderCockpit();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Entretiens prévus/ }));
+    expect(await screen.findByText(/PAGE OFFRES stage=entretien/)).toBeInTheDocument();
   });
 
   it("un clic sur « À postuler » ouvre Offres filtré sur cette étape", async () => {
@@ -120,6 +133,34 @@ describe("CockpitPage (OPP-164)", () => {
 
     expect(await screen.findByRole("button", { name: "Lancer une analyse" })).toBeInTheDocument();
     expect(screen.getByLabelText("Texte de l'offre")).toBeInTheDocument();
+  });
+
+  it("désactive « Lancer une analyse » tant que le profil est vierge (OPP-219)", async () => {
+    const ok = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    const notFound = () =>
+      Promise.resolve({
+        ok: false, status: 404, json: () => Promise.resolve({ error: "profil introuvable" }),
+      } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/me"))
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/activity")) return ok(ACTIVITY);
+        if (s.includes("/profile")) return notFound(); // profil vierge
+        if (s.includes("/runs")) return ok({ items: [], page: 1, page_size: 20, total: 0, total_pages: 0 });
+        return ok(STATS);
+      }),
+    );
+    renderCockpit();
+
+    // Le raccourci « Lancer une analyse » (LaunchRun) est désactivé et oriente vers l'import CV.
+    // On attend la résolution du profil (404) via l'invite, puis on vérifie le bouton.
+    expect(await screen.findByText(/Ajoute d'abord ton CV/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lancer une analyse" })).toBeDisabled();
   });
 
   it("ajoute une offre en collant son texte (POST /offers) depuis le cockpit", async () => {

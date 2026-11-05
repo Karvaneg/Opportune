@@ -310,7 +310,9 @@ def test_invalid_content_length_returns_400(http_address):
     # En-tête présent mais non numérique : l'adaptateur doit répondre 400 proprement,
     # sans laisser ``int()`` lever une exception non capturée (500).
     request = (
-        b"POST /candidates/cand-1/recommendations HTTP/1.1\r\n"
+        # Préfixe ``/api`` : les écritures hors ``/api`` sont du ressort du front (404). Le filet
+        # Content-Length testé ici vit dans ``_dispatch``, atteint via ``/api`` (OPP-194).
+        b"POST /api/candidates/cand-1/recommendations HTTP/1.1\r\n"
         b"Host: localhost\r\n"
         b"Content-Length: abc\r\n"
         b"\r\n"

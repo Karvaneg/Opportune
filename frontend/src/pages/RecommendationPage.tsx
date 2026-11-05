@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ApiHttpError } from "../api/client";
 import {
+  useAddTrackingEvent,
   useConfirmApplication,
   useMarkApplied,
   useRecommendation,
@@ -16,6 +17,7 @@ import {
   useGenerateLetter,
   useLetter,
 } from "../api/letters";
+import { useLlmReady } from "../api/system";
 import { useIsReviewer } from "../auth/roles";
 import type {
   ApplicationIntent,
@@ -24,8 +26,12 @@ import type {
   Letter,
   OfferAction,
   RecommendationDetail,
+  TrackingEvent,
+  TrackingEventKind,
 } from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
+import { openExternal } from "../lib/openExternal";
+import { LlmRequiredNotice } from "../components/LlmRequiredNotice";
 import { StatusBadge } from "../components/StatusBadge";
 
 // Libellés FR de l'action auto figée (présentation seule — aucun statut inventé).
@@ -35,6 +41,14 @@ const ACTION_LABELS: Record<OfferAction, string> = {
   ignorer: "Ignorer",
   indeterminee: "À évaluer", // formation (OPP-166) ou données insuffisantes : aucune pré-reco auto
   "": "—",
+};
+
+// Libellés FR des événements de suivi post-candidature (OPP-223) — présentation seule.
+const TRACKING_LABELS: Record<TrackingEventKind, string> = {
+  interview: "Entretien",
+  rejected: "Candidature rejetée",
+  offer: "Offre reçue",
+  no_response: "Sans réponse / relance",
 };
 
 // Boutons de validation humaine (OPP-108) : verbe du contrat back + libellé + ton.
@@ -95,7 +109,10 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
             {reco.url && (
               <a
                 href={reco.url}
-                target="_blank"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void openExternal(reco.url!);
+                }}
                 rel="noreferrer"
                 className="mt-1 inline-block text-sm text-ink-muted hover:text-ink hover:underline"
                 title="Voir l'offre sur le site"
@@ -157,6 +174,10 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
         recommendationId={reco.recommendation_id}
         application={reco.application}
       />
+      <ApplicationTracking
+        recommendationId={reco.recommendation_id}
+        application={reco.application}
+      />
 
       <DecisionTimeline history={reco.history} application={reco.application} />
     </>
@@ -191,7 +212,10 @@ function OfferSkills({ skills, url }: { skills: string[]; url: string | null }) 
           {url ? (
             <a
               href={url}
-              target="_blank"
+              onClick={(e) => {
+                e.preventDefault();
+                void openExternal(url);
+              }}
               rel="noreferrer"
               className="font-medium text-brand underline hover:text-brand-strong"
             >
@@ -222,7 +246,8 @@ function DecisionTimeline({
 }) {
   type Item =
     | { at: string; kind: "decision"; status: DecisionStatus; comment: string | null }
-    | { at: string; kind: "intent" | "applied" };
+    | { at: string; kind: "intent" | "applied" }
+    | { at: string; kind: "tracking"; event: TrackingEvent };
 
   const items: Item[] = [
     ...history.map(
@@ -234,6 +259,9 @@ function DecisionTimeline({
   }
   if (application?.applied && application.applied_at) {
     items.push({ at: application.applied_at, kind: "applied" });
+  }
+  for (const event of application?.tracking ?? []) {
+    items.push({ at: event.at, kind: "tracking", event });
   }
   // Tri chronologique ascendant (dates ISO) ; ordre d'insertion préservé à égalité de date.
   // `parseIsoDate` traite les dates seules en heure locale (sinon elles se classent à minuit
@@ -262,6 +290,20 @@ function DecisionTimeline({
                     <StatusBadge kind="decision" value={item.status} />
                     {item.comment && (
                       <span className="text-sm text-ink-muted">{item.comment}</span>
+                    )}
+                  </>
+                ) : item.kind === "tracking" ? (
+                  <>
+                    <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning-text">
+                      {TRACKING_LABELS[item.event.kind]}
+                      {/* Pour un entretien, la date prévue (souvent future) n'est pas la date
+                          d'enregistrement (`at`, à droite) : on l'explicite dans le libellé. */}
+                      {item.event.kind === "interview" && item.event.event_date
+                        ? ` — prévu le ${formatDay(item.event.event_date)}`
+                        : ""}
+                    </span>
+                    {item.event.comment && (
+                      <span className="text-sm text-ink-muted">{item.event.comment}</span>
                     )}
                   </>
                 ) : (
@@ -548,6 +590,105 @@ function ApplicationConfirm({
   );
 }
 
+/**
+ * Suivi post-candidature (OPP-223) — reviewers uniquement, et seulement une fois la candidature
+ * **déclarée** (même garde que le back, qui refuse 409 sinon). Permet d'ajouter un événement
+ * daté (entretien prévu, rejet, offre reçue, relance) ; l'historique s'affiche dans la frise
+ * ci-dessous. Aucun envoi : c'est du pointage de suivi, comme « j'ai candidaté ».
+ */
+function ApplicationTracking({
+  recommendationId,
+  application,
+}: {
+  recommendationId: string;
+  application: ApplicationIntent | null;
+}) {
+  const isReviewer = useIsReviewer();
+  const [kind, setKind] = useState<TrackingEventKind>("interview");
+  const [eventDate, setEventDate] = useState("");
+  const [comment, setComment] = useState("");
+  const addEvent = useAddTrackingEvent(recommendationId);
+
+  if (!isReviewer || application?.applied !== true) return null;
+
+  const submit = () =>
+    addEvent.mutate(
+      {
+        kind,
+        // La date ne concerne que l'entretien (prévu, éventuellement futur) ; sinon on ne
+        // l'envoie pas (l'événement se date par son enregistrement côté back).
+        event_date: kind === "interview" && eventDate ? eventDate : undefined,
+        comment: comment.trim() ? comment.trim() : undefined,
+      },
+      { onSuccess: () => { setEventDate(""); setComment(""); } },
+    );
+
+  return (
+    <div className="rounded-lg border border-border bg-surface-raised p-4">
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">
+        Suivi
+      </h3>
+      <p className="mb-3 text-sm text-ink-muted">
+        Note où en est cette candidature : un entretien, un refus, une offre reçue. Chaque
+        événement est daté et s'ajoute à l'historique ci-dessous.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-ink-muted">
+          Événement
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as TrackingEventKind)}
+            aria-label="Type d'événement de suivi"
+            className="mt-1 block rounded-md border border-border px-2 py-1 text-sm"
+          >
+            {(Object.keys(TRACKING_LABELS) as TrackingEventKind[]).map((k) => (
+              <option key={k} value={k}>
+                {TRACKING_LABELS[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {kind === "interview" && (
+          <label className="text-xs text-ink-muted">
+            Date de l'entretien
+            <input
+              type="date"
+              value={eventDate}
+              onChange={(e) => setEventDate(e.target.value)}
+              aria-label="Date de l'entretien"
+              className="mt-1 block rounded-md border border-border px-2 py-1 text-sm"
+            />
+          </label>
+        )}
+        <label className="grow text-xs text-ink-muted">
+          Note (optionnel)
+          <input
+            type="text"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Ex. visio avec la RH"
+            aria-label="Note de suivi"
+            className="mt-1 block w-full rounded-md border border-border px-2 py-1 text-sm"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={addEvent.isPending}
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
+        >
+          Ajouter
+        </button>
+      </div>
+      {addEvent.isError && (
+        <div className="mt-3">
+          <ErrorNotice error={addEvent.error} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Libellé FR de la provenance d'une lettre (présentation seule).
 const LETTER_SOURCE_LABELS: Record<Letter["source"], string> = {
   ai: "Générée par l'IA",
@@ -568,6 +709,10 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
   const generate = useGenerateLetter(recommendationId);
   const edit = useEditLetter(recommendationId);
   const remove = useDeleteLetter(recommendationId);
+  // La rédaction passe par le LLM local (contrairement au scoring) : générer/régénérer est
+  // désactivé tant qu'il n'est pas prêt (OPP-195). Consulter ou éditer une lettre existante
+  // (ex. la Démo pré-remplie) reste possible sans LLM.
+  const llm = useLlmReady();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -610,11 +755,16 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
           <button
             type="button"
             onClick={() => generate.mutate({})}
-            disabled={generate.isPending}
+            disabled={generate.isPending || !llm.ready}
             className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
           >
             {generate.isPending ? "Génération en cours…" : "Générer la lettre"}
           </button>
+          {!llm.ready && llm.reason && (
+            <div className="mt-3">
+              <LlmRequiredNotice reason={llm.reason} />
+            </div>
+          )}
           {generate.isError && (
             <div className="mt-3">
               <ErrorNotice error={generate.error} />
@@ -645,7 +795,7 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
             <button
               type="button"
               onClick={() => setConfirmRegen(true)}
-              disabled={generate.isPending}
+              disabled={generate.isPending || !llm.ready}
               className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface disabled:opacity-50"
             >
               {generate.isPending ? "Régénération…" : "Régénérer"}

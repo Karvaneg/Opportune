@@ -26,8 +26,9 @@
 
 - [ ] Tests sous `python/tests/`, avec `pytest`, couvrant le cas nominal, les cas
       limites et les erreurs.
-- [ ] `pytest` **entièrement au vert**, sans test ignoré (venv `python/.venv/bin/pytest`
-      ou `docker compose run --rm app pytest`).
+- [ ] `pytest` **entièrement au vert**, sans test ignoré (venv `python/.venv/bin/pytest` ;
+      Docker reste possible mais n'est pas la voie par défaut).
+- [ ] Côté front, `npm test` (Vitest) et `npm run lint` (typecheck `tsc`) au vert.
 - [ ] Les tests n'écrivent pas dans les données réelles (SQLite en mémoire / fichiers
       temporaires) et ne dépendent pas du réseau.
 
@@ -41,14 +42,18 @@
 
 ## 5. Intégration et suivi
 
-- [ ] Travail sur une **branche dédiée** `OPP-XXX-slug`, créée depuis `main` à jour.
-- [ ] **Commit conventionnel** ; PR ouverte, mergée dans `main`, branche supprimée.
+- [ ] Ticket Notion créé **avant** la branche ; travail sur une **branche dédiée**
+      `OPP-XXX-slug`, créée depuis la branche de base à jour : `main`, ou la branche
+      d'intégration de l'épic en cours (ex. `epic/E13-opportune-1.0`).
+- [ ] **Commit conventionnel** ; PR ouverte vers cette même base et mergée avec l'accord
+      explicite de l'utilisatrice, branche supprimée.
 - [ ] Le **ticket Notion** est passé en **Done**, statut **relu et confirmé**.
 
 ## 6. Documentation
 
-- [ ] Le code est auto-documenté ; la documentation (`docs/`, `CLAUDE.md`) est mise
-      à jour si la vision, l'architecture ou les conventions changent.
+- [ ] Le code est auto-documenté ; la documentation (READMEs, `docs/`, `CLAUDE.md`) est
+      mise à jour si une route, une variable d'environnement, une commande, la vision,
+      l'architecture ou les conventions changent.
 
 ---
 

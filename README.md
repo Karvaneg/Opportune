@@ -25,11 +25,12 @@
 
 ---
 
-> 🚧 **Bientôt : une application à installer en un clic.** Aujourd'hui, mettre en place
-> Opportune demande un environnement technique (Python, Node ou Docker, plus Ollama) —
-> c'est réservé à un public à l'aise avec ces outils. Une **application de bureau
-> Windows/Mac**, installable par **double-clic et sans terminal** (LLM embarqué), est en
-> préparation : c'est le palier **Opportune 1.0**. Voir la [feuille de route](#feuille-de-route).
+> 🚧 **Application de bureau en cours de finalisation (Opportune 1.0).** Une app installable
+> par **double-clic et sans terminal**, LLM embarqué, se construit déjà depuis les sources
+> pour **Linux** (`.deb`, `.rpm`, `.AppImage`) et **Windows** (`.msi`, `.exe`). Aucune version
+> n'est encore publiée et les installeurs ne sont pas signés ; Mac viendra ensuite. En
+> attendant, l'installation décrite ici demande un environnement technique (Python, Node ou
+> Docker, plus Ollama). Voir la [feuille de route](#feuille-de-route).
 
 ## Sommaire
 
@@ -39,6 +40,7 @@
 - [Aperçu et design](#aperçu-et-design)
 - [Prérequis](#prérequis)
 - [Démarrage (V2)](#démarrage-v2)
+- [Application de bureau](#application-de-bureau-tauri)
 - [Sources d'offres](#sources-doffres--pourquoi-adzuna-par-défaut)
 - [Tests](#tests)
 - [Configuration](#configuration)
@@ -66,7 +68,9 @@ l'architecture V2. Détail : [`docs/adr/0004-pivot-node-python.md`](docs/adr/000
 
 ```
 python/         Back V2 : métier, orchestrateur Hermes, API HTTP, persistance SQLite
+  packaging/    Binaire autonome de l'API (PyInstaller), qui sert aussi le front compilé
 frontend/       Front V2 : dashboard React/Vite (runs, offres scorées, lettres, décisions)
+  src-tauri/    Coquille de l'app de bureau (Tauri) : lance l'API et Ollama, ouvre la fenêtre
 docs/           Vision, definition of done, décisions d'architecture (ADR)
 scripts/        Scripts utilitaires (serveur API, contexte IA)
 legacy/         V1 Node.js (MVP CLI historique — voir « Legacy V1 » plus bas)
@@ -76,6 +80,7 @@ Chaque brique V2 a son propre README détaillé :
 
 - **Back** → [`python/README.md`](python/README.md)
 - **Front** → [`frontend/README.md`](frontend/README.md)
+- **App de bureau** → [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md)
 
 ## Architecture V2 (vue d'ensemble)
 
@@ -89,12 +94,17 @@ Chaque brique V2 a son propre README détaillé :
                                   GET /me, /runs            SQLite (run_store)
 ```
 
+En développement, Vite sert le front et relaie `/api` vers l'API. Dans l'app de bureau, il
+n'y a plus de Vite : le binaire API sert lui-même le front compilé sur `127.0.0.1:8000`, et
+la coquille Tauri lance ce binaire et Ollama puis ouvre une fenêtre dessus.
+
 - L'API expose la consultation (`GET /me`, `GET /runs`, détail, recommandations paginées,
   catalogue d'offres scoré `GET /offers`) et les actions (décision, lettre de motivation,
   `/confirm`) — ces dernières exigent le rôle `reviewer` et une confirmation explicite.
 - Le frontend consomme l'API via un proxy `/api` (cf. [`frontend/README.md`](frontend/README.md)) :
-  consultation (runs, recommandations, catalogue d'offres) **et** actions validées —
-  décision humaine, génération/édition/suppression de lettre, ajout d'offre.
+  consultation (runs, recommandations, catalogue d'offres) **et** actions validées :
+  décision humaine, génération/édition/suppression de lettre, ajout d'offre, collecte,
+  suivi post-candidature, réglages (clés Adzuna, flux RSS) et installation du modèle LLM.
 - Auth : **aucune** — local-first et mono-utilisateur (OPP-181). L'API n'écoute que sur
   `localhost` et démarre sans jeton ; au lancement, le frontend fait un simple `GET /me` pour
   identifier l'unique utilisateur local (plus de login ni de jeton porteur). Historique de cette
@@ -136,8 +146,9 @@ pilotées par des **jetons sémantiques**. Design system complet :
 
 ## Prérequis
 
-- **Python ≥ 3.11** (back) et **Node.js ≥ 18** (front), ou **Docker** (chemin recommandé,
-  reproductible — notamment sous WSL2).
+- **Python ≥ 3.11** (back) et **Node.js ≥ 18** (front).
+- **Docker** (facultatif) : un environnement conteneurisé existe toujours, mais ce n'est plus
+  la voie utilisée par défaut.
 
 ## Démarrage (V2)
 
@@ -175,12 +186,14 @@ npm install
 npm run dev        # http://localhost:5173, proxy /api → http://localhost:8000
 ```
 
-Cible du proxy surchargeable via `API_PROXY_TARGET` (ex. réseau Docker).
+Cible du proxy surchargeable via `API_PROXY_TARGET`.
 
-### Démo Docker de bout en bout
+## Application de bureau (Tauri)
 
-Front et API sur un réseau bridge partagé, ports publiés vers l'hôte (host-networking
-inopérant sous Docker Desktop/WSL2).
+Pour construire l'app de bureau et ses installeurs (Linux depuis WSL ou Linux, Windows depuis
+l'hôte Windows) : [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md). L'app lance
+l'API et un Ollama embarqué (version CPU), propose de télécharger le modèle au premier
+lancement, et range bases SQLite et modèles dans un seul dossier de données propre à l'app.
 
 ## Sources d'offres — pourquoi Adzuna par défaut
 
@@ -189,8 +202,13 @@ Opportune collecte des offres réelles via des **connecteurs** (détail et comma
 
 - **Adzuna** — source **recommandée et par défaut** : inscription gratuite et **clé délivrée
   instantanément en self-service**, idéale pour que n'importe qui installe Opportune et collecte
-  tout de suite (quota gratuit ~2 500 appels/mois).
-- **RSS/Atom** — sans identifiant, à alimenter avec vos propres flux d'alertes emploi.
+  tout de suite (quota gratuit ~2 500 appels/mois). La clé se saisit dans la page **Réglages**
+  de l'app.
+- **RSS/Atom** — sans identifiant, à alimenter avec vos propres flux d'alertes emploi
+  (URLs saisies dans les **Réglages**).
+- **Entreprises ciblées** — sans identifiant : vous collez dans les **Réglages** la page carrière
+  des entreprises qui vous intéressent, si elles publient via Greenhouse ou Lever. Opportune lit
+  leurs offres en France directement à la source.
 - **France Travail** — l'API officielle, la plus riche, mais **indisponible aujourd'hui**
   (vérifié oct. 2026) : elle a été **retirée de `francetravail.io`** le temps d'une analyse des
   modalités de distribution/réutilisation, suite à des **usages automatisés massifs par des
@@ -200,41 +218,53 @@ Opportune collecte des offres réelles via des **connecteurs** (détail et comma
 
 ## Tests
 
-- **Back** : `cd python && docker compose run --rm app pytest -q`
-- **Front** : `cd frontend && docker run --rm -v "$PWD":/app -v /app/node_modules opportune-frontend:dev npm test`
+- **Back** : `cd python && .venv/bin/pytest -q`
+- **Front** : `cd frontend && npm test`
 
-Détails et variantes (venv local, lint, build) dans les READMEs respectifs.
+Détails et variantes (lint, build, Docker en option) dans les READMEs respectifs.
 
 ## Configuration
 
-Les variables sensibles se placent dans un `.env.local` (gitignoré, jamais commité).
-La config de l'application se trouve dans [`python/.env.example`](python/.env.example) (back)
-et le README du front ; le `.env.example` à la racine ne concerne que les skills de workflow
-`/start-ticket` et `/ship`.
+Dans l'app, la configuration utile (clés Adzuna, flux RSS, installation du modèle) se fait
+depuis l'interface, sans fichier à éditer. Pour le développement, la config du back se trouve
+dans `python/.env` (modèle : [`python/.env.example`](python/.env.example)), lu par
+`scripts/serve-api.sh` ; ce fichier est gitignoré et ne doit jamais être commité. Le
+`.env.example` à la racine (modèle du `.env.local`, lui aussi gitignoré) ne concerne que les
+skills de workflow `/start-ticket` et `/ship`.
 
 ## Feuille de route
 
-**Opportune 1.0 — installation grand public.** La prochaine étape vise à rendre Opportune
-installable par **n'importe quelle personne en recherche d'emploi**, sans compétences
-techniques :
+**Opportune 1.0 — installation grand public.** Objectif : rendre Opportune installable par
+**n'importe quelle personne en recherche d'emploi**, sans compétences techniques.
 
-- 📦 **Application de bureau** (Windows/Mac) packagée avec **Tauri** : un **installeur à
-  double-clic**, aucune ligne de commande. Le moteur Python et le dashboard web sont embarqués
-  dans l'application.
-- 🧠 **LLM clé en main** : l'application installe et pilote **Ollama** et télécharge le modèle
-  au premier lancement — plus rien à configurer à la main, et le **tout-local** est préservé.
-- ⚙️ **Configuration dans l'app** : un écran de bienvenue remplace l'édition de fichiers
-  `.env` ; l'app est utilisable immédiatement (espace démo + RSS), la clé Adzuna devient
-  optionnelle.
+Déjà en place (branche d'intégration `epic/E13-opportune-1.0`) :
 
-En attendant, l'installation décrite plus haut (environnement Python/Node ou Docker) reste la
-voie pour les profils techniques et les contributeurs.
+- 📦 **Application de bureau Tauri** : le moteur Python (binaire PyInstaller) et le dashboard
+  sont embarqués ; installeurs **Linux** (`.deb`, `.rpm`, `.AppImage`) et **Windows**
+  (`.msi`, `.exe`) construits depuis les sources.
+- 🧠 **LLM clé en main** : l'app lance un **Ollama embarqué** et télécharge le modèle au premier
+  lancement, depuis l'interface. Le **tout-local** est préservé.
+- ⚙️ **Configuration dans l'app** : clés Adzuna et flux RSS dans la page Réglages, plus de
+  `.env` à éditer ; l'espace Démo est utilisable tout de suite.
+
+Reste à faire :
+
+- Publier une première version téléchargeable.
+- **Signer** les installeurs Windows (avertissement SmartScreen, OPP-217).
+- Installeur **Mac** signé et notarisé (OPP-216).
+- Plus tard : remplacer Ollama par un moteur **llama.cpp** embarqué (OPP-196), et un **LLM
+  cloud optionnel** pour les machines modestes (OPP-197).
+
+En attendant une version publiée, l'installation décrite plus haut (environnement
+Python/Node ou Docker) reste la voie pour les profils techniques et les contributeurs.
 
 ## Documentation
 
 - [`docs/vision.md`](docs/vision.md) — vision produit
 - [`docs/definition-of-done.md`](docs/definition-of-done.md) — definition of done
 - [`docs/adr/`](docs/adr/) — décisions d'architecture (ADR)
+- [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md) — app de bureau et installeurs
+- [`python/docs/`](python/docs/) — collecte d'offres, revue Discord (historique)
 
 ## Legacy V1 (Node.js)
 

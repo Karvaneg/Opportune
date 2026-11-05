@@ -17,7 +17,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date, datetime
 
+from app.application_tracking import INTERVIEW, TrackingEvent
 from app.decision import PENDING
 
 APPROVED = "approved"
@@ -52,6 +54,27 @@ class CandidateStats:
     a_postuler: int
     postule: int
     offres_total: int
+
+
+def count_upcoming_interviews(events: Iterable[TrackingEvent], today: date) -> int:
+    """Nombre d'**entretiens à venir** : événements ``interview`` dont la date prévue
+    (``event_date``) est **aujourd'hui ou plus tard**.
+
+    Un entretien sans date prévue n'est pas compté (rien à « prévoir »), de même qu'un entretien
+    déjà passé. Les autres types d'événement (rejet, offre, relance) sont ignorés. Une date non
+    parsable est écartée sans lever (robustesse). ``today`` est injecté pour un test déterministe.
+    """
+    upcoming = 0
+    for event in events:
+        if event.kind != INTERVIEW or event.event_date is None:
+            continue
+        try:
+            when = datetime.fromisoformat(event.event_date).date()
+        except ValueError:
+            continue
+        if when >= today:
+            upcoming += 1
+    return upcoming
 
 
 def build_candidate_stats(stages: Iterable[str | None]) -> CandidateStats:

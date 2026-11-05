@@ -36,7 +36,7 @@ def _sync_spawn(target):
 
 
 def test_start_runs_job_and_marks_done_with_report():
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=3, stored=3)
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
@@ -52,7 +52,7 @@ def test_start_runs_job_and_marks_done_with_report():
 def test_start_forwards_criteria_to_runner():
     captured = {}
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         captured.update(what=what, where=where, max_offers=max_offers)
         return _report()
 
@@ -62,12 +62,28 @@ def test_start_forwards_criteria_to_runner():
     assert captured == {"what": "python", "where": "Lyon", "max_offers": 7}
 
 
+def test_start_forwards_source_to_runner():
+    captured = {}
+
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+        captured["source"] = source
+        return _report()
+
+    registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
+
+    registry.start(what="", where="", max_offers=1)
+    assert captured["source"] == "adzuna"
+
+    registry.start(what="", where="", max_offers=1, source="rss")
+    assert captured["source"] == "rss"
+
+
 def test_progress_callback_updates_job_snapshot():
     progress = CollectionProgress(
         collected=4, stored=2, duplicates=1, failures=1, enriched=1, enriched_recovered=1
     )
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         on_progress(progress)
         return _report()
 
@@ -77,7 +93,7 @@ def test_progress_callback_updates_job_snapshot():
 
 
 def test_runner_exception_marks_job_failed():
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         raise RuntimeError("kaboom")
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
@@ -91,7 +107,7 @@ def test_runner_exception_marks_job_failed():
 
 def test_source_error_report_keeps_job_done():
     # Une panne de source est rendue DANS le bilan ; le job reste ``done`` (pas ``failed``).
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         return _report(collected=0, stored=0, source_error="AdzunaAuthError: nope")
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
@@ -108,7 +124,7 @@ def test_cancel_marks_job_cancelled_and_sets_flag():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         while not should_cancel():
             if release.wait(0.01):  # garde-fou anti-blocage du test
@@ -143,7 +159,7 @@ def test_late_cancel_keeps_job_done_when_pass_completed():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         release.wait(timeout=5)  # bloque jusqu'à ce que le test ait posé le cancel
         return _report(collected=2, stored=2)  # passe menée à terme : cancelled implicitement faux
@@ -213,7 +229,7 @@ def test_second_start_while_running_raises_then_slot_frees():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
         started.set()
         release.wait(timeout=5)
         return _report()

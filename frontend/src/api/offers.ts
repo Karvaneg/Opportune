@@ -60,9 +60,12 @@ export function useAddOffer() {
 }
 
 export interface CollectOffersVariables {
-  /** Mots-clés de recherche (Adzuna `what`) — optionnel. */
+  /** Connecteur : `adzuna` (défaut côté back), `rss` ou `ats` (entreprises ciblées, OPP-226). */
+  source?: "adzuna" | "rss" | "ats";
+  /** Poste recherché : requis pour Adzuna (400 sinon), filtre facultatif des intitulés pour
+   *  ATS (OPP-226), ignoré par RSS. */
   what?: string;
-  /** Localisation (Adzuna `where`), ex. « Paris » — optionnel. */
+  /** Localisation (Adzuna `where`), ex. « Paris » : optionnel, ignoré par les sources RSS et ATS. */
   where?: string;
 }
 
