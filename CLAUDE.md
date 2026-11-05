@@ -26,7 +26,7 @@ l'utilisateur, API sur `localhost`, sans login ni jeton — cf. `docs/adr/0003`)
   (binaire PyInstaller, `python/packaging/`) et un Ollama embarqué. Détail :
   [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md). Les tickets E13 partent de
   `epic/E13-opportune-1.0` et s'y re-mergent.
-- **V1 Node.js** (archivée sous `legacy/`) : MVP CLI historique, conservé pour
+- **Prototype Node.js** (archivé sous `legacy/`) : MVP CLI historique, conservé pour
   référence — plus la cible produit.
 
 **Tests** — back : `cd python && .venv/bin/pytest -q` (Docker existe encore mais seulement si Marie le demande) ; front : `cd frontend && npm test` (Vitest), `npm run lint`

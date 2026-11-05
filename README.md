@@ -54,60 +54,59 @@ Opportune s'installe **par double-clic, sans terminal**, avec son assistant IA l
    fois). Tout reste ensuite sur ta machine.
 
 Mac n'est pas encore disponible. Pour lancer Opportune depuis les sources (développeurs), voir
-[Démarrage (V2)](#démarrage-v2).
+[Démarrage depuis les sources](#démarrage-depuis-les-sources).
 
 ## Sommaire
 
 - [Installation](#installation)
-- [Migration V1 → V2](#migration-v1--v2)
+- [Du prototype Node.js à Opportune](#du-prototype-nodejs-à-opportune)
 - [Cartographie du dépôt](#cartographie-du-dépôt-monorepo)
-- [Architecture V2](#architecture-v2-vue-densemble)
+- [Architecture](#architecture-vue-densemble)
 - [Aperçu et design](#aperçu-et-design)
 - [Prérequis](#prérequis)
-- [Démarrage (V2)](#démarrage-v2)
+- [Démarrage depuis les sources](#démarrage-depuis-les-sources)
 - [Application de bureau](#application-de-bureau-tauri)
 - [Sources d'offres](#sources-doffres--pourquoi-adzuna-par-défaut)
 - [Tests](#tests)
 - [Configuration](#configuration)
 - [Feuille de route](#feuille-de-route)
 - [Documentation](#documentation)
-- [Legacy V1 (Node.js)](#legacy-v1-nodejs)
+- [Prototype Node.js (archivé)](#prototype-nodejs-archivé)
 
-## Migration V1 → V2
+## Du prototype Node.js à Opportune
 
-Le projet est en **migration V1 → V2** :
-
-- **V2 (Python) — active.** Le moteur métier, l'orchestrateur **Hermes**, l'API HTTP et
-  un **frontend web de consultation** (React/Vite). C'est là que se fait le développement
-  courant. Code sous `python/` et `frontend/`.
-- **V1 (Node.js) — historique.** Le MVP CLI d'origine (intégration Notion, stockage JSON)
-  est archivé sous [`legacy/`](legacy/). Conservé comme référence ; il n'est plus la cible
-  produit.
+- **Opportune (Python + React), active.** Le moteur métier, l'orchestrateur **Hermes**, l'API
+  HTTP, un **frontend web** (React/Vite) et l'**app de bureau** (Tauri). C'est là que se fait
+  le développement courant, et c'est ce que contient la release `v1.0.0`. Code sous `python/`
+  et `frontend/`.
+- **Prototype Node.js, archivé.** Le MVP en ligne de commande d'origine (intégration Notion,
+  stockage JSON) est archivé sous [`legacy/`](legacy/). Conservé comme référence ; il n'est
+  plus la cible produit.
 
 **Pourquoi ce pivot ?** Node a permis de **valider vite** la boucle produit ; Python porte
 mieux le cœur réel d'Opportune (LLM local, extraction de CV, scoring) et prépare le
 **packaging desktop**. Le MVP a fait son travail — prouver la valeur — avant d'investir dans
-l'architecture V2. Détail : [`docs/adr/0004-pivot-node-python.md`](docs/adr/0004-pivot-node-python.md).
+l'architecture actuelle. Détail : [`docs/adr/0004-pivot-node-python.md`](docs/adr/0004-pivot-node-python.md).
 
 ## Cartographie du dépôt (monorepo)
 
 ```
-python/         Back V2 : métier, orchestrateur Hermes, API HTTP, persistance SQLite
+python/         Back : métier, orchestrateur Hermes, API HTTP, persistance SQLite
   packaging/    Binaire autonome de l'API (PyInstaller), qui sert aussi le front compilé
-frontend/       Front V2 : dashboard React/Vite (runs, offres scorées, lettres, décisions)
+frontend/       Front : dashboard React/Vite (runs, offres scorées, lettres, décisions)
   src-tauri/    Coquille de l'app de bureau (Tauri) : lance l'API et Ollama, ouvre la fenêtre
 docs/           Vision, definition of done, décisions d'architecture (ADR)
 scripts/        Scripts utilitaires (serveur API, contexte IA)
-legacy/         V1 Node.js (MVP CLI historique — voir « Legacy V1 » plus bas)
+legacy/         Prototype Node.js archivé (MVP CLI, voir plus bas)
 ```
 
-Chaque brique V2 a son propre README détaillé :
+Chaque brique a son propre README détaillé :
 
 - **Back** → [`python/README.md`](python/README.md)
 - **Front** → [`frontend/README.md`](frontend/README.md)
 - **App de bureau** → [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md)
 
-## Architecture V2 (vue d'ensemble)
+## Architecture (vue d'ensemble)
 
 ```
   ┌────────────┐   HTTP  /api   ┌──────────────┐        ┌───────────────┐
@@ -175,7 +174,7 @@ pilotées par des **jetons sémantiques**. Design system complet :
 - **Docker** (facultatif) : un environnement conteneurisé existe toujours, mais ce n'est plus
   la voie utilisée par défaut.
 
-## Démarrage (V2)
+## Démarrage depuis les sources
 
 ### Back — API Python
 
@@ -291,7 +290,7 @@ Python/Node ou Docker) reste la voie pour les profils techniques et les contribu
 - [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md) — app de bureau et installeurs
 - [`python/docs/`](python/docs/) — collecte d'offres, revue Discord (historique)
 
-## Legacy V1 (Node.js)
+## Prototype Node.js (archivé)
 
 Le MVP CLI d'origine est archivé sous [`legacy/`](legacy/) (récupère les tickets Notion et
 suggère le prochain à traiter). Il n'est plus la cible produit ; la logique métier a migré
@@ -302,8 +301,8 @@ cd legacy
 npm install
 cp .env.example .env.local   # renseigner NOTION_TOKEN, NOTION_DATABASE_ID, NOTION_DATA_SOURCE_ID…
 npm start                    # affiche le prochain ticket recommandé
-npm test                     # suite V1 via node --test
+npm test                     # suite du prototype via node --test
 ```
 
-Détails dans [`legacy/README.md`](legacy/README.md). Les données locales V1 sont stockées
+Détails dans [`legacy/README.md`](legacy/README.md). Les données locales du prototype sont stockées
 en JSON sous `data/` (gitignoré) et ne quittent pas votre machine.
