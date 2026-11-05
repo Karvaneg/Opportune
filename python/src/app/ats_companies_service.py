@@ -9,9 +9,9 @@ L'utilisatrice colle une URL de page carrière par ligne. Ce service :
 4. applique le **plafond** de ``MAX_COMPANIES`` (RG-7) ;
 5. **vérifie** auprès de l'ATS chaque entreprise qui n'était pas déjà enregistrée (RG-3) : 404 →
    refus « introuvable », panne réseau → refus « vérification impossible ». Une entreprise sans
-   offre est acceptée (RG-4) ; on rend son nombre d'offres en France. Les vérifications partent
-   en parallèle (``VERIFY_WORKERS`` au plus) pour qu'une longue liste collée ne bloque pas la
-   requête une entreprise après l'autre ;
+   offre est acceptée (RG-4) ; on rend son nombre d'offres en France. Les vérifications sont
+   **séquentielles** (RG-21 : appels sobres, jamais plusieurs requêtes à la fois vers un ATS) et
+   s'arrêtent à la première erreur ;
 6. enregistre la liste.
 
 Les erreurs de saisie lèvent ``ValueError`` (400 côté API) ; l'impossibilité de vérifier lève
@@ -22,7 +22,6 @@ panne réseau ne soit jamais présentée comme une erreur d'enregistrement.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Callable
 
@@ -32,10 +31,6 @@ from app.ats_company import SUPPORTED_FORMATS, AtsCompany, AtsUrlError, parse_ca
 from app.ats_location import is_in_france
 
 MAX_COMPANIES = 50
-
-# Vérifications simultanées au plus : assez pour ne pas attendre 20 s par entreprise, assez peu
-# pour ne pas inonder un même ATS (RG-21).
-VERIFY_WORKERS = 5
 
 
 class AtsVerificationUnavailable(Exception):
@@ -108,23 +103,11 @@ def _write(operation: Callable[[], None]) -> None:
 def _verify_all(
     companies: list[AtsCompany], client: AtsClient
 ) -> dict[tuple[str, str, bool], int]:
-    """Vérifie en parallèle ; à la **première** erreur, abandonne les vérifications restantes.
+    """Vérifie les entreprises une par une, dans l'ordre de saisie (RG-21).
 
-    Les vérifications pas encore lancées sont annulées et on n'attend pas celles en cours (elles
-    se terminent en arrière-plan, bornées par le timeout du client) : l'erreur remonte tout de
-    suite au lieu d'attendre la fin de toute la liste.
+    La première erreur remonte aussitôt : les entreprises suivantes ne sont pas interrogées.
     """
-    if not companies:
-        return {}
-    pool = ThreadPoolExecutor(max_workers=min(VERIFY_WORKERS, len(companies)))
-    try:
-        futures = {pool.submit(_verify, company, client): company for company in companies}
-        counts: dict[tuple[str, str, bool], int] = {}
-        for future in as_completed(futures):
-            counts[futures[future].key] = future.result()
-        return counts
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+    return {company.key: _verify(company, client) for company in companies}
 
 
 def update_companies(
