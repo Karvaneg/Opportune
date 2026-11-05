@@ -281,6 +281,15 @@ export interface CollectionReport {
   enriched: number;
   /** Parmi `enriched`, combien ont effectivement gagné des compétences après ré-analyse. */
   enriched_recovered: number;
+  /** Source « entreprises ciblées » (OPP-226) : offres écartées car situées hors de France.
+   *  Absent d'un vieux back. */
+  excluded?: number;
+  /** Source « entreprises ciblées » : offres en France écartées car leur intitulé ne contient
+   *  pas le poste saisi (RG-11). Absent d'un vieux back. */
+  off_target?: number;
+  /** Source « entreprises ciblées » : entreprises en échec pendant la passe (qui a continué).
+   *  Absent d'un vieux back. */
+  warnings?: string[];
 }
 
 /**

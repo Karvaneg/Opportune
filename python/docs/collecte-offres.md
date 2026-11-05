@@ -61,6 +61,57 @@ Options : `--what`, `--where` (filtres de recherche), `--max` (plafond d'offres,
 modéré pour ménager le quota gratuit de 2 500 appels/mois), `--tous-contrats` (lève le filtre
 CDI). Le runner pagine jusqu'au total annoncé (`count`) ou au plafond.
 
+## Entreprises ciblées (Greenhouse, Lever) — connecteur actif, sans secret (OPP-226)
+
+Beaucoup d'entreprises publient leurs offres via un **ATS** (logiciel de recrutement) dont l'API
+de lecture est publique et sans clé. Opportune en lit deux :
+
+| ATS | Pages carrière reconnues | API interrogée |
+|---|---|---|
+| Greenhouse | `boards.greenhouse.io/{id}`, `job-boards.greenhouse.io/{id}` (et leurs variantes `.eu.`), `boards.greenhouse.io/embed/job_board?for={id}` | `boards-api.greenhouse.io/v1/boards/{id}/jobs?content=true` |
+| Lever | `jobs.lever.co/{id}`, `jobs.eu.lever.co/{id}` | `api.lever.co/v0/postings/{id}` (ou `api.eu.lever.co`) |
+
+Fonctionnement (règles métier complètes dans le ticket OPP-226) :
+
+- L'utilisatrice colle les pages carrière dans les Réglages (`PUT /settings/ats`, 50 maximum).
+  Chaque **nouvelle** entreprise est vérifiée auprès de son ATS (5 vérifications en parallèle au
+  plus) : URL non reconnue ou entreprise introuvable → refus de tout l'enregistrement (400) ; ATS
+  injoignable → 502 ; fichier impossible à écrire → 500.
+- La collecte (`POST /collect` avec `source: "ats"`) lit toutes les offres publiées de chaque
+  entreprise. `where` ne s'applique pas. `what` (poste recherché) est **facultatif** : s'il est
+  renseigné, une offre n'est gardée que si chacun de ses mots **commence un mot** de l'intitulé
+  (casse et accents ignorés : « dev » garde « Développeur », « IA » ne garde pas « Commercial »),
+  **avant** l'analyse LLM ; le bilan compte les offres écartées (`off_target`). Vide, toutes les
+  offres en France sont gardées et c'est le score qui trie. Limite : « C++ » se réduit à « c ».
+- **Filtre France** : Lever, `country = FR` ou un lieu qui mentionne la France ; Greenhouse, le
+  lieu ou un bureau qui mentionne la France. « Mentionne la France » = contient « France » ou le
+  nom d'une grande ville française (`FRENCH_CITIES` : Paris, Lyon, Nantes…), car Greenhouse ne
+  donne souvent que la ville. Une ville française ne suffit pas si le morceau qui la suit après
+  une virgule est un pays, un État américain, une province canadienne (`FOREIGN_PLACES`) ou leur
+  code (`FOREIGN_REGION_CODES`) : « Paris, Texas », « Paris, TX », « Nice, CA » sont écartés,
+  mais « Paris, Berlin, Germany » est gardé. Un lieu qui en liste plusieurs (« Paris or Berlin,
+  Germany ») est jugé morceau par morceau. Une offre en télétravail sans pays est écartée. Le
+  bilan compte les offres écartées (`excluded`).
+- **Plafond en offres neuves** (toutes sources de `POST /collect`) : `max` compte les offres
+  **neuves**, pas les doublons. La passe s'arrête après `max` offres neuves ; la source est
+  plafonnée à `max × 5` pour que les doublons d'une passe précédente ne bloquent pas la collecte
+  sans laisser une source paginée lire sans fin.
+- La vérification à l'enregistrement demande à Greenhouse la liste **sans** descriptions (plus
+  légère) : le nombre d'offres en France affiché se fonde alors sur le lieu de l'offre, pas sur
+  ses bureaux. À la première erreur, les vérifications restantes sont abandonnées.
+- Une entreprise en échec pendant la passe (404, 429, réseau) est signalée dans le bilan
+  (`warnings`) et la passe continue ; la collecte n'échoue que si **toutes** échouent.
+- Lecture seule, requêtes séquentielles, `User-Agent` qui identifie Opportune. Aucune
+  dépendance : la description HTML est convertie par `app.html_text` (bibliothèque standard).
+
+Modules : `app.ats_company` (URL → entreprise), `app.ats_client` (HTTP), `app.ats_location`
+(filtre France), `app.ats_title_filter` (filtre poste), `app.ats_offer` (offre → `RawOffer`), `app.ats_source` (port `SourceOffres`),
+`app.ats_companies_store` / `app.ats_companies_service` (réglages).
+
+Couverture : de nombreuses entreprises françaises utilisent d'autres ATS (Workday, Teamtailor,
+Taleez…) et ne sont pas collectables ainsi. SmartRecruiters (endpoint public sans clé, mais sans
+conditions d'utilisation officielles trouvées) est prévu dans un ticket séparé.
+
 ## France Travail — connecteur dormant
 
 `app.france_travail_runner` interroge l'API officielle France Travail « Offres d'emploi ».

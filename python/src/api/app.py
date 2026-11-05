@@ -71,6 +71,8 @@ if TYPE_CHECKING:
     from app.offer_collection import CollectionReport
     from app.profile_service import ProfileService
     from app.rss_feeds_store import RssFeedsStore
+    from app.ats_client import AtsClient
+    from app.ats_companies_store import AtsCompaniesStore
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.application_tracking import TrackingError
@@ -188,6 +190,7 @@ _LLM_STATUS = re.compile(r"^/system/llm/status$")
 _LLM_SETUP = re.compile(r"^/system/llm/setup$")
 _SETTINGS_ADZUNA = re.compile(r"^/settings/adzuna$")
 _SETTINGS_RSS = re.compile(r"^/settings/rss$")
+_SETTINGS_ATS = re.compile(r"^/settings/ats$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -267,6 +270,8 @@ class HermesApi:
         llm_setup: "LLMSetupService | None" = None,
         adzuna_credentials: "AdzunaCredentialsStore | None" = None,
         rss_feeds: "RssFeedsStore | None" = None,
+        ats_companies: "AtsCompaniesStore | None" = None,
+        ats_client: "AtsClient | None" = None,
         conn: "sqlite3.Connection | None" = None,
         tracking: ApplicationTrackingService | None = None,
     ) -> None:
@@ -318,6 +323,12 @@ class HermesApi:
         # données de l'app. Optionnel : si absent, /settings/rss n'est pas monté (404 neutre).
         # Contrairement aux clés Adzuna, ces URLs ne sont pas des secrets : les routes les relisent.
         self.rss_feeds = rss_feeds
+        # Entreprises ciblées sur un ATS (OPP-226) : store fichier dans le dossier de données de
+        # l'espace. Optionnel : si absent, /settings/ats n'est pas monté (404 neutre). Le client
+        # sert à vérifier chaque nouvelle entreprise auprès de son ATS à l'enregistrement ;
+        # injectable (faux en test), défaut = transport HTTP réel.
+        self.ats_companies = ats_companies
+        self.ats_client = ats_client
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
@@ -574,6 +585,16 @@ class HermesApi:
                 return self._get_rss_settings(user)
             self._require(method, "PUT", path)
             return self._put_rss_settings(body, user)
+
+        if _SETTINGS_ATS.match(path):
+            # Entreprises ciblées sur un ATS (OPP-226). Montée uniquement si le store est câblé
+            # (sinon 404 neutre). GET : les entreprises enregistrées ; PUT : la nouvelle liste.
+            if self.ats_companies is None:
+                raise self._not_found(user, "réglages des entreprises ciblées non disponibles")
+            if method.upper() == "GET":
+                return self._get_ats_settings(user)
+            self._require(method, "PUT", path)
+            return self._put_ats_settings(body, user)
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
@@ -1245,7 +1266,8 @@ class HermesApi:
 
         Curation du **pool partagé** d'offres, comme POST /offers : réservée au rôle
         ``reviewer`` (401 sans jeton géré en amont, 403 si le rôle manque). ``what`` /
-        ``where`` ciblent la recherche (optionnels) ; ``max`` plafonne la passe (défaut
+        ``where`` ciblent la recherche ; ``what`` est **requis** pour Adzuna (400 sinon) et
+        filtre les intitulés pour ATS (facultatif) ; ``max`` plafonne la passe (défaut
         ``_COLLECT_MAX_DEFAULT``, écrêté à ``_COLLECT_MAX_CAP``). Le job tourne en fond : on
         répond **202** aussitôt avec ``job_id``, puis le client sonde GET /collect/{job_id}.
         Si une collecte est déjà en cours (unicité de l'écrivain), on répond **409**.
@@ -1254,6 +1276,12 @@ class HermesApi:
         source = self._collect_source(body)
         what = self._collect_param(body, "what")
         where = self._collect_param(body, "where")
+        # Poste requis pour Adzuna (OPP-226) : un ``what`` vide collecterait toutes les offres de
+        # France, chacune passant par le LLM. Le front grise déjà le bouton ; on refuse aussi ici
+        # pour tout autre client. RSS (ciblage dans l'URL du flux) et ATS (filtre facultatif)
+        # n'en ont pas besoin.
+        if source == "adzuna" and not what:
+            raise ApiError(400, "what (poste recherché) est requis pour une collecte Adzuna")
         max_offers = self._collect_max(body)
         assert self.collections is not None  # garanti par le dispatch (404 sinon)
         try:
@@ -1327,6 +1355,69 @@ class HermesApi:
             raise ApiError(500, f"enregistrement des flux RSS impossible : {exc}") from exc
         return Response(200, {"feeds": saved})
 
+    @staticmethod
+    def _serialize_ats_company(company, offers_in_france: int | None = None) -> dict:
+        """Entreprise ciblée exposée au front : URL de page carrière, ATS, identifiant, offres FR."""
+        return {
+            "url": company.career_url,
+            "ats": company.ats,
+            "slug": company.slug,
+            "offers_in_france": offers_in_france,
+        }
+
+    def _get_ats_settings(self, user: User | None) -> Response:
+        """Entreprises ciblées enregistrées (OPP-226) : ``{"companies": [...]}``.
+
+        Réservé au ``reviewer`` (curation du pool, comme la collecte). Pas des secrets (RG-9) :
+        on rend l'URL canonique de chaque page carrière pour que l'UI la réaffiche. Le nombre
+        d'offres n'est connu qu'à l'enregistrement (``null`` ici : aucune requête aux ATS).
+        """
+        self._guard_reviewer(user)
+        assert self.ats_companies is not None  # garanti par le dispatch (404 sinon)
+        companies = self.ats_companies.load()
+        return Response(200, {"companies": [self._serialize_ats_company(c) for c in companies]})
+
+    def _put_ats_settings(self, body: dict, user: User | None) -> Response:
+        """Enregistre les entreprises ciblées à partir des URLs de pages carrière (OPP-226).
+
+        Réservé au ``reviewer``. ``companies`` doit être une liste (400 sinon). Liste sans saisie →
+        tout supprimer. URL non reconnue, entreprise introuvable sur son ATS ou plafond dépassé →
+        400 (rien n'est enregistré). ATS injoignable pendant la vérification → 502. Erreur
+        d'écriture du fichier → 500 lisible. Réponse : les entreprises retenues, avec le nombre
+        d'offres en France de celles qui viennent d'être vérifiées.
+        """
+        from app.ats_client import AtsClient
+        from app.ats_companies_service import (
+            AtsCompaniesWriteError,
+            AtsVerificationUnavailable,
+            update_companies,
+        )
+
+        self._guard_reviewer(user)
+        assert self.ats_companies is not None  # garanti par le dispatch (404 sinon)
+        lines = body.get("companies")
+        if not isinstance(lines, list):
+            raise ApiError(400, "companies doit être une liste d'URLs de pages carrière")
+        try:
+            checks = update_companies(
+                lines, store=self.ats_companies, client=self.ats_client or AtsClient()
+            )
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        except AtsVerificationUnavailable as exc:
+            raise ApiError(502, str(exc)) from exc
+        except AtsCompaniesWriteError as exc:
+            raise ApiError(500, f"enregistrement des entreprises impossible : {exc}") from exc
+        return Response(
+            200,
+            {
+                "companies": [
+                    self._serialize_ats_company(check.company, check.offers_in_france)
+                    for check in checks
+                ]
+            },
+        )
+
     def _post_collect_cancel(self, job_id: str, user: User | None) -> Response:
         """Demande l'arrêt **coopératif** d'une collecte en cours (OPP-209).
 
@@ -1371,15 +1462,15 @@ class HermesApi:
 
     @staticmethod
     def _collect_source(body: dict) -> str:
-        """Connecteur à employer pour la passe : ``adzuna`` (défaut) ou ``rss`` ; 400 sinon.
+        """Connecteur à employer : ``adzuna`` (défaut), ``rss`` ou ``ats`` (OPP-226) ; 400 sinon.
 
         Le défaut préserve le contrat historique (un POST /collect sans ``source`` reste une
         collecte Adzuna). Une valeur inconnue est refusée tôt (400) plutôt que silencieusement
         retombée sur Adzuna, qui masquerait une erreur d'appel côté client.
         """
         raw = body.get("source", "adzuna")
-        if raw not in ("adzuna", "rss"):
-            raise ApiError(400, "source doit être 'adzuna' ou 'rss'")
+        if raw not in ("adzuna", "rss", "ats"):
+            raise ApiError(400, "source doit être 'adzuna', 'rss' ou 'ats'")
         return raw
 
     @staticmethod
@@ -1421,6 +1512,11 @@ class HermesApi:
             "source_error": report.source_error,
             "enriched": report.enriched,
             "enriched_recovered": report.enriched_recovered,
+            # Source « entreprises ciblées » (OPP-226) : offres écartées car hors France, et
+            # entreprises en échec pendant la passe (la passe a continué sans elles).
+            "excluded": report.excluded,
+            "off_target": report.off_target,
+            "warnings": list(report.warnings),
         }
 
     @classmethod

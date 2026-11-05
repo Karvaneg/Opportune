@@ -146,8 +146,9 @@ pilotées par des **jetons sémantiques**. Design system complet :
 
 ## Prérequis
 
-- **Python ≥ 3.11** (back) et **Node.js ≥ 18** (front), ou **Docker** (chemin recommandé,
-  reproductible — notamment sous WSL2).
+- **Python ≥ 3.11** (back) et **Node.js ≥ 18** (front).
+- **Docker** (facultatif) : un environnement conteneurisé existe toujours, mais ce n'est plus
+  la voie utilisée par défaut.
 
 ## Démarrage (V2)
 
@@ -205,6 +206,9 @@ Opportune collecte des offres réelles via des **connecteurs** (détail et comma
   de l'app.
 - **RSS/Atom** — sans identifiant, à alimenter avec vos propres flux d'alertes emploi
   (URLs saisies dans les **Réglages**).
+- **Entreprises ciblées** — sans identifiant : vous collez dans les **Réglages** la page carrière
+  des entreprises qui vous intéressent, si elles publient via Greenhouse ou Lever. Opportune lit
+  leurs offres en France directement à la source.
 - **France Travail** — l'API officielle, la plus riche, mais **indisponible aujourd'hui**
   (vérifié oct. 2026) : elle a été **retirée de `francetravail.io`** le temps d'une analyse des
   modalités de distribution/réutilisation, suite à des **usages automatisés massifs par des
@@ -214,10 +218,10 @@ Opportune collecte des offres réelles via des **connecteurs** (détail et comma
 
 ## Tests
 
-- **Back** : `cd python && docker compose run --rm app pytest -q`
-- **Front** : `cd frontend && docker run --rm -v "$PWD":/app -v /app/node_modules opportune-frontend:dev npm test`
+- **Back** : `cd python && .venv/bin/pytest -q`
+- **Front** : `cd frontend && npm test`
 
-Détails et variantes (venv local, lint, build) dans les READMEs respectifs.
+Détails et variantes (lint, build, Docker en option) dans les READMEs respectifs.
 
 ## Configuration
 

@@ -98,6 +98,25 @@ class CollectionReport:
     enriched: int = 0
     enriched_recovered: int = 0
     cancelled: bool = False
+    # Renseignés par l'appelant pour la source « entreprises ciblées » (OPP-226), le pipeline ne
+    # les connaît pas : ``excluded`` = offres non émises car hors France (ni doublons ni échecs,
+    # donc hors de l'invariant ci-dessus) ; ``off_target`` = offres en France non émises car leur
+    # intitulé ne contient pas le poste saisi (même statut) ; ``warnings`` = entreprises en échec.
+    excluded: int = 0
+    off_target: int = 0
+    warnings: tuple[str, ...] = ()
+
+
+# Marge accordée à une source quand la passe est plafonnée en offres **neuves** (``max_new``) :
+# la source peut émettre jusqu'à ``max_new × SOURCE_CAP_FACTOR`` offres, pour que les doublons
+# d'une passe précédente ne consomment pas tout le plafond, sans laisser une source paginée
+# (quota Adzuna) lire indéfiniment quand presque tout est déjà connu.
+SOURCE_CAP_FACTOR = 5
+
+
+def source_cap(max_new: int) -> int:
+    """Plafond d'offres à émettre par la source pour viser ``max_new`` offres neuves."""
+    return max(1, max_new) * SOURCE_CAP_FACTOR
 
 
 def collect_offers(
@@ -109,8 +128,15 @@ def collect_offers(
     extract: Callable[[str], str] = extract_offer_text,
     on_progress: Callable[[CollectionProgress], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    max_new: int | None = None,
 ) -> CollectionReport:
     """Collecte, dédoublonne, analyse et persiste les offres d'une ``source``.
+
+    **Plafond en offres neuves.** Si ``max_new`` est fourni, la passe s'arrête dès que
+    ``max_new`` offres **neuves** ont été traitées (persistées ou en échec). Les doublons ne
+    comptent pas : une passe relancée ne bute plus sur les mêmes premières offres déjà connues.
+    La source, elle, est plafonnée plus large par l'appelant (``source_cap``) ; comme on cesse
+    de la consommer, une source paginée ne lit pas de page de plus que nécessaire.
 
     Retourne un ``CollectionReport``. Les échecs d'intake (``ValueError``,
     ``OfferAnalysisError``, ``LLMError``) sont capturés par offre et consignés dans
@@ -167,6 +193,8 @@ def collect_offers(
         return CollectionReport(0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}")
 
     while True:
+        if max_new is not None and stored + len(failures) >= max_new:
+            break
         # Arrêt coopératif (OPP-209) : vérifié entre deux offres, jamais pendant un intake LLM
         # en cours. Le bilan déjà accumulé est rendu tel quel (offres persistées conservées).
         # ``cancelled`` ne passe à vrai que si l'on rompt **ici** : une annulation posée après

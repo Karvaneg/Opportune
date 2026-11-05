@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import traceback
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Mapping
@@ -276,9 +278,10 @@ def assemble_api(
     partagent une seule source de vérité. Optionnel pour rester compatible avec les appelants
     existants ; ``main`` le fournit toujours.
 
-    ``settings_dir`` est le dossier des **réglages** (clés Adzuna, flux RSS) de cet espace. Par
-    défaut le dossier de données de l'app (espace réel) ; la démo reçoit un sous-dossier dédié
-    pour que ses réglages soient **isolés** du réel (ni partage, ni fuite d'un espace à l'autre).
+    ``settings_dir`` est le dossier des **réglages** (clés Adzuna, flux RSS, entreprises
+    ciblées) de cet espace. Par défaut le dossier de données de l'app (espace réel) ; la démo
+    reçoit un sous-dossier dédié pour que ses réglages soient **isolés** du réel (ni partage, ni
+    fuite d'un espace à l'autre).
     """
     from app.action_service import ActionService
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
@@ -386,9 +389,11 @@ def assemble_api(
     from app.collection_jobs import CollectionJobRegistry, ProgressCallback
     from app.collection_runner import run_collection
     from app.db import connect, database_path
-    from app.offer_collection import CollectionReport
+    from app.offer_collection import CollectionReport, source_cap
     from app.rss_feeds_store import RssFeedsStore, default_rss_feeds_path
     from app.rss_source import build_rss_source
+    from app.ats_companies_store import AtsCompaniesStore, default_ats_companies_path
+    from app.ats_source import AtsSource, build_ats_source
 
     job_db_path = database_path(conn)
     # Identifiants Adzuna saisis par l'utilisateur (OPP-222), rangés dans le dossier de données de
@@ -397,6 +402,9 @@ def assemble_api(
     # URLs de flux RSS saisies par l'utilisateur (OPP-195) : faute de flux FR gratuit par défaut,
     # la source RSS n'est alimentée que par ces URLs (non secrètes, relues telles quelles dans l'UI).
     rss_feeds = RssFeedsStore(default_rss_feeds_path(settings_dir))
+    # Entreprises ciblées sur un ATS (OPP-226) : pages carrière saisies par l'utilisateur, une
+    # liste par espace (non secrète, relue telle quelle dans l'UI).
+    ats_companies = AtsCompaniesStore(default_ats_companies_path(settings_dir))
 
     def collection_runner(
         *,
@@ -408,6 +416,8 @@ def assemble_api(
         should_cancel: Callable[[], bool],
     ) -> CollectionReport:
         job_conn = connect(job_db_path)
+        # Renseignée seulement pour la source « entreprises ciblées » (bilan enrichi après la passe).
+        ats_source: AtsSource | None = None
         try:
             job_offers = OfferStore(job_conn)
             try:
@@ -426,12 +436,28 @@ def assemble_api(
                             0, 0, 0, (),
                             source_error="Collecte RSS indisponible : le composant de nettoyage HTML n'est pas installé.",
                         )
-                    collection_source = build_rss_source(feeds, max_offers=max_offers)
+                    collection_source = build_rss_source(feeds, max_offers=source_cap(max_offers))
+                elif source == "ats":
+                    # Entreprises ciblées (OPP-226) : ``what`` filtre les intitulés (facultatif),
+                    # ``where`` est ignoré (la source ne garde que la France, RG-11/RG-12).
+                    companies = ats_companies.load()
+                    if not companies:
+                        return CollectionReport(
+                            0, 0, 0, (),
+                            source_error=(
+                                "Aucune entreprise ciblée : ajoute des pages carrière "
+                                "dans les Réglages."
+                            ),
+                        )
+                    ats_source = build_ats_source(
+                        companies, max_offers=source_cap(max_offers), title_query=what
+                    )
+                    collection_source = ats_source
                 elif source == "adzuna":
                     filters = {k: v for k, v in (("what", what), ("where", where)) if v}
                     credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
                     collection_source = build_adzuna_source(
-                        credentials, filters=filters or None, max_offers=max_offers
+                        credentials, filters=filters or None, max_offers=source_cap(max_offers)
                     )
                 else:
                     # La source est déjà validée en amont (``_collect_source`` : 400 sinon) ; ce
@@ -444,12 +470,25 @@ def assemble_api(
                 return CollectionReport(
                     0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}"
                 )
-            return run_collection(
+            report = run_collection(
                 collection_source,
                 llm_client=llm_client,
                 store=job_offers,
                 on_progress=on_progress,
                 should_cancel=should_cancel,
+                # ``max`` compte les offres **neuves** : les doublons ne consomment pas le
+                # plafond (les sources sont plafonnées plus large, cf. ``source_cap``).
+                max_new=max_offers,
+            )
+            if ats_source is None:
+                return report
+            # Le socle ignore les filtres France/poste et les échecs par entreprise : la source
+            # les a comptés, on les reporte dans le bilan (RG-11, RG-12, RG-20).
+            return replace(
+                report,
+                excluded=ats_source.excluded,
+                off_target=ats_source.off_target,
+                warnings=tuple(ats_source.warnings),
             )
         finally:
             job_conn.close()
@@ -490,6 +529,7 @@ def assemble_api(
         llm_setup=llm_setup,
         adzuna_credentials=adzuna_credentials,
         rss_feeds=rss_feeds,
+        ats_companies=ats_companies,
         conn=conn,
     )
 
@@ -514,6 +554,11 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from api.app import Response
     from app.candidate_registry import CandidateRegistry
     from app.demo_candidate import reset_demo, seed_demo_candidate
+    from app.demo_settings import (
+        ensure_demo_settings_seeded,
+        mark_demo_settings_seeded,
+        seed_demo_settings,
+    )
     from app.profile_store import ProfileStore
     from api.space_router import SpaceRouter
 
@@ -558,20 +603,39 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     demo_registry = CandidateRegistry(demo_conn)
     # Réglages de la démo **isolés** dans un sous-dossier dédié (OPP-195) : les clés Adzuna et les
     # flux RSS saisis dans « Mon espace » ne doivent ni être partagés, ni fuiter vers la démo.
+    demo_settings_dir = user_data_dir() / "demo"
     demo = assemble_api(
         demo_conn,
         build_local_auth(demo_registry.list_ids),
         searches=demo_registry,
-        settings_dir=user_data_dir() / "demo",
+        settings_dir=demo_settings_dir,
     )
+    # Réglages de collecte pré-remplis (OPP-226), pour essayer RSS et ATS sans rien saisir :
+    # posés une fois (témoin dans le dossier des réglages démo, indépendant de la base), puis à
+    # « Restaurer l'exemple ». Un échec d'écriture ne bloque pas le démarrage : sans témoin posé,
+    # le prochain démarrage réessaie.
+    try:
+        ensure_demo_settings_seeded(
+            demo_settings_dir, rss_feeds=demo.rss_feeds, ats_companies=demo.ats_companies
+        )
+    except OSError as exc:
+        print(f"Réglages démo non pré-remplis (nouvel essai au prochain démarrage) : {exc}",
+              file=sys.stderr)
+
+    def _seed_demo_settings() -> None:
+        seed_demo_settings(rss_feeds=demo.rss_feeds, ats_companies=demo.ats_companies)
+        mark_demo_settings_seeded(demo_settings_dir)
 
     # Commandes d'espace démo (OPP-182), portées par le routeur donc toujours ciblées sur la
     # base démo : « repartir de zéro » (vider) et « restaurer l'exemple » (vitrine canonique).
     # Le vidage emporte aussi les **réglages** de la démo (OPP-195) : repartir de zéro ne doit
-    # rien conserver, clés Adzuna et flux RSS compris.
+    # rien conserver, clés Adzuna, flux RSS et entreprises ciblées compris.
     def _clear_demo_settings() -> None:
         demo.adzuna_credentials.clear()
         demo.rss_feeds.clear()
+        demo.ats_companies.clear()
+        # Le témoin reste (ou est posé) : un redémarrage ne doit pas re-remplir après un vidage.
+        mark_demo_settings_seeded(demo_settings_dir)
 
     def _reset_demo() -> Response:
         reset_demo(demo_conn)
@@ -582,6 +646,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
         reset_demo(demo_conn)
         _clear_demo_settings()
         seed_demo_candidate(demo_conn)
+        _seed_demo_settings()
         return Response(200, {"status": "restored"})
 
     router = SpaceRouter(

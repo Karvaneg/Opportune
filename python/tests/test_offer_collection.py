@@ -9,7 +9,7 @@ import json
 
 from app.llm_client import LLMError, MockLLMClient
 from app.offer import Offer, compute_offer_id
-from app.offer_collection import collect_offers
+from app.offer_collection import SOURCE_CAP_FACTOR, collect_offers, source_cap
 from app.offer_source import RawOffer
 
 
@@ -321,3 +321,33 @@ def test_collect_enriches_offer_without_skills_via_url():
     assert fetched == ["https://x.com/full"]
     stored = next(iter(store.offers.values()))
     assert stored.skills == ["Python"]  # issu de la ré-analyse du texte enrichi
+
+
+def test_max_new_counts_new_offers_only_so_duplicates_do_not_use_up_the_cap():
+    store = FakeOfferStore()
+    known_raws = [RawOffer(source="ats", raw_text=f"Python connue {n}", url=f"https://x.com/k{n}") for n in range(3)]
+    collect_offers(
+        ListSource(known_raws),
+        client=MockLLMClient([_response() for _ in known_raws]),
+        store=store,
+    )
+    new_raws = [RawOffer(source="ats", raw_text=f"Python neuve {n}", url=f"https://x.com/n{n}") for n in range(3)]
+
+    report = collect_offers(
+        ListSource(known_raws + new_raws),
+        client=MockLLMClient([_response(), _response()]),
+        store=store,
+        max_new=2,
+    )
+
+    assert report.duplicates == 3
+    assert report.stored == 2
+    assert report.collected == 5
+
+
+def test_source_cap_leaves_room_for_duplicates():
+    max_new = 10
+
+    cap = source_cap(max_new)
+
+    assert cap == max_new * SOURCE_CAP_FACTOR

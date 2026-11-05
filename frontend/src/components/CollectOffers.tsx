@@ -8,7 +8,7 @@ import {
   useStartCollect,
 } from "../api/offers";
 import { useProfileReady } from "../api/profile";
-import { useAdzunaSettings, useRssSettings } from "../api/settings";
+import { useAdzunaSettings, useAtsSettings, useRssSettings } from "../api/settings";
 import { useLlmReady } from "../api/system";
 import type { CollectOffersVariables } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
@@ -43,6 +43,9 @@ export function CollectOffers() {
   // s'il en a configuré au moins un (sinon la passe ne rapporterait qu'un `source_error`).
   const rss = useRssSettings();
   const hasRssFeeds = (rss.data?.feeds?.length ?? 0) > 0;
+  // Entreprises ciblées (OPP-226) : même logique, la collecte n'est proposée que s'il y en a.
+  const ats = useAtsSettings();
+  const hasAtsCompanies = (ats.data?.companies?.length ?? 0) > 0;
   // Chaque offre neuve passe par le LLM local (intake structuré) : on désactive la collecte tant
   // qu'il n'est pas prêt (OPP-195), en orientant vers le bandeau d'installation.
   const llm = useLlmReady();
@@ -50,7 +53,8 @@ export function CollectOffers() {
   // (c'était « développeur… », un biais pour un outil censé servir tous les métiers) ; et un
   // `what` vide collecterait toute la France sans cible, chaque offre passant par le LLM. On
   // laisse donc l'utilisateur saisir son propre intitulé et on bloque la collecte Adzuna tant
-  // qu'il est vide. La collecte RSS, elle, ne dépend pas de ce champ.
+  // qu'il est vide (le back la refuse aussi, OPP-226). La collecte RSS ne dépend pas de ce champ ;
+  // la collecte des entreprises ciblées s'en sert comme filtre facultatif des intitulés.
   const [what, setWhat] = useState("");
   const [where, setWhere] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
@@ -108,6 +112,13 @@ export function CollectOffers() {
   const submit = () => launch({ what: what.trim(), where: where.trim() });
   // Collecte depuis les flux RSS configurés : `what`/`where` ne s'appliquent pas (OPP-195).
   const submitRss = () => launch({ source: "rss" });
+  // Collecte des entreprises ciblées (OPP-226) : le poste, s'il est saisi, filtre les intitulés
+  // avant l'analyse LLM (RG-11) ; vide, toutes les offres en France sont gardées. `where` ne
+  // s'applique pas (la source ne garde que la France).
+  const submitAts = () => {
+    const title = what.trim();
+    launch(title ? { source: "ats", what: title } : { source: "ats" });
+  };
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-4">
@@ -159,6 +170,18 @@ export function CollectOffers() {
             Collecter mes flux RSS
           </button>
         )}
+        {/* Collecte des entreprises ciblées (OPP-226) : proposée seulement si au moins une est
+            enregistrée dans les Réglages. Même verrou que les autres collectes. */}
+        {hasAtsCompanies && (
+          <button
+            type="button"
+            onClick={submitAts}
+            disabled={running || blocked}
+            className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/10 disabled:opacity-50"
+          >
+            Collecter mes entreprises ciblées
+          </button>
+        )}
         {/* La progression d'une passe en cours est affichée par le bandeau global persistant
             (`CollectionBanner`, OPP-208) — on ne la duplique plus ici (OPP-215). Le bilan final
             et l'échec restent affichés à côté du bouton : le bandeau, lui, disparaît à la fin. */}
@@ -173,6 +196,15 @@ export function CollectOffers() {
         <ProfileRequiredNotice />
       ) : (
         !llm.ready && llm.reason && <LlmRequiredNotice reason={llm.reason} />
+      )}
+      {hasAtsCompanies && (
+        <p className="text-xs text-ink-muted">
+          « Collecter mes entreprises ciblées » récupère les offres en France de tes entreprises.
+          Si un poste est saisi ci-dessus, seules les offres dont l'intitulé contient chacun de ses
+          mots sont gardées (« dev » garde « Développeur ») ; laisse-le vide pour tout récupérer
+          (beaucoup d'intitulés sont en anglais).
+          Le lieu ne s'applique pas.
+        </p>
       )}
       {adzunaMissing && <AdzunaRequiredNotice />}
       {start.isError && <ErrorNotice error={start.error} />}
@@ -194,6 +226,26 @@ function CollectSummary({ report }: { report: CollectionReport }) {
       </span>
     );
   }
+  // Source « entreprises ciblées » (OPP-226) : entreprises en échec (la passe a continué sans
+  // elles). Champ absent d'un vieux back → rien à afficher.
+  const warnings = report.warnings ?? [];
+  return (
+    <>
+      <CollectCountsSummary report={report} />
+      {warnings.length > 0 && (
+        <span className="w-full text-sm text-warning-text">
+          Entreprises non interrogées : {warnings.join(" ; ")}
+        </span>
+      )}
+    </>
+  );
+}
+
+function CollectCountsSummary({ report }: { report: CollectionReport }) {
+  // Source « entreprises ciblées » (OPP-226) : offres écartées hors France ou hors poste.
+  // Champs absents d'un vieux back → rien à afficher.
+  const excluded = report.excluded ?? 0;
+  const offTarget = report.off_target ?? 0;
   return (
     <span className="text-sm text-success-text">
       {report.stored} nouvelle{report.stored > 1 ? "s" : ""} offre
@@ -203,6 +255,8 @@ function CollectSummary({ report }: { report: CollectionReport }) {
       {report.failures > 0 && ` · ${report.failures} échec${report.failures > 1 ? "s" : ""}`}
       {report.enriched > 0 &&
         ` · ${report.enriched} enrichie${report.enriched > 1 ? "s" : ""} (${report.enriched_recovered} récupérée${report.enriched_recovered > 1 ? "s" : ""})`}
+      {excluded > 0 && ` · ${excluded} hors France`}
+      {offTarget > 0 && ` · ${offTarget} hors poste`}
     </span>
   );
 }

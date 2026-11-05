@@ -294,6 +294,120 @@ describe("OffersPage", () => {
     expect(posts[0].body).toEqual({ source: "rss" });
   });
 
+  it("propose « Collecter mes entreprises ciblées », poste source=ats et affiche hors France et échecs (OPP-226)", async () => {
+    const posts: Array<{ body: unknown }> = [];
+    const job = {
+      job_id: "job-ats", status: "done", error: null,
+      progress: noProgress,
+      report: {
+        collected: 3, stored: 3, duplicates: 0, failures: 0, source_error: null,
+        enriched: 0, enriched_recovered: 0,
+        excluded: 12, warnings: ["entreprise introuvable sur Lever : ghost"],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/ats")) {
+          return res(200, {
+            companies: [{ url: "https://jobs.lever.co/swile", ats: "lever", slug: "swile", offers_in_france: null }],
+          });
+        }
+        if (s.includes("/collect")) {
+          if (options?.method === "POST") {
+            posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
+            return res(202, { job_id: "job-ats" });
+          }
+          if (s.split("?")[0].endsWith("/collect")) return res(200, { job: null });
+          return res(200, job);
+        }
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Collecter mes entreprises ciblées" }),
+    );
+
+    expect(await screen.findByText(/3 nouvelles offres/)).toBeInTheDocument();
+    expect(screen.getByText(/12 hors France/)).toBeInTheDocument();
+    expect(screen.getByText(/Entreprises non interrogées : entreprise introuvable sur Lever : ghost/)).toBeInTheDocument();
+    expect(posts).toEqual([{ body: { source: "ats" } }]);
+  });
+
+  it("filtre la collecte des entreprises ciblées sur le poste saisi et affiche les offres hors poste (OPP-226)", async () => {
+    const posts: Array<{ body: unknown }> = [];
+    const job = {
+      job_id: "job-ats", status: "done", error: null,
+      progress: noProgress,
+      report: {
+        collected: 3, stored: 3, duplicates: 0, failures: 0, source_error: null,
+        enriched: 0, enriched_recovered: 0,
+        excluded: 0, off_target: 9, warnings: [],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, options?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/ats")) {
+          return res(200, {
+            companies: [{ url: "https://jobs.lever.co/swile", ats: "lever", slug: "swile", offers_in_france: null }],
+          });
+        }
+        if (s.includes("/collect")) {
+          if (options?.method === "POST") {
+            posts.push({ body: JSON.parse(String(options?.body ?? "{}")) });
+            return res(202, { job_id: "job-ats" });
+          }
+          if (s.split("?")[0].endsWith("/collect")) return res(200, { job: null });
+          return res(200, job);
+        }
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+
+    const atsButton = await screen.findByRole("button", { name: "Collecter mes entreprises ciblées" });
+    await userEvent.type(screen.getByLabelText("Poste recherché"), " data analyst ");
+    await userEvent.click(atsButton);
+
+    expect(await screen.findByText(/3 nouvelles offres/)).toBeInTheDocument();
+    expect(screen.getByText(/9 hors poste/)).toBeInTheDocument();
+    expect(posts).toEqual([{ body: { source: "ats", what: "data analyst" } }]);
+  });
+
+  it("ne propose pas la collecte des entreprises ciblées sans entreprise enregistrée (OPP-226)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/ats")) return res(200, { companies: [] });
+        if (s.split("?")[0].endsWith("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+
+    await screen.findByText("Lead Java");
+
+    expect(screen.queryByRole("button", { name: "Collecter mes entreprises ciblées" })).not.toBeInTheDocument();
+  });
+
   it("sonde jusqu'à la fin : progression en cours puis bilan final", async () => {
     let getCalls = 0;
     const running = {

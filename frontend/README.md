@@ -30,9 +30,10 @@ Vitest + Testing Library.
   (générer / éditer / supprimer), **décision** humaine (réservée au rôle `reviewer`) et
   **suivi post-candidature** : « j'ai candidaté », puis historique d'événements (entretien
   daté, rejet, offre reçue, OPP-223).
-- **Réglages** (`/reglages`, OPP-195/222) : saisie des **clés Adzuna** (`AdzunaSettings`) et
-  des **URLs de flux RSS** (`RssSettings`), enregistrées par l'API dans le dossier de données
-  de l'app. Plus besoin d'éditer un `.env` pour collecter.
+- **Réglages** (`/reglages`, OPP-195/222/226) : saisie des **clés Adzuna** (`AdzunaSettings`),
+  des **URLs de flux RSS** (`RssSettings`) et des **pages carrière des entreprises ciblées**
+  (`AtsSettings`, Greenhouse/Lever), enregistrées par l'API dans le dossier de données de
+  l'app. Plus besoin d'éditer un `.env` pour collecter.
 - **Mise en route du LLM** (`LlmBanner`, OPP-193/195) : tant que le modèle local n'est pas
   installé, un bandeau propose de le télécharger (barre de progression) ou signale qu'Ollama
   est injoignable, sans bloquer l'app ; seules les actions qui exigent le LLM se désactivent.
@@ -62,7 +63,9 @@ npm run build      # typecheck + build de production (dist/, embarqué dans le b
 En production, il n'y a plus de serveur Vite : le binaire API sert lui-même `dist/` sur le
 même origin que l'API (OPP-191).
 
-## Docker
+## Docker (optionnel)
+
+Image toujours fonctionnelle, mais plus utilisée par défaut (`npm` en local suffit).
 
 ```bash
 docker build -t opportune-frontend:dev .

@@ -17,9 +17,24 @@ export interface RssSettings {
   feeds: string[];
 }
 
+/** Entreprise ciblée sur un ATS (OPP-226), telle que l'API la rend. */
+export interface AtsCompany {
+  /** URL canonique de la page carrière, réaffichée dans le champ. */
+  url: string;
+  ats: "greenhouse" | "lever";
+  slug: string;
+  /** Offres en France, connu seulement juste après la vérification d'une nouvelle entreprise. */
+  offers_in_france: number | null;
+}
+
+export interface AtsSettings {
+  companies: AtsCompany[];
+}
+
 export const settingsKeys = {
   adzuna: ["settings", "adzuna"] as const,
   rss: ["settings", "rss"] as const,
+  ats: ["settings", "ats"] as const,
 };
 
 /**
@@ -70,6 +85,36 @@ export function useRssSettings() {
 
 export interface SaveRssVariables {
   feeds: string[];
+}
+
+/**
+ * Entreprises ciblées enregistrées : `GET /settings/ats` → `{ companies }` (OPP-226). Réservé au
+ * reviewer côté back : requête conditionnée au rôle, comme pour les flux RSS.
+ */
+export function useAtsSettings() {
+  const isReviewer = useIsReviewer();
+  return useQuery({
+    queryKey: settingsKeys.ats,
+    queryFn: () => apiFetch<AtsSettings>("/settings/ats"),
+    enabled: isReviewer,
+  });
+}
+
+export interface SaveAtsVariables {
+  /** URLs de pages carrière, une par entreprise (vide = tout supprimer). */
+  companies: string[];
+}
+
+/**
+ * Enregistre les entreprises ciblées : `PUT /settings/ats` (OPP-226). Le back vérifie chaque
+ * nouvelle entreprise auprès de son ATS (400 si URL non reconnue ou entreprise introuvable, 502
+ * si l'ATS est injoignable) et rend la liste retenue. Au succès, invalide l'état pour le relire.
+ */
+export function useSaveAtsSettings() {
+  return useApiMutation<AtsSettings, SaveAtsVariables>({
+    mutationFn: ({ companies }) => apiPut<AtsSettings>("/settings/ats", { companies }),
+    invalidateKeys: () => [settingsKeys.ats],
+  });
 }
 
 /**
