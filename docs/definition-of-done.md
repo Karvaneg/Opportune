@@ -26,8 +26,8 @@
 
 - [ ] Tests sous `python/tests/`, avec `pytest`, couvrant le cas nominal, les cas
       limites et les erreurs.
-- [ ] `pytest` **entièrement au vert**, sans test ignoré (venv `python/.venv/bin/pytest`
-      ou `docker compose run --rm app pytest`).
+- [ ] `pytest` **entièrement au vert**, sans test ignoré (venv `python/.venv/bin/pytest` ;
+      Docker reste possible mais n'est pas la voie par défaut).
 - [ ] Côté front, `npm test` (Vitest) et `npm run lint` (typecheck `tsc`) au vert.
 - [ ] Les tests n'écrivent pas dans les données réelles (SQLite en mémoire / fichiers
       temporaires) et ne dépendent pas du réseau.
