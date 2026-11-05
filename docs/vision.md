@@ -1,7 +1,7 @@
 # Vision & stack cible
 
 > ℹ️ Ce document décrit la **vision produit** et la **stack cible** d'Opportune.
-> L'implémentation actuelle est la **V2 Python** (cœur métier, orchestrateur Hermes,
+> L'implémentation actuelle est **Opportune en Python** (cœur métier, orchestrateur Hermes,
 > API HTTP — bibliothèque standard, SQLite), qui réalise déjà une bonne partie de cette
 > cible : **collecte réelle** d'offres (Adzuna, flux RSS, ajout par URL), scoring des
 > offres, génération de lettre de motivation (Ollama/Ministral), validation humaine

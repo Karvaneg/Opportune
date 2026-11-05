@@ -1,8 +1,8 @@
-# Opportune — back Python (V2)
+# Opportune — back Python
 
-Cœur métier de la V2 d'Opportune : analyse d'offres, scoring, recommandation, décisions
+Cœur métier d'Opportune : analyse d'offres, scoring, recommandation, décisions
 et actions sensibles, orchestrés par **Hermes** et exposés via une **API HTTP**. C'est la
-stack cible du projet (le V1 Node.js, archivé sous [`../legacy/`](../legacy/), est historique
+stack cible du projet (le prototype Node.js, archivé sous [`../legacy/`](../legacy/), est historique
 — voir le README racine).
 
 **Zéro dépendance de production** : tout le métier, l'orchestrateur et l'API sont écrits
