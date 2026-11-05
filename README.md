@@ -7,6 +7,14 @@
   <img src="docs/images/Opportune.png" width="320" alt="Opportune — Saisir l'occasion au vol." />
 </p>
 
+<p align="center">
+  <a href="https://github.com/Karvaneg/Opportune/releases/latest">
+    <img src="https://img.shields.io/github/v/release/Karvaneg/Opportune?label=T%C3%A9l%C3%A9charger%20Opportune&style=for-the-badge&color=2ea44f" alt="Télécharger Opportune (Windows, Linux)" />
+  </a>
+  <br />
+  <sub>Windows (<code>.exe</code>, <code>.msi</code>) · Linux (<code>.deb</code>, <code>.rpm</code>, <code>.AppImage</code>) · <a href="#installation">Comment installer</a></sub>
+</p>
+
 > **Local-first job-application assistant** — collects job offers, scores them against your
 > profile with a local LLM (Ollama), and drafts tailored cover letters. Everything runs on
 > your machine, nothing leaves it, and every outbound action needs your explicit approval.
@@ -25,15 +33,32 @@
 
 ---
 
-> 🚧 **Application de bureau en cours de finalisation (Opportune 1.0).** Une app installable
-> par **double-clic et sans terminal**, LLM embarqué, se construit déjà depuis les sources
-> pour **Linux** (`.deb`, `.rpm`, `.AppImage`) et **Windows** (`.msi`, `.exe`). Aucune version
-> n'est encore publiée et les installeurs ne sont pas signés ; Mac viendra ensuite. En
-> attendant, l'installation décrite ici demande un environnement technique (Python, Node ou
-> Docker, plus Ollama). Voir la [feuille de route](#feuille-de-route).
+## Installation
+
+Opportune s'installe **par double-clic, sans terminal**, avec son assistant IA local embarqué.
+
+1. Ouvre la page **[Télécharger Opportune](https://github.com/Karvaneg/Opportune/releases/latest)**
+   (dernière version publiée) et, dans la partie **Assets**, prends le fichier de ton système :
+
+   | Système | Fichier à télécharger |
+   |---|---|
+   | Windows | `.exe` (installeur classique) ou `.msi` |
+   | Linux (Debian, Ubuntu…) | `.deb` |
+   | Linux (Fedora, openSUSE…) | `.rpm` |
+   | Linux (toute distribution) | `.AppImage` (rendre exécutable, puis double-clic) |
+
+2. Lance l'installeur. Les installeurs ne sont **pas encore signés** : Windows peut afficher
+   « Windows a protégé votre ordinateur » ; clique sur **Informations complémentaires** puis
+   **Exécuter quand même**.
+3. Au premier lancement, Opportune propose de télécharger le modèle d'IA local (une seule
+   fois). Tout reste ensuite sur ta machine.
+
+Mac n'est pas encore disponible. Pour lancer Opportune depuis les sources (développeurs), voir
+[Démarrage (V2)](#démarrage-v2).
 
 ## Sommaire
 
+- [Installation](#installation)
 - [Migration V1 → V2](#migration-v1--v2)
 - [Cartographie du dépôt](#cartographie-du-dépôt-monorepo)
 - [Architecture V2](#architecture-v2-vue-densemble)
