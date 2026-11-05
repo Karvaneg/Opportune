@@ -98,6 +98,10 @@ Mac n'est pas encore disponible. Pour lancer Opportune depuis les sources, voir 
 
 Rien n'est envoyé sans ta validation explicite.
 
+**Changer d'ordinateur** : dans **Réglages**, « Exporter mes données » enregistre un fichier à
+l'endroit de ton choix. Sur le nouvel ordinateur, ouvre « Mon espace » : tant qu'il est vide,
+l'accueil propose « Importer mes données ». Sélectionne ce fichier.
+
 ## Sources d'offres
 
 Opportune collecte des offres réelles via des **connecteurs**, tous configurés dans la page

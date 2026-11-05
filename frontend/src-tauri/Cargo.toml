@@ -19,6 +19,11 @@ tauri = { version = "2", features = [] }
 # webview WebKitGTK ne sait pas afficher (warning Gdk sous Linux) et n'atteint jamais le
 # navigateur. Le front appelle donc openUrl() de ce plugin, qui délègue au système — OPP-194.
 tauri-plugin-opener = "2"
+# Export des données (OPP-232) : la fenêtre « Enregistrer sous » du système (dialog), puis
+# l'écriture du fichier à l'endroit choisi (fs). Le chemin choisi dans la fenêtre est ajouté au
+# périmètre autorisé de fs par le plugin dialog : le front ne peut rien écrire ailleurs.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 # Capture SIGINT/SIGTERM (feature « termination ») pour tuer le sidecar même quand l'app
 # est arrêtée par signal (kill, crash) et non par fermeture de fenêtre — sinon le binaire API
 # resterait orphelin à tenir le port, et le lancement suivant échouerait.

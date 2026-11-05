@@ -55,6 +55,7 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Protocol
@@ -72,6 +73,7 @@ if TYPE_CHECKING:
     from app.profile_service import ProfileService
     from app.rss_feeds_store import RssFeedsStore
     from app.ats_client import AtsClient
+    from app.data_transfer_service import DataTransferService
     from app.ats_companies_store import AtsCompaniesStore
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
@@ -160,6 +162,17 @@ class ApiError(Exception):
         self.message = message
 
 
+def _transfer_error(operation: str, exc: Exception) -> ApiError:
+    """Échec d'un export / import (OPP-232) → erreur lisible.
+
+    Verrou SQLite (une autre écriture en cours) → 503 « réessaie » ; autre échec disque ou base →
+    500 avec la cause.
+    """
+    if isinstance(exc, sqlite3.OperationalError) and "locked" in str(exc).lower():
+        return ApiError(503, f"{operation} impossible pour l'instant (base occupée) : réessaie")
+    return ApiError(500, f"{operation} impossible : {exc}")
+
+
 # Routes connues (chemin sans query string).
 _ME = re.compile(r"^/me$")
 _SEARCHES = re.compile(r"^/searches$")
@@ -191,6 +204,9 @@ _LLM_SETUP = re.compile(r"^/system/llm/setup$")
 _SETTINGS_ADZUNA = re.compile(r"^/settings/adzuna$")
 _SETTINGS_RSS = re.compile(r"^/settings/rss$")
 _SETTINGS_ATS = re.compile(r"^/settings/ats$")
+# Export / import des données d'un espace (OPP-232).
+_DATA_EXPORT = re.compile(r"^/data/export$")
+_DATA_IMPORT = re.compile(r"^/data/import$")
 
 # Verbes de décision exposés par l'API → statuts de validation humaine du domaine.
 _DECISION_VERBS = {"approve": "approved", "reject": "rejected", "defer": "deferred"}
@@ -272,6 +288,7 @@ class HermesApi:
         rss_feeds: "RssFeedsStore | None" = None,
         ats_companies: "AtsCompaniesStore | None" = None,
         ats_client: "AtsClient | None" = None,
+        data_transfer: "DataTransferService | None" = None,
         conn: "sqlite3.Connection | None" = None,
         tracking: ApplicationTrackingService | None = None,
     ) -> None:
@@ -329,6 +346,9 @@ class HermesApi:
         # injectable (faux en test), défaut = transport HTTP réel.
         self.ats_companies = ats_companies
         self.ats_client = ats_client
+        # Export / import des données de l'espace (OPP-232). Absent (tests qui ne le fournissent
+        # pas) → /data/export et /data/import en 404 neutre.
+        self.data_transfer = data_transfer
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
@@ -585,6 +605,15 @@ class HermesApi:
                 return self._get_rss_settings(user)
             self._require(method, "PUT", path)
             return self._put_rss_settings(body, user)
+
+        if _DATA_EXPORT.match(path) or _DATA_IMPORT.match(path):
+            # Export / import des données de l'espace (OPP-232) : 404 si non câblé.
+            if self.data_transfer is None:
+                raise self._not_found(user, "export et import des données non disponibles")
+            self._require(method, "POST", path)
+            if _DATA_EXPORT.match(path):
+                return self._post_data_export(user)
+            return self._post_data_import(body, user)
 
         if _SETTINGS_ATS.match(path):
             # Entreprises ciblées sur un ATS (OPP-226). Montée uniquement si le store est câblé
@@ -1376,6 +1405,59 @@ class HermesApi:
         assert self.ats_companies is not None  # garanti par le dispatch (404 sinon)
         companies = self.ats_companies.load()
         return Response(200, {"companies": [self._serialize_ats_company(c) for c in companies]})
+
+    def _post_data_export(self, user: User | None) -> Response:
+        """Rend l'archive d'export des données de l'espace (OPP-232).
+
+        Réservé au ``reviewer``. Réponse : l'archive encodée en base64 (transport JSON-only) et le
+        nom de fichier proposé ; le front l'enregistre à l'endroit choisi par l'utilisateur.
+        """
+        from app.data_transfer_service import ExportTooLarge
+
+        self._guard_reviewer(user)
+        assert self.data_transfer is not None  # garanti par le dispatch (404 sinon)
+        try:
+            result = self.data_transfer.export()
+        except ExportTooLarge as exc:
+            raise ApiError(413, str(exc)) from exc
+        except (OSError, sqlite3.Error) as exc:
+            raise _transfer_error("export", exc) from exc
+        return Response(
+            200,
+            {
+                "archive_base64": base64.b64encode(result.content).decode("ascii"),
+                "filename": result.filename,
+            },
+        )
+
+    def _post_data_import(self, body: dict, user: User | None) -> Response:
+        """Remplace les données de l'espace par une archive d'export (OPP-232).
+
+        Réservé au ``reviewer``. L'archive voyage encodée en base64 dans ``archive_base64``
+        (transport JSON-only, comme le CV). Base64 invalide, archive refusée (pas un export,
+        endommagée, version plus récente) → 400, rien n'est modifié. Collecte en cours → 409.
+        Échec d'écriture ou de la base → 500 lisible (l'état d'avant est remis en place).
+        """
+        from app.data_transfer_service import DataTransferBusy
+
+        self._guard_reviewer(user)
+        assert self.data_transfer is not None  # garanti par le dispatch (404 sinon)
+        raw = body.get("archive_base64")
+        if not isinstance(raw, str) or not raw:
+            raise ApiError(400, "archive_base64 est requis (le fichier d'export encodé en base64)")
+        try:
+            data = base64.b64decode(raw, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ApiError(400, "archive_base64 n'est pas un base64 valide") from exc
+        try:
+            self.data_transfer.import_(data)
+        except DataTransferBusy as exc:
+            raise ApiError(409, str(exc)) from exc
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        except (OSError, sqlite3.Error) as exc:
+            raise _transfer_error("import", exc) from exc
+        return Response(200, {"status": "imported"})
 
     def _put_ats_settings(self, body: dict, user: User | None) -> Response:
         """Enregistre les entreprises ciblées à partir des URLs de pages carrière (OPP-226).

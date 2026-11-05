@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewProfileGuide } from "../src/components/NewProfileGuide";
 import { AuthProvider } from "../src/auth/AuthContext";
+import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
+import { SpaceProvider } from "../src/space/SpaceContext";
 import type { CandidateStats } from "../src/api/types";
 
 const ok = (b: unknown) =>
@@ -45,21 +47,32 @@ function stubFetch({
   role = "reviewer",
   llmModelPresent = true,
   adzunaConfigured = true,
+  searchIds = ["cand-1"],
+  rssFeeds = [],
+  atsCompanies = [],
 }: {
   profile: unknown;
   runsTotal: number;
   role?: string;
   llmModelPresent?: boolean;
   adzunaConfigured?: boolean;
+  searchIds?: string[];
+  rssFeeds?: string[];
+  atsCompanies?: string[];
 }) {
   const fetchMock = vi.fn((url: string) => {
     const s = String(url);
     if (s.includes("/me"))
       return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+    if (s.includes("/searches"))
+      return ok({ items: searchIds.map((id) => ({ id, label: id })) });
     if (s.includes("/runs")) return ok(runsPage(runsTotal));
     if (s.includes("/system/llm/status"))
       return ok({ model_present: llmModelPresent, ollama_reachable: true });
     if (s.includes("/settings/adzuna")) return ok({ configured: adzunaConfigured });
+    if (s.includes("/settings/rss")) return ok({ feeds: rssFeeds });
+    if (s.includes("/settings/ats"))
+      return ok({ companies: atsCompanies.map((url) => ({ url, name: url })) });
     if (s.includes("/profile")) return profile === null ? notFound() : ok(profile);
     return ok({});
   });
@@ -70,16 +83,20 @@ function stubFetch({
 function renderGuide(stats: CandidateStats) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
-      <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/"]}>
-          <Routes>
-            <Route path="/" element={<NewProfileGuide candidateId="cand-1" stats={stats} />} />
-            <Route path="/offres" element={<div>PAGE OFFRES</div>} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>
-    </AuthProvider>,
+    <SpaceProvider>
+      <AuthProvider>
+        <QueryClientProvider client={qc}>
+          <TargetCandidateProvider>
+            <MemoryRouter initialEntries={["/"]}>
+              <Routes>
+                <Route path="/" element={<NewProfileGuide candidateId="cand-1" stats={stats} />} />
+                <Route path="/offres" element={<div>PAGE OFFRES</div>} />
+              </Routes>
+            </MemoryRouter>
+          </TargetCandidateProvider>
+        </QueryClientProvider>
+      </AuthProvider>
+    </SpaceProvider>,
   );
 }
 
@@ -199,5 +216,55 @@ describe("NewProfileGuide (OPP-177)", () => {
 
     await screen.findByText("Ajouter votre CV");
     expect(screen.queryByText("Ajouter vos clés Adzuna")).toBeNull();
+  });
+
+  it("espace vide (une recherche, rien de fait) : invite optionnelle à importer des données (OPP-232)", async () => {
+    stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, adzunaConfigured: false });
+
+    renderGuide(NO_STATS);
+
+    expect(await screen.findByText("Importer vos données")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Importer mes données" })).toBeInTheDocument();
+  });
+
+  it("plusieurs recherches : pas d'invite à importer, l'import effacerait les autres (OPP-232)", async () => {
+    stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, searchIds: ["cand-1", "cand-2"] });
+
+    renderGuide(NO_STATS);
+
+    expect(await screen.findByText("Ajouter votre CV")).toBeInTheDocument();
+    // Laisse la réponse de GET /searches arriver : avant, le périmètre est vide et l'invite
+    // serait de toute façon masquée (le test passerait sans rien prouver).
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/searches"), expect.anything()),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText("Importer vos données")).toBeNull();
+  });
+
+  it("une étape déjà faite : pas d'invite à importer (OPP-232)", async () => {
+    stubFetch({ profile: FILLED_PROFILE, runsTotal: 0 });
+
+    renderGuide(NO_STATS);
+
+    expect(await screen.findByRole("link", { name: "Récupérer des offres" })).toBeInTheDocument();
+    expect(screen.queryByText("Importer vos données")).toBeNull();
+  });
+
+  it.each([
+    { reglage: "clés Adzuna", options: { adzunaConfigured: true } },
+    { reglage: "flux RSS", options: { adzunaConfigured: false, rssFeeds: ["https://x/f"] } },
+    { reglage: "entreprises ciblées", options: { adzunaConfigured: false, atsCompanies: ["https://x/c"] } },
+  ])("réglage déjà saisi ($reglage) : pas d'invite à importer, l'import l'effacerait (OPP-232)", async ({ options }) => {
+    stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, ...options });
+
+    renderGuide(NO_STATS);
+
+    expect(await screen.findByText("Ajouter votre CV")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/settings/ats"), expect.anything()),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText("Importer vos données")).toBeNull();
   });
 });

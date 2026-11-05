@@ -3,21 +3,7 @@ import { useProfile, useUpdateProfileSkills, useUploadCv } from "../api/profile"
 import { useIsReviewer } from "../auth/roles";
 import { ProfileExperiences } from "./ProfileExperiences";
 import { ErrorNotice, Hint, Loading } from "./States";
-
-/** Lit un fichier en base64 (sans le préfixe `data:…`), pour l'envoyer dans le corps JSON.
- * Via `FileReader` : disponible dans tout navigateur (et sous jsdom en test). */
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("lecture du fichier impossible"));
-    reader.onload = () => {
-      const result = String(reader.result);
-      const comma = result.indexOf(","); // "data:application/pdf;base64,XXXX"
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
+import { fileToBase64 } from "../lib/fileToBase64";
 
 /** Taille max d'un CV accepté côté front (10 Mo) : le PDF voyage encodé base64 dans un corps
  * JSON (~+33 %), on borne donc avant d'encoder pour ne pas gonfler mémoire et requête. */

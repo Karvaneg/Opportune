@@ -79,6 +79,8 @@ inchangées par décision).
 | `PUT /settings/rss` | Remplace la liste des flux RSS (liste vide = tout supprimer, OPP-225) |
 | `GET /settings/ats` | Entreprises ciblées enregistrées (pages carrière Greenhouse/Lever, OPP-226) |
 | `PUT /settings/ats` | Vérifie auprès de l'ATS puis enregistre les entreprises (liste vide = tout supprimer) |
+| `POST /data/export` | Rend l'archive `.zip` de l'espace (base + réglages, clés Adzuna comprises) en base64 (`archive_base64`) avec un nom daté (`filename`) ; le front l'enregistre où l'utilisateur choisit (OPP-232) |
+| `POST /data/import` | Remplace la base et les réglages par une archive (`archive_base64`) ; 400 si l'archive est invalide ou vient d'une version plus récente, 409 pendant une collecte |
 | `POST /applications/{recommendation_id}/confirm` | Action sensible : candidature (confirmation explicite + décision `approved` + rôle `reviewer`) |
 | `POST /applications/{recommendation_id}/applied` | Suivi : « j'ai candidaté » (date optionnelle) |
 | `DELETE /applications/{recommendation_id}/applied` | Annule la candidature déclarée |
