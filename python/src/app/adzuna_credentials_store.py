@@ -7,7 +7,8 @@ en permissions restreintes au propriétaire (``0o600``).
 
 Le store est volontairement tolérant en lecture : fichier absent, illisible ou JSON corrompu →
 ``load()`` rend ``None`` (pas d'identifiants), jamais une exception — la collecte rangera alors
-l'absence dans ``source_error`` via ``resolve_adzuna_credentials``, au lieu de planter.
+l'absence dans ``source_error`` via ``resolve_adzuna_credentials``, au lieu de planter. Seules
+ces clés saisies servent à l'API (OPP-227) : plus de repli sur les variables d'environnement.
 """
 
 from __future__ import annotations
@@ -15,9 +16,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Mapping
 
-from app.adzuna_client import AdzunaAuthError, AdzunaCredentials, credentials_from_env
+from app.adzuna_client import AdzunaAuthError, AdzunaCredentials
 from app.json_file_store import load_json_object
 from app.paths import user_data_dir
 
@@ -94,17 +94,21 @@ class AdzunaCredentialsStore:
         self._path.unlink(missing_ok=True)
 
 
-def resolve_adzuna_credentials(
-    store: AdzunaCredentialsStore, env: Mapping[str, str]
-) -> AdzunaCredentials:
-    """Identifiants Adzuna à utiliser : ceux **saisis par l'utilisateur** d'abord, sinon l'env.
+# Message affiché dans le bilan de collecte quand l'espace n'a pas de clés Adzuna.
+MISSING_CREDENTIALS_MESSAGE = (
+    "Clés Adzuna non configurées : renseigne-les dans les Réglages de cet espace."
+)
 
-    Le store (clés saisies dans l'UI) prime ; à défaut on retombe sur ``ADZUNA_APP_ID`` /
-    ``ADZUNA_APP_KEY`` de l'environnement (câblage dev historique). Aucun des deux → la lève
-    d'``AdzunaAuthError`` de ``credentials_from_env`` remonte (rangée en ``source_error`` par la
-    collecte).
+
+def resolve_adzuna_credentials(store: AdzunaCredentialsStore) -> AdzunaCredentials:
+    """Identifiants Adzuna de l'espace : **uniquement** ceux saisis dans ses Réglages (OPP-227).
+
+    L'API ne se rabat plus sur ``ADZUNA_APP_ID`` / ``ADZUNA_APP_KEY`` de l'environnement : ce
+    repli faisait collecter un espace (la démo notamment) avec des clés que ses Réglages disaient
+    absentes. Les commandes en ligne de commande (``adzuna_runner``) lisent toujours l'env.
+    Aucune clé saisie → ``AdzunaAuthError`` (rangée en ``source_error`` par la collecte).
     """
     stored = store.load()
-    if stored is not None:
-        return stored
-    return credentials_from_env(env)
+    if stored is None:
+        raise AdzunaAuthError(MISSING_CREDENTIALS_MESSAGE)
+    return stored

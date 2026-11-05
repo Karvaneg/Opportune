@@ -126,9 +126,9 @@ def build_adzuna_source(
 ) -> AdzunaSource:
     """Assemble une ``AdzunaSource`` à partir d'identifiants déjà résolus (câblage prod).
 
-    Les identifiants (saisis par l'utilisateur via le store, ou lus de l'environnement en dev —
-    cf. ``resolve_adzuna_credentials``) sont **fournis par l'appelant** : ce module ne décide plus
-    d'où ils viennent. Construit le client avec son transport ``urllib`` par défaut.
+    Les identifiants sont **fournis par l'appelant** : l'API passe ceux saisis dans les Réglages
+    (cf. ``resolve_adzuna_credentials``), le runner en ligne de commande ceux de l'environnement.
+    Ce module ne décide pas d'où ils viennent. Construit le client avec son transport ``urllib`` par défaut.
     """
     client = AdzunaClient(credentials, country=country)
     return AdzunaSource(client, max_offers=max_offers, filters=filters, permanent=permanent)

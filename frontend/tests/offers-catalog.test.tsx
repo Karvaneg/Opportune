@@ -560,7 +560,7 @@ describe("OffersPage", () => {
     ).toBeDisabled();
   });
 
-  it("invite à renseigner les clés Adzuna quand elles manquent, sans bloquer (OPP-195)", async () => {
+  it("désactive la collecte Adzuna et invite à renseigner les clés quand elles manquent (OPP-227)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
@@ -580,12 +580,65 @@ describe("OffersPage", () => {
 
     expect(notice).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Réglages" })).toHaveAttribute("href", "/reglages");
-    // Un poste saisi (requis, OPP-195) : l'invite Adzuna prévient mais ne verrouille pas le
-    // bouton (un fallback `.env` reste possible) — seule l'absence de poste le désactive.
+    // Même avec un poste saisi, le bouton reste désactivé : l'API n'utilise que les clés saisies
+    // dans les Réglages (OPP-227), la collecte ne rapporterait qu'une erreur.
     await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
     expect(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
-    ).toBeEnabled();
+    ).toBeDisabled();
+  });
+
+  it("fait clignoter l'encadré Adzuna au survol du bouton désactivé, poste saisi seulement (OPP-227)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: false });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+    renderOffers();
+    const noticeText = /Les clés Adzuna ne sont pas renseignées/;
+    await screen.findByText(noticeText);
+    const trigger = screen.getByTestId("adzuna-collect-trigger");
+
+    await userEvent.hover(trigger);
+    const noticeBeforeTyping = screen.getByText(noticeText);
+    await userEvent.unhover(trigger);
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
+    await userEvent.hover(trigger);
+    const noticeAfterTyping = screen.getByText(noticeText);
+
+    expect(noticeBeforeTyping).not.toHaveClass("motion-safe:animate-attention");
+    expect(noticeAfterTyping).toHaveClass("motion-safe:animate-attention");
+  });
+
+  it("garde la collecte RSS disponible quand seules les clés Adzuna manquent (OPP-227)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+        if (s.includes("/me")) return res(200, ME);
+        if (s.includes("/profile")) return res(200, READY_PROFILE);
+        if (s.includes("/settings/adzuna")) return res(200, { configured: false });
+        if (s.includes("/settings/rss")) return res(200, { feeds: ["https://a.example/f"] });
+        if (s.includes("/collect")) return res(200, { job: null });
+        return res(200, CATALOG);
+      }),
+    );
+
+    renderOffers();
+    const rssButton = await screen.findByRole("button", { name: "Collecter mes flux RSS" });
+    await screen.findByText(/Les clés Adzuna ne sont pas renseignées/);
+
+    expect(rssButton).toBeEnabled();
   });
 
   it("désactive la collecte tant que l'assistant local se prépare (OPP-195)", async () => {

@@ -245,9 +245,9 @@ Greenhouse). Ils sont posés au premier lancement et par `POST /demo/restore`, e
 Les **clés Adzuna**, les **URLs de flux RSS** et les **pages carrière des entreprises
 ciblées** se saisissent dans la page Réglages du front (`PUT /settings/adzuna`,
 `PUT /settings/rss`, `PUT /settings/ats`). L'API les range dans des fichiers du dossier de
-données (`app.adzuna_credentials_store`, `app.rss_feeds_store`), hors dépôt. Les clés saisies
-**priment** sur `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` de l'environnement, qui restent un repli
-pour le dev. L'espace Démo a ses propres fichiers : ses réglages ne fuitent pas dans « Mon
+données (`app.adzuna_credentials_store`, `app.rss_feeds_store`), hors dépôt. L'API n'utilise
+**que** les clés Adzuna saisies dans les Réglages de l'espace (OPP-227) : `ADZUNA_APP_ID` /
+`ADZUNA_APP_KEY` de l'environnement ne servent plus qu'aux runners en ligne de commande. L'espace Démo a ses propres fichiers : ses réglages ne fuitent pas dans « Mon
 espace ».
 
 ## Binaire autonome (PyInstaller, OPP-190 / OPP-191)

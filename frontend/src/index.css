@@ -30,6 +30,26 @@
 }
 
 /*
+ * Clignotement « regarde ici » (OPP-227) : la bordure passe 3 fois à la couleur de la marque,
+ * pour attirer l'œil sur un réglage manquant. Seule la phase médiane est décrite : la bordure
+ * part de sa propre couleur et y revient (l'élément doit donc avoir une bordure). Pendant le
+ * flash, la bordure est en ligne pleine (1 px) ; au repos elle garde son style (pointillés des
+ * encadrés d'aide). `border-style` ne se fond pas : il bascule au quart et aux trois quarts de
+ * chaque aller-retour, donc la ligne est pleine pendant toute la moitié colorée. Utilisé via `motion-safe:animate-attention`, donc jamais joué si
+ * le système demande de réduire les animations.
+ */
+@theme {
+  --animate-attention: attention 0.5s ease-in-out 3;
+
+  @keyframes attention {
+    50% {
+      border-color: var(--brand);
+      border-style: solid;
+    }
+  }
+}
+
+/*
  * Tailwind v4 ne force plus `cursor: pointer` sur les boutons (changement de preflight).
  * On le rétablit globalement pour tout élément cliquable actif — les `<a>`/`<Link>` ont déjà
  * le pointeur par défaut, ce sont les `<button>` qui en manquaient.

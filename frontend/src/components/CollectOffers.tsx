@@ -13,6 +13,7 @@ import { useLlmReady } from "../api/system";
 import type { CollectOffersVariables } from "../api/offers";
 import { useIsReviewer } from "../auth/roles";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { requestSettingsAttention } from "../lib/settingsAttention";
 import type { CollectionReport } from "../api/types";
 import { AdzunaRequiredNotice } from "./AdzunaRequiredNotice";
 import { LlmRequiredNotice } from "./LlmRequiredNotice";
@@ -36,8 +37,8 @@ export function CollectOffers() {
   // (OPP-219). On la bloque tant qu'il est vierge et on oriente vers l'import CV.
   const { target } = useTargetCandidate();
   const { ready, isPending: profilePending } = useProfileReady(target);
-  // Clés Adzuna (OPP-195) : la collecte réelle échoue sans elles. On prévient plutôt que de
-  // bloquer — `configured` ne reflète que le store, pas un éventuel fallback `.env` de dev.
+  // Clés Adzuna (OPP-195) : l'API n'utilise que celles saisies dans les Réglages de l'espace
+  // (OPP-227), donc `configured` dit vrai : sans elles, la collecte Adzuna est désactivée.
   const adzuna = useAdzunaSettings();
   // Flux RSS saisis par l'utilisateur (OPP-195) : on propose une collecte « flux RSS » seulement
   // s'il en a configuré au moins un (sinon la passe ne rapporterait qu'un `source_error`).
@@ -92,12 +93,13 @@ export function CollectOffers() {
   // on ne bloque pas : l'invite « profil vierge » serait trompeuse et clignoterait au démarrage.
   const profileBlocked = target !== "" && !ready && !profilePending;
   // Une invite à la fois, dans l'ordre des prérequis : d'abord le CV, puis l'assistant local, et
-  // enfin les clés Adzuna. Le profil et le LLM désactivent le bouton ; l'absence de clés se
-  // contente d'avertir (non bloquant : `configured` ignore le fallback `.env` de dev).
+  // enfin les clés Adzuna. Le profil et le LLM désactivent toutes les collectes ; l'absence de
+  // clés ne désactive que la collecte Adzuna (RSS et entreprises ciblées n'en ont pas besoin).
   const blocked = profileBlocked || !llm.ready;
-  // N'avertir sur les clés Adzuna qu'une fois l'état résolu (évite le clignotement au chargement)
-  // et seulement si aucun prérequis plus prioritaire ne manque.
-  const adzunaMissing = !blocked && adzuna.data?.configured === false;
+  // Clés absentes : n'est vrai qu'une fois l'état résolu (évite le clignotement au chargement).
+  const adzunaUnconfigured = adzuna.data?.configured === false;
+  // L'invite n'apparaît que si aucun prérequis plus prioritaire ne manque.
+  const adzunaMissing = !blocked && adzunaUnconfigured;
 
   if (!isReviewer) return null;
 
@@ -148,15 +150,27 @@ export function CollectOffers() {
         />
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={submit}
-          // Poste requis (OPP-195) : pas de collecte Adzuna « tous métiers » déclenchée à vide.
-          disabled={running || blocked || what.trim() === ""}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
+        {/* Un bouton désactivé ne reçoit aucun événement souris : c'est ce conteneur qui capte le
+            survol (le bouton désactivé laisse passer le pointeur). Poste saisi mais clés Adzuna
+            absentes → l'encadré d'explication et l'onglet « Réglages » clignotent (OPP-227). */}
+        <span
+          className="inline-flex"
+          data-testid="adzuna-collect-trigger"
+          onMouseEnter={() => {
+            if (adzunaMissing && !running && what.trim() !== "") requestSettingsAttention();
+          }}
         >
-          {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
-        </button>
+          <button
+            type="button"
+            onClick={submit}
+            // Poste requis (OPP-195) : pas de collecte Adzuna « tous métiers » déclenchée à vide.
+            // Clés requises (OPP-227) : sans elles, la passe ne rapporterait qu'une erreur.
+            disabled={running || blocked || adzunaUnconfigured || what.trim() === ""}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:pointer-events-none disabled:opacity-50"
+          >
+            {running ? "Récupération en cours…" : "Récupérer de nouvelles offres"}
+          </button>
+        </span>
         {/* Collecte depuis les flux RSS configurés (OPP-195) : proposée seulement si l'utilisateur
             en a enregistré au moins un dans les Réglages. Même verrou que la collecte Adzuna
             (profil + LLM requis, un seul job à la fois). */}

@@ -455,7 +455,7 @@ def assemble_api(
                     collection_source = ats_source
                 elif source == "adzuna":
                     filters = {k: v for k, v in (("what", what), ("where", where)) if v}
-                    credentials = resolve_adzuna_credentials(adzuna_credentials, os.environ)
+                    credentials = resolve_adzuna_credentials(adzuna_credentials)
                     collection_source = build_adzuna_source(
                         credentials, filters=filters or None, max_offers=source_cap(max_offers)
                     )
