@@ -74,8 +74,7 @@ de lecture est publique et sans clé. Opportune en lit deux :
 Fonctionnement (règles métier complètes dans le ticket OPP-226) :
 
 - L'utilisatrice colle les pages carrière dans les Réglages (`PUT /settings/ats`, 50 maximum).
-  Chaque **nouvelle** entreprise est vérifiée auprès de son ATS (5 vérifications en parallèle au
-  plus) : URL non reconnue ou entreprise introuvable → refus de tout l'enregistrement (400) ; ATS
+  Chaque **nouvelle** entreprise est vérifiée auprès de son ATS, une par une (RG-21) : URL non reconnue ou entreprise introuvable → refus de tout l'enregistrement (400) ; ATS
   injoignable → 502 ; fichier impossible à écrire → 500.
 - La collecte (`POST /collect` avec `source: "ats"`) lit toutes les offres publiées de chaque
   entreprise. `where` ne s'applique pas. `what` (poste recherché) est **facultatif** : s'il est
@@ -98,7 +97,7 @@ Fonctionnement (règles métier complètes dans le ticket OPP-226) :
   sans laisser une source paginée lire sans fin.
 - La vérification à l'enregistrement demande à Greenhouse la liste **sans** descriptions (plus
   légère) : le nombre d'offres en France affiché se fonde alors sur le lieu de l'offre, pas sur
-  ses bureaux. À la première erreur, les vérifications restantes sont abandonnées.
+  ses bureaux. À la première erreur, les entreprises suivantes ne sont pas interrogées.
 - Une entreprise en échec pendant la passe (404, 429, réseau) est signalée dans le bilan
   (`warnings`) et la passe continue ; la collecte n'échoue que si **toutes** échouent.
 - Lecture seule, requêtes séquentielles, `User-Agent` qui identifie Opportune. Aucune

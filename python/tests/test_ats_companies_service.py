@@ -129,27 +129,6 @@ def test_no_input_clears_every_company(tmp_path, lines):
     assert store.load() == []
 
 
-class BarrierAtsClient:
-    """Client dont chaque appel attend que ``parties`` appels soient en cours en même temps."""
-
-    def __init__(self, parties: int) -> None:
-        self._barrier = threading.Barrier(parties, timeout=5)
-
-    def list_jobs(self, company: AtsCompany, *, with_content: bool = True) -> list[dict]:
-        self._barrier.wait()
-        return []
-
-
-def test_new_companies_are_verified_in_parallel(tmp_path):
-    store = AtsCompaniesStore(tmp_path / "ats.json")
-    client = BarrierAtsClient(parties=3)
-    lines = ["jobs.lever.co/a", "jobs.lever.co/b", "jobs.lever.co/c"]
-
-    checks = update_companies(lines, store=store, client=client)
-
-    assert [check.offers_in_france for check in checks] == [0, 0, 0]
-
-
 @pytest.mark.parametrize("lines", [[None], ["jobs.lever.co/swile", 42]])
 def test_non_text_entries_are_refused_and_nothing_is_cleared(tmp_path, lines):
     store = AtsCompaniesStore(tmp_path / "ats.json")
@@ -170,28 +149,45 @@ def test_verification_asks_for_the_light_listing_without_descriptions(tmp_path):
     assert client.with_content == [False]
 
 
-class HangingAfterFailureAtsClient:
-    """« ghost » échoue tout de suite ; les autres bloquent jusqu'à ce que le test les libère."""
+class ConcurrencyTrackingAtsClient(FakeAtsClient):
+    """Retient le nombre maximal d'appels en cours au même moment."""
 
-    def __init__(self) -> None:
-        self.release = threading.Event()
+    def __init__(self, jobs_by_slug: dict[str, object] | None = None) -> None:
+        super().__init__(jobs_by_slug)
+        self._lock = threading.Lock()
+        self._in_flight = 0
+        self.max_in_flight = 0
 
     def list_jobs(self, company: AtsCompany, *, with_content: bool = True) -> list[dict]:
-        if company.slug == "ghost":
-            raise AtsNotFoundError("404")
-        self.release.wait(timeout=5)
-        return []
+        with self._lock:
+            self._in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        try:
+            time.sleep(0.01)
+            return super().list_jobs(company, with_content=with_content)
+        finally:
+            with self._lock:
+                self._in_flight -= 1
 
 
-def test_first_verification_error_is_raised_without_waiting_for_the_others(tmp_path):
+def test_new_companies_are_verified_one_at_a_time_in_input_order(tmp_path):
     store = AtsCompaniesStore(tmp_path / "ats.json")
-    client = HangingAfterFailureAtsClient()
-    lines = ["jobs.lever.co/slow1", "jobs.lever.co/slow2", "jobs.lever.co/ghost"]
+    client = ConcurrencyTrackingAtsClient()
+    lines = ["jobs.lever.co/a", "jobs.lever.co/b", "jobs.lever.co/c"]
 
-    started = time.monotonic()
+    update_companies(lines, store=store, client=client)
+
+    assert client.max_in_flight == 1
+    assert client.calls == ["a", "b", "c"]
+
+
+def test_verification_stops_at_the_first_error(tmp_path):
+    store = AtsCompaniesStore(tmp_path / "ats.json")
+    client = FakeAtsClient({"ghost": AtsNotFoundError("404")})
+    lines = ["jobs.lever.co/a", "jobs.lever.co/ghost", "jobs.lever.co/c"]
+
     with pytest.raises(ValueError, match="introuvable"):
         update_companies(lines, store=store, client=client)
-    elapsed = time.monotonic() - started
-    client.release.set()
 
-    assert elapsed < 2
+    assert client.calls == ["a", "ghost"]
+    assert store.load() == []
