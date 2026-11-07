@@ -12,6 +12,11 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    // Port fixe (OPP-233) : l'API n'accepte les écritures du front de dev que depuis :5173.
+    // Si le port est pris, Vite s'arrête avec une erreur au lieu de basculer sur 5174, où
+    // toutes les écritures recevraient un 403.
+    port: 5173,
+    strictPort: true,
     proxy: {
       "/api": {
         // Surchargée par API_PROXY_TARGET (ex. réseau Docker) ; défaut = API locale.
@@ -19,6 +24,12 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  // `npm run preview` réutilise le proxy `/api` ci-dessus. Port fixe pour la même raison
+  // (OPP-233) : l'API n'accepte les écritures de la prévisualisation que depuis :4173.
+  preview: {
+    port: 4173,
+    strictPort: true,
   },
   test: {
     environment: "jsdom",

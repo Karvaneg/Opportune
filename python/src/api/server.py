@@ -9,6 +9,7 @@ Exécution : ``python -m api.server`` (base SQLite via ``OPPORTUNE_DB_PATH``).
 
 from __future__ import annotations
 
+import functools
 import json
 import sqlite3
 import sys
@@ -20,6 +21,8 @@ from typing import Mapping
 
 from api.app import HermesApi
 from api.frontend_assets import content_type_for, resolve_static_file
+from api.host_guard import allowed_hosts, is_host_allowed
+from api.origin_guard import EXTRA_ORIGINS_ENV, allowed_origins, is_write_allowed
 from app.auth import REVIEWER, LocalAuthProvider, User
 
 # Préfixe des appels de données (cf. front : ``src/api/client.ts``). En mode packagé,
@@ -59,14 +62,31 @@ def _strip_api_prefix(path: str) -> str:
 
 
 def make_handler(
-    api: HermesApi, static_dir: Path | None = None
+    api: HermesApi,
+    static_dir: Path | None = None,
+    *,
+    allow_dev_front: bool = False,
+    extra_origins: tuple[str, ...] = (),
 ) -> type[BaseHTTPRequestHandler]:
     """Construit un handler HTTP branché sur ``api`` (le dispatcher porte la logique).
 
     ``static_dir`` (OPP-191) : répertoire du front compilé à servir pour les requêtes GET
     hors ``/api``. ``None`` → aucun service statique (mode dev, où Vite sert le front) : une
     telle requête répond 404.
+
+    ``allow_dev_front`` / ``extra_origins`` (OPP-233) : origines acceptées en plus de celle de
+    l'API pour les écritures (cf. ``origin_guard``). Faux par défaut : seul ``main`` l'active,
+    hors app packagée.
     """
+
+    @functools.cache
+    def guard_sets(api_port: int) -> tuple[frozenset[str], frozenset[str]]:
+        """(origines, hôtes) autorisés pour ``api_port``. Calculés une fois : le port est fixe
+        pour la vie du serveur, mais n'est connu qu'une fois lié (``port=0`` en test)."""
+        origins = allowed_origins(
+            api_port, allow_dev_front=allow_dev_front, extra=extra_origins
+        )
+        return origins, allowed_hosts(api_port)
 
     # Cache mémoire des assets du front (OPP-194) : ``{chemin résolu: (signature, etag, octets)}``.
     # Le ``dist`` ne change pas pendant la vie du process ; sans cache, chaque GET relisait tout le
@@ -136,7 +156,21 @@ def make_handler(
             else:
                 self._write(response.status, response.body)
 
+        def _host_refused(self) -> bool:
+            """Refuse (403) une requête dont ``Host`` n'est pas un nom local (OPP-233).
+
+            Bloque le DNS rebinding, en lecture comme en écriture. Rend vrai si refusée.
+            """
+            _, hosts = guard_sets(self.server.server_address[1])
+            if is_host_allowed(self.headers.get("Host"), hosts):
+                return False
+            self.close_connection = True
+            self._write(403, {"error": "hôte non autorisé"})
+            return True
+
         def do_GET(self) -> None:  # noqa: N802 - nom imposé par http.server
+            if self._host_refused():
+                return
             # ``/api/*`` = données (dispatcher) ; tout le reste = front statique (OPP-191).
             if _is_api_path(self.path):
                 self._dispatch("GET")
@@ -161,11 +195,33 @@ def make_handler(
 
             Un verbe d'écriture hors ``/api`` ne correspond à aucune donnée (le reste relève du
             front, qui n'accepte pas d'écriture) → 404 franc, symétrique du GET qui y sert le front.
+            Une écriture dont l'en-tête ``Origin`` n'est pas celle de l'app → 403 (OPP-233).
             """
-            if _is_api_path(self.path):
-                self._dispatch(method)
-            else:
+            if self._host_refused():
+                return
+            if not _is_api_path(self.path):
                 self._write(404, {"error": "route inconnue"})
+                return
+            # OPP-233 : une écriture envoyée par la page d'un autre site est refusée **avant**
+            # lecture du corps et dispatch, donc sans aucun effet.
+            origin = self.headers.get("Origin")
+            origins, _ = guard_sets(self.server.server_address[1])
+            if not is_write_allowed(origin, origins):
+                # Message explicite : un front de dev ouvert depuis une autre adresse (IP WSL,
+                # ``--host``) tombe ici, et doit savoir comment s'autoriser.
+                print(
+                    f"Écriture refusée : origine {origin!r} non autorisée "
+                    f"(à ajouter dans {EXTRA_ORIGINS_ENV} si c'est ton front).",
+                    file=sys.stderr,
+                )
+                self.close_connection = True
+                self._write(
+                    403,
+                    {"error": f"origine non autorisée : {origin}. Si c'est le front "
+                              f"d'Opportune, ajoute cette origine à {EXTRA_ORIGINS_ENV}."},
+                )
+                return
+            self._dispatch(method)
 
         def _serve_static(self) -> None:
             """Sert un fichier du front compilé (OPP-191), avec fallback SPA sur index.html.
@@ -259,6 +315,9 @@ def create_server(
     host: str = "127.0.0.1",
     port: int = DEFAULT_API_PORT,
     static_dir: Path | None = None,
+    *,
+    allow_dev_front: bool = False,
+    extra_origins: tuple[str, ...] = (),
 ) -> HTTPServer:
     """Crée un serveur HTTP servant ``api`` (non démarré ; appeler ``serve_forever``).
 
@@ -269,8 +328,12 @@ def create_server(
     une connexion par requête, pas avant.
 
     ``static_dir`` (OPP-191) : front compilé à servir pour les requêtes hors ``/api``.
+    ``allow_dev_front`` / ``extra_origins`` (OPP-233) : cf. :func:`make_handler`.
     """
-    return HTTPServer((host, port), make_handler(api, static_dir))
+    handler = make_handler(
+        api, static_dir, allow_dev_front=allow_dev_front, extra_origins=extra_origins
+    )
+    return HTTPServer((host, port), handler)
 
 
 def assemble_api(
@@ -698,7 +761,19 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from api.frontend_assets import frontend_dist_dir
 
     static_dir = frontend_dist_dir()
-    server = create_server(router, port=resolve_api_port(os.environ), static_dir=static_dir)
+    from api.origin_guard import parse_extra_origins
+    from app.paths import is_frozen
+
+    # OPP-233 : les origines du front de dev (Vite) ne sont acceptées que hors app packagée.
+    # Critère ``is_frozen`` et pas ``static_dir`` : en dev, un ``frontend/dist`` construit
+    # n'empêche pas de travailler avec ``npm run dev``.
+    server = create_server(
+        router,
+        port=resolve_api_port(os.environ),
+        static_dir=static_dir,
+        allow_dev_front=not is_frozen(),
+        extra_origins=parse_extra_origins(os.environ),
+    )
     host, port = server.server_address
     if static_dir is not None:
         print(f"Opportune à l'écoute sur http://{host}:{port} (front + API)")

@@ -6,18 +6,13 @@ On monte un vrai serveur sur un port éphémère (loopback, sans réseau externe
 les codes rendus selon l'exception levée par un dispatcher factice.
 """
 
-import json
 import sqlite3
-import threading
-import urllib.error
-import urllib.request
-from http.server import HTTPServer
 
 from api.app import HermesApi
-from api.server import make_handler
 from app.db import connect
 from app.offer import Offer
 from app.offer_store import OfferStore
+from serve_once import serve_once
 
 
 class _RaisingApi:
@@ -31,28 +26,12 @@ class _RaisingApi:
 
 
 def _post_once(api) -> tuple[int, dict]:
-    """Sert **une** requête POST avec ``api`` et rend (status, corps JSON décodé)."""
-    server = HTTPServer(("127.0.0.1", 0), make_handler(api))
-    thread = threading.Thread(target=server.handle_request, daemon=True)
-    thread.start()
-    port = server.server_address[1]
-    request = urllib.request.Request(
-        # Les écritures passent par ``/api`` (frontière unifiée OPP-194) : c'est là que vit le
-        # filet transport de ``_dispatch`` qu'on teste ici.
-        f"http://127.0.0.1:{port}/api/x",
-        data=b"{}",
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request) as response:
-            status, raw = response.status, response.read()
-    except urllib.error.HTTPError as exc:  # 4xx/5xx sont des HTTPError côté client
-        status, raw = exc.code, exc.read()
-    finally:
-        thread.join(timeout=2)
-        server.server_close()
-    return status, json.loads(raw)
+    """Sert **une** requête POST sur ``/api/x`` avec ``api`` et rend (status, corps JSON décodé).
+
+    Les écritures passent par ``/api`` (frontière unifiée OPP-194) : c'est là que vit le filet
+    transport de ``_dispatch`` qu'on teste ici.
+    """
+    return serve_once(api)
 
 
 def test_unexpected_exception_becomes_500_json():
