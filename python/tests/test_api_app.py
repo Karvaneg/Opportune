@@ -313,8 +313,9 @@ def test_invalid_content_length_returns_400(http_address):
         # Préfixe ``/api`` : les écritures hors ``/api`` sont du ressort du front (404). Le filet
         # Content-Length testé ici vit dans ``_dispatch``, atteint via ``/api`` (OPP-194).
         b"POST /api/candidates/cand-1/recommendations HTTP/1.1\r\n"
-        b"Host: localhost\r\n"
-        b"Content-Length: abc\r\n"
+        # Port inclus : le contrôle ``Host`` (OPP-233) n'accepte que le port d'écoute.
+        + f"Host: localhost:{http_address[1]}\r\n".encode()
+        + b"Content-Length: abc\r\n"
         b"\r\n"
     )
     response = _raw_response(http_address, request)

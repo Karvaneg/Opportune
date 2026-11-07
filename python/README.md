@@ -104,6 +104,20 @@ Restent la **propriété** de la ressource (sinon **404**) et, pour les actions 
 **rôle `reviewer`** (**403**). Les 404 sont **neutres** : « inexistant » et « hors périmètre »
 sont indistinguables (anti-énumération).
 
+Contrôle de l'en-tête `Origin` (OPP-233, `api/origin_guard.py`) : une écriture (`POST`, `PUT`,
+`DELETE`) envoyée par la page d'un autre site reçoit un **403** avant tout dispatch. Sont
+acceptées l'origine de l'API (`127.0.0.1`, `localhost` ou `[::1]` sur le port d'écoute), les
+requêtes **sans** `Origin` (curl, tests, scripts) et, **hors app packagée**, le front de dev
+(`:5173` pour `npm run dev`, `:4173` pour `npm run preview`). Un front ouvert depuis une autre
+adresse (`npm run dev -- --host` ouvert par l'IP WSL, par exemple) s'autorise via
+`OPPORTUNE_EXTRA_ORIGINS` (origines séparées par des virgules, ex.
+`OPPORTUNE_EXTRA_ORIGINS=http://172.18.0.5:5173`).
+
+Contrôle de l'en-tête `Host` (OPP-233, `api/host_guard.py`, contre le DNS rebinding) : toute
+requête, lecture comprise, dont le `Host` n'est pas `127.0.0.1`, `localhost` ou `[::1]` sur le
+port d'écoute reçoit un **403**. Le proxy Vite réécrit `Host` vers sa cible (`changeOrigin`) :
+une cible `API_PROXY_TARGET` qui n'est pas un nom local sera donc refusée.
+
 ## Prérequis
 
 - **Python ≥ 3.11**. Docker reste possible en option (cf. [Environnement Docker](#environnement-docker-optionnel)),
