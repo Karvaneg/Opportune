@@ -8,6 +8,7 @@ import { AddOffer } from "../components/AddOffer";
 import { LaunchRun } from "../components/LaunchRun";
 import { NewProfileGuide } from "../components/NewProfileGuide";
 import { ProfileSummaryCard } from "../components/ProfileSummaryCard";
+import { ScoringQualityCard } from "../components/ScoringQualityCard";
 import { ErrorNotice, Loading } from "../components/States";
 
 /**
@@ -44,6 +45,11 @@ export function CockpitPage() {
           {isPending && <Loading label="Chargement de la synthèse…" />}
           {isError && <ErrorNotice error={error} />}
           {data && <StatCards stats={data} />}
+
+          {/* Qualité du score (OPP-234) : mes choix confirment-ils le score ? Sous les compteurs.
+              Contrairement à eux, elle compte toutes mes décisions, y compris celles d'offres
+              sorties du pool : ses totaux peuvent donc dépasser ceux des compteurs. */}
+          <ScoringQualityCard candidateId={target} />
 
           {/* Raccourcis d'action juste sous les compteurs : « que puis-je faire maintenant ? »
               reste visible au-dessus du flux d'activité (esprit d'OPP-165, retour dogfood). */}

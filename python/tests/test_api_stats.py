@@ -154,3 +154,51 @@ def test_stats_owned_candidate_without_profile_is_200(env):
     assert resp.status == 200
     assert resp.body["a_postuler"] == 0 and resp.body["postule"] == 0
     assert resp.body["a_etudier"] == resp.body["offres_total"]
+
+
+def _decide(api, offer_id, decision):
+    """Score puis tranche l'offre ; rend (recommendation_id, score de la décision)."""
+    rid = decision_id("cand-1", offer_id)
+    api.dispatch("POST", f"/candidates/cand-1/offers/{offer_id}/rescore", {}, None)
+    api.dispatch("POST", f"/recommendations/{rid}/decision", {"decision": decision}, None)
+    return rid, api.orchestrator.decisions.get(rid).score
+
+
+def test_scoring_quality_compares_retained_and_rejected_scores(env):
+    _, score_a = _decide(env, "a", "approve")
+    rid_b, score_b = _decide(env, "b", "approve")
+    env.dispatch("POST", f"/applications/{rid_b}/confirm", {"confirm": True}, None)
+    env.dispatch("POST", f"/applications/{rid_b}/applied", {}, None)
+    _, score_c = _decide(env, "c", "reject")
+
+    resp = env.dispatch("GET", "/candidates/cand-1/scoring-quality", None, None)
+
+    assert resp.status == 200
+    assert resp.body["retained"]["count"] == 2
+    assert resp.body["retained"]["mean"] == round((score_a + score_b) / 2, 1)
+    assert resp.body["rejected"]["count"] == 1
+    assert resp.body["rejected"]["mean"] == score_c
+    assert resp.body["verdict"] == "insuffisant"
+    assert resp.body["min_per_group"] == 10
+    assert (resp.body["high_threshold"], resp.body["medium_threshold"]) == (80, 60)
+    assert resp.body["gap"] == round((score_a + score_b) / 2 - score_c, 1)
+
+
+def test_scoring_quality_without_decisions_is_insufficient(env):
+    candidate_path = "/candidates/cand-2/scoring-quality"
+
+    resp = env.dispatch("GET", candidate_path, None, None)
+
+    assert resp.status == 200
+    assert resp.body["retained"] == {
+        "count": 0, "mean": None, "bands": {"high": 0, "medium": 0, "low": 0},
+    }
+    assert resp.body["verdict"] == "insuffisant"
+
+
+def test_scoring_quality_outside_scope_is_404(env):
+    candidate_path = "/candidates/inconnu/scoring-quality"
+
+    resp = env.dispatch("GET", candidate_path, None, None)
+
+    assert resp.status == 404

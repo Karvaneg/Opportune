@@ -241,6 +241,28 @@ export interface CandidateStats {
   entretiens_prevus: number;
 }
 
+/** Scores d'un groupe d'offres (retenues ou rejetées), cf. `GET /candidates/{id}/scoring-quality`. */
+export interface ScoreGroupSummary {
+  count: number;
+  /** Arrondie au dixième ; `null` si le groupe est vide. */
+  mean: number | null;
+  /** Nombre d'offres par tranche : ≥ seuil haut, entre les deux seuils, < seuil moyen. */
+  bands: { high: number; medium: number; low: number };
+}
+
+/** Comparaison des scores des offres retenues et rejetées (OPP-234). */
+export interface ScoringQuality {
+  retained: ScoreGroupSummary;
+  rejected: ScoreGroupSummary;
+  min_per_group: number;
+  verdict: "insuffisant" | "retenues_mieux_notees" | "retenues_pas_mieux_notees";
+  /** Moyenne retenues − moyenne rejetées, calculée sur les moyennes exactes puis arrondie au
+   * dixième ; `null` si un groupe est vide. */
+  gap: number | null;
+  high_threshold: number;
+  medium_threshold: number;
+}
+
 /**
  * Événement du flux d'activité du cockpit (`GET /candidates/{id}/activity`, OPP-165) :
  * décision tranchée, lettre, candidature déclarée ou offre ajoutée. `label` est prêt à

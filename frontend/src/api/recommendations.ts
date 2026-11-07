@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiDelete, apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
+import { scoringQualityKeys } from "./scoringQuality";
 import type {
   ActionConfirmation,
   ApplicationIntent,
@@ -48,7 +49,7 @@ export function useValidateRecommendation(recommendationId: string) {
         `/recommendations/${encodeURIComponent(recommendationId)}/decision`,
         variables,
       ),
-    invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
+    invalidateKeys: () => [recommendationKeys.detail(recommendationId), scoringQualityKeys.all],
   });
 }
 
@@ -107,7 +108,7 @@ export function useMarkApplied(recommendationId: string) {
         `/applications/${encodeURIComponent(recommendationId)}/applied`,
         variables,
       ),
-    invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
+    invalidateKeys: () => [recommendationKeys.detail(recommendationId), scoringQualityKeys.all],
   });
 }
 
@@ -122,7 +123,7 @@ export function useUnmarkApplied(recommendationId: string) {
       apiDelete<ApplicationIntent>(
         `/applications/${encodeURIComponent(recommendationId)}/applied`,
       ),
-    invalidateKeys: () => [recommendationKeys.detail(recommendationId)],
+    invalidateKeys: () => [recommendationKeys.detail(recommendationId), scoringQualityKeys.all],
   });
 }
 
