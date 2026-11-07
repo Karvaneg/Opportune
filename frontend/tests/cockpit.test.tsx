@@ -11,6 +11,12 @@ const STATS = {
   a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12, entretiens_prevus: 1,
 };
 
+const SCORING_QUALITY = {
+  retained: { count: 0, mean: null, bands: { high: 0, medium: 0, low: 0 } },
+  rejected: { count: 0, mean: null, bands: { high: 0, medium: 0, low: 0 } },
+  min_per_group: 10, verdict: "insuffisant", gap: null, high_threshold: 80, medium_threshold: 60,
+};
+
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
   location: null, languages: [], total_experience_years: null,
@@ -44,6 +50,7 @@ function stubFetch(statsBody: unknown = STATS, role = "reviewer", activityBody: 
       // et n'interfère pas avec ces scénarios (sinon il doublerait le bouton « Lancer une analyse »).
       if (s.includes("/runs")) return ok({ items: [], page: 1, page_size: 20, total: 1, total_pages: 1 });
       if (s.includes("/stats")) return ok(statsBody);
+      if (s.includes("/scoring-quality")) return ok(SCORING_QUALITY);
       if (s.includes("/offers") && init?.method === "POST") {
         calls.push({ url: s, body: JSON.parse(String(init?.body ?? "{}")) });
         return ok({ id: "o1", title: "Data Engineer", company: "Holis" });
@@ -152,6 +159,7 @@ describe("CockpitPage (OPP-164)", () => {
         if (s.includes("/activity")) return ok(ACTIVITY);
         if (s.includes("/profile")) return notFound(); // profil vierge
         if (s.includes("/runs")) return ok({ items: [], page: 1, page_size: 20, total: 0, total_pages: 0 });
+        if (s.includes("/scoring-quality")) return ok(SCORING_QUALITY);
         return ok(STATS);
       }),
     );

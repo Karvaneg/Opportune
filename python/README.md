@@ -54,6 +54,7 @@ inchangées par décision).
 | `POST /candidates/{candidate_id}/recommendations` | Lance une recommandation |
 | `GET /candidates/{candidate_id}/stats` | Agrégats de décision du périmètre (OPP-163) |
 | `GET /candidates/{candidate_id}/activity` | Flux d'activité récente — lettres, décisions, ajouts (OPP-165) |
+| `GET /candidates/{candidate_id}/scoring-quality` | Scores des offres retenues contre rejetées, conclusion à partir de 10 de chaque (OPP-234) |
 | `GET /candidates/{candidate_id}/profile` | Lecture du profil candidat |
 | `PUT /candidates/{candidate_id}/profile` | Création / mise à jour du profil |
 | `POST /candidates/{candidate_id}/profile/cv` | Import d'un CV PDF → extraction + profil (OPP-174, LLM) |

@@ -57,6 +57,7 @@ from app.recommendation_service import (
     RecommendationService,
     UnknownCandidateError,
 )
+from app.scoring_quality import DecidedOffer, ScoringQuality, build_scoring_quality
 
 from hermes.models import (
     HermesRecommendation,
@@ -281,6 +282,22 @@ class HermesOrchestrator:
         state = self.funnel_state_by_offer(candidate_id, applied_recommendation_ids)
         stages = (funnel_stage(status, applied) for status, applied in state.values())
         return build_candidate_stats(stages)
+
+    def scoring_quality(
+        self, candidate_id: str, *, applied_recommendation_ids: Collection[str] = ()
+    ) -> ScoringQuality:
+        """Compare les scores des offres retenues et rejetées du candidat (OPP-234).
+
+        Lecture seule des décisions, sans scoring ni profil (comme ``candidate_stats``). Toutes
+        les décisions comptent, y compris celles d'offres sorties du pool : la comparaison porte
+        sur les choix faits, pas sur le catalogue actuel.
+        """
+        applied = set(applied_recommendation_ids)
+        decided = (
+            DecidedOffer(score=d.score, status=d.status, applied=d.id in applied)
+            for d in self.decisions.list_for_candidate(candidate_id)
+        )
+        return build_scoring_quality(decided)
 
     def funnel_state_by_offer(
         self, candidate_id: str, applied_recommendation_ids: Collection[str] = ()

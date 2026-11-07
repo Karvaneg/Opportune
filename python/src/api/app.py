@@ -56,7 +56,7 @@ import base64
 import binascii
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Protocol
 from urllib.parse import parse_qs, unquote
@@ -181,6 +181,7 @@ _RUNS = re.compile(r"^/runs$")
 _RECOMMENDATIONS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/recommendations$")
 _STATS = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/stats$")
 _ACTIVITY = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/activity$")
+_SCORING_QUALITY = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/scoring-quality$")
 _PROFILE_CV = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/profile/cv$")
 _PROFILE = re.compile(r"^/candidates/(?P<candidate_id>[^/]+)/profile$")
 _RESCORE = re.compile(
@@ -465,6 +466,11 @@ class HermesApi:
         if match:
             self._require(method, "GET", path)
             return self._get_activity(unquote(match["candidate_id"]), user)
+
+        match = _SCORING_QUALITY.match(path)
+        if match:
+            self._require(method, "GET", path)
+            return self._get_scoring_quality(unquote(match["candidate_id"]), user)
 
         match = _PROFILE_CV.match(path)
         if match:
@@ -850,6 +856,24 @@ class HermesApi:
                 "entretiens_prevus": entretiens_prevus,
             },
         )
+
+    def _get_scoring_quality(self, candidate_id: str, user: User | None) -> Response:
+        """Scores des offres retenues contre rejetées (OPP-234), pour le cockpit.
+
+        Owner-gated comme ``/stats``. Sans service d'actions câblé, les candidatures ne sont
+        pas connues : seules les décisions ``approved`` comptent alors comme retenues.
+        """
+        self._guard_owner(user, candidate_id)
+        applied_ids = (
+            self.actions.applied_recommendation_ids(candidate_id)
+            if self.actions is not None
+            else set()
+        )
+        quality = self.orchestrator.scoring_quality(
+            candidate_id, applied_recommendation_ids=applied_ids
+        )
+
+        return Response(200, asdict(quality))
 
     def _get_activity(self, candidate_id: str, user: User | None) -> Response:
         """Flux d'activité récente du candidat pour le cockpit (OPP-165).
