@@ -359,6 +359,7 @@ def assemble_api(
     from app.action_store import ApplicationActionStore, OutboundMessageActionStore
     from app.application_tracking_service import ApplicationTrackingService
     from app.application_tracking_store import ApplicationTrackingStore
+    from app.candidate_offer_store import CandidateOfferStore
     import os
 
     from app.decision_service import DecisionService
@@ -382,11 +383,14 @@ def assemble_api(
     # Un seul dépôt d'offres partagé entre le scoring (RecommendationService) et l'intake
     # collé (POST /offers) : une offre fraîchement ajoutée est immédiatement évaluable.
     offers = OfferStore(conn)
+    # Offres propres à chaque recherche (OPP-186) : la table de liens est créée après ``offers``
+    # (et après le registre des recherches) pour que sa migration rattache l'existant.
+    memberships = CandidateOfferStore(conn)
     profiles = ProfileStore(conn)
     decision_store = DecisionStore(conn)
     decisions = DecisionService(decision_store)
     orchestrator = HermesOrchestrator(
-        RecommendationService(profiles, offers),
+        RecommendationService(profiles, offers, memberships),
         decisions,
         runs=RunStore(conn),
     )
@@ -412,15 +416,19 @@ def assemble_api(
     # (~85s) tient dans le défaut, sans l'ancien override codé en dur.
     llm_client = OllamaLLMClient(timeout=resolve_llm_timeout(os.environ))
 
-    def offer_intake(raw_text: str, *, source: str, url: str = "") -> Offer:
-        return intake_offer(raw_text, source=source, client=llm_client, store=offers, url=url)
+    def offer_intake(raw_text: str, *, source: str, candidate_id: str, url: str = "") -> Offer:
+        offer = intake_offer(raw_text, source=source, client=llm_client, store=offers, url=url)
+        memberships.link(candidate_id, offer.id)
+        return offer
 
     # Intake d'offre par URL (OPP-148) : fetch + extraction (BeautifulSoup, extra « scrape »)
     # puis la même chaîne d'intake que le texte collé — même client LLM, même dépôt d'offres.
     from app.offer_url_intake import intake_offer_from_url
 
-    def offer_url_intake(url: str, *, source: str) -> Offer:
-        return intake_offer_from_url(url, source=source, client=llm_client, store=offers)
+    def offer_url_intake(url: str, *, source: str, candidate_id: str) -> Offer:
+        offer = intake_offer_from_url(url, source=source, client=llm_client, store=offers)
+        memberships.link(candidate_id, offer.id)
+        return offer
 
     # Import de profil par CV PDF depuis le front (OPP-174) : décodage déjà fait au transport,
     # on extrait le texte (pypdf, extra « pdf ») puis on relance la MÊME chaîne d'intake que la
@@ -490,12 +498,14 @@ def assemble_api(
         max_offers: int,
         on_progress: ProgressCallback,
         should_cancel: Callable[[], bool],
+        candidate_id: str,
     ) -> CollectionReport:
         job_conn = connect(job_db_path)
         # Renseignée seulement pour la source « entreprises ciblées » (bilan enrichi après la passe).
         ats_source: AtsSource | None = None
         try:
             job_offers = OfferStore(job_conn)
+            job_memberships = CandidateOfferStore(job_conn)
             try:
                 if source == "rss":
                     # Flux saisis par l'utilisateur ; ``what``/``where`` ne s'appliquent pas ici.
@@ -555,6 +565,8 @@ def assemble_api(
                 # ``max`` compte les offres **neuves** : les doublons ne consomment pas le
                 # plafond (les sources sont plafonnées plus large, cf. ``source_cap``).
                 max_new=max_offers,
+                candidate_id=candidate_id,
+                memberships=job_memberships,
             )
             if ats_source is None:
                 return report

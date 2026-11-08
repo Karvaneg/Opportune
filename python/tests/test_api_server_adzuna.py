@@ -20,9 +20,13 @@ def test_collect_ignores_environment_keys_when_none_are_saved(tmp_path, monkeypa
     monkeypatch.setenv("ADZUNA_APP_ID", "env-id")
     monkeypatch.setenv("ADZUNA_APP_KEY", "env-key")
     conn = connect(str(tmp_path / "opportune.db"))
-    api = assemble_api(conn, build_local_auth(lambda: []), settings_dir=tmp_path / "settings")
+    api = assemble_api(
+        conn, build_local_auth(lambda: ["cand-1"]), settings_dir=tmp_path / "settings"
+    )
 
-    started = api.dispatch("POST", "/collect", {"source": "adzuna", "what": "python"})
+    started = api.dispatch(
+        "POST", "/collect", {"source": "adzuna", "what": "python", "candidate_id": "cand-1"}
+    )
     finished_job = _wait_for_job(api, started.body["job_id"])
     settings = api.dispatch("GET", "/settings/adzuna", None, None).body
 

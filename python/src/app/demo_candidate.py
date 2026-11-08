@@ -25,6 +25,7 @@ from typing import Callable
 
 from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
+from app.candidate_offer_store import CandidateOfferStore
 from app.candidate_registry import CandidateRegistry
 from app.candidate_profile import create_profile
 from app.decision import decision_from_recommendation, decision_id, validate
@@ -256,7 +257,8 @@ def seed_demo_candidate(
     )
     letters = LetterStore(conn)
     runs = RunStore(conn)
-    recommender = RecommendationService(profiles, offers)
+    memberships = CandidateOfferStore(conn)
+    recommender = RecommendationService(profiles, offers, memberships)
 
     # 0. Périmètre : le candidat démo est enrôlé dans le registre (OPP-183) — son slot existe
     #    indépendamment du profil (il survit à un « repartir de zéro », cf. ``reset_demo``).
@@ -265,9 +267,10 @@ def seed_demo_candidate(
     # 1. Profil démo (upsert : écrase toujours vers le profil canonique — 100 % synthétique).
     profiles.save(create_profile(**_demo_profile_kwargs()))
 
-    # 2. Offres (upsert sur id stable).
+    # 2. Offres (upsert sur id stable), rattachées à la recherche démo (OPP-186).
     for offer in _demo_offers():
         offers.save(offer)
+        memberships.link(DEMO_CANDIDATE_ID, offer.id)
 
     # 3. Scoring + décisions + candidature + lettre, selon le scénario.
     evaluations: list[OfferEvaluation] = []

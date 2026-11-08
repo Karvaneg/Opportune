@@ -16,6 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
+from app.candidate_offer_store import remap_offer_id
 from app.offer import Offer, compute_offer_id
 from app.offer_kind import DEFAULT_KIND, FORMATION, classify_kind
 
@@ -40,6 +41,10 @@ _COLUMNS = (
 # (clé de conflit) et ``created_at``, la date de **première** ingestion — recoller ou
 # re-scorer une offre ne la fait donc pas remonter en tête (OPP-152).
 _PRESERVED_ON_UPSERT = ("id", "created_at")
+
+# Taille des tranches de ``get_many`` : sous la limite de paramètres des anciennes versions de
+# SQLite (999).
+_GET_MANY_CHUNK = 500
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS offers (
@@ -142,6 +147,8 @@ class OfferStore:
                 # La ligne déjà présente sous le nouvel id est au moins aussi ancienne :
                 # on écarte le doublon courant.
                 self.conn.execute("DELETE FROM offers WHERE id = ?", (row["id"],))
+            # Les liens offre ↔ recherche (OPP-186) suivent l'offre sous son nouvel id.
+            remap_offer_id(self.conn, row["id"], new_id)
 
     def _migrate_kind(self) -> None:
         """Ajoute ``kind`` aux bases antérieures à OPP-166 et re-type les offres existantes.
@@ -222,6 +229,22 @@ class OfferStore:
             "SELECT * FROM offers WHERE id = ?", (offer_id,)
         ).fetchone()
         return None if row is None else self._row_to_offer(row)
+
+    def get_many(self, offer_ids: list[str]) -> list[Offer]:
+        """Offres d'ids donnés, **dans l'ordre fourni** (ids introuvables ignorés).
+
+        Une requête par tranche de ``_GET_MANY_CHUNK`` ids, au lieu d'une par offre : le
+        catalogue et le scoring d'une recherche (OPP-186) relisent ainsi ses offres d'un coup.
+        """
+        by_id: dict[str, Offer] = {}
+        for start in range(0, len(offer_ids), _GET_MANY_CHUNK):
+            chunk = offer_ids[start : start + _GET_MANY_CHUNK]
+            placeholders = ", ".join("?" for _ in chunk)
+            rows = self.conn.execute(
+                f"SELECT * FROM offers WHERE id IN ({placeholders})", chunk
+            ).fetchall()
+            by_id.update((row["id"], self._row_to_offer(row)) for row in rows)
+        return [by_id[offer_id] for offer_id in offer_ids if offer_id in by_id]
 
     def list_all(self) -> list[Offer]:
         """Retourne toutes les offres, **plus récentes d'abord** (OPP-152).

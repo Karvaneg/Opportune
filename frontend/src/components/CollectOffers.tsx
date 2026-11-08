@@ -66,6 +66,7 @@ export function CollectOffers() {
   const invalidatedFor = useRef<string | null>(null);
 
   const status = job.data?.status;
+  const jobForTarget = job.data?.candidate_id === target;
   // Un job lancé mais pas encore terminé compte comme « en cours », même avant le premier
   // sondage (où `status` est encore `undefined`) : sinon le bouton se réactiverait dans cette
   // fenêtre et un second clic déclencherait un `POST /collect` → 409 (unicité) affiché à côté
@@ -92,14 +93,16 @@ export function CollectOffers() {
   // Une invite à la fois, dans l'ordre des prérequis : d'abord le CV, puis l'assistant local, et
   // enfin les clés Adzuna. Le profil et le LLM désactivent toutes les collectes ; l'absence de
   // clés ne désactive que la collecte Adzuna (RSS et entreprises ciblées n'en ont pas besoin).
-  const blocked = profileBlocked || !llm.ready;
+  // Sans recherche active, les offres n'auraient aucune recherche où être rangées (OPP-186).
+  const blocked = profileBlocked || !llm.ready || target === "";
   // Clés absentes : n'est vrai qu'une fois l'état résolu (évite le clignotement au chargement).
   const adzunaUnconfigured = adzuna.data?.configured === false;
   // L'invite n'apparaît que si aucun prérequis plus prioritaire ne manque.
   const adzunaMissing = !blocked && adzunaUnconfigured;
 
-  const launch = (variables: CollectOffersVariables) =>
-    start.mutate(variables, {
+  // Les offres collectées sont rattachées à la recherche active (OPP-186).
+  const launch = (variables: Omit<CollectOffersVariables, "candidate_id">) =>
+    start.mutate({ ...variables, candidate_id: target }, {
       onSuccess: (data) => {
         setJobId(data.job_id);
         // Allume l'indicateur global sans attendre le prochain sondage (OPP-208).
@@ -123,7 +126,7 @@ export function CollectOffers() {
         Récupérer de nouvelles offres
       </h3>
       <p className="text-sm text-ink-muted">
-        Interroge Adzuna et ajoute les offres neuves au catalogue. Indique le poste que tu
+        Interroge Adzuna et ajoute les offres neuves à cette recherche. Indique le poste que tu
         recherches ; précise un lieu pour cibler, ou laisse vide pour toute la France.
       </p>
       <div className="flex flex-wrap items-center gap-2">
@@ -193,9 +196,13 @@ export function CollectOffers() {
         )}
         {/* La progression d'une passe en cours est affichée par le bandeau global persistant
             (`CollectionBanner`, OPP-208) — on ne la duplique plus ici (OPP-215). Le bilan final
-            et l'échec restent affichés à côté du bouton : le bandeau, lui, disparaît à la fin. */}
-        {status === "done" && job.data?.report && <CollectSummary report={job.data.report} />}
-        {status === "failed" && (
+            et l'échec restent affichés à côté du bouton : le bandeau, lui, disparaît à la fin.
+            Seulement sous la recherche qui a reçu les offres (OPP-186) : si l'on a changé de
+            recherche entre-temps, le bilan ne la concerne pas. */}
+        {status === "done" && job.data?.report && jobForTarget && (
+          <CollectSummary report={job.data.report} />
+        )}
+        {status === "failed" && jobForTarget && (
           <span className="text-sm text-danger">
             Collecte échouée : {job.data?.error ?? "erreur inconnue"}
           </span>

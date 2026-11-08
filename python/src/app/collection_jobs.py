@@ -56,8 +56,8 @@ class CollectionAlreadyRunning(Exception):
 class CollectionRunner(Protocol):
     """Travail bloquant d'une passe de collecte, injecté dans le registre.
 
-    Reçoit les critères de recherche et un callback de progression ; retourne un
-    ``CollectionReport``. Doit ouvrir sa **propre** connexion SQLite (il tourne dans le
+    Reçoit les critères de recherche, la recherche cible (``candidate_id``, OPP-186 : les offres
+    lui sont rattachées) et un callback de progression ; retourne un ``CollectionReport``. Doit ouvrir sa **propre** connexion SQLite (il tourne dans le
     thread du job, pas celui de l'API). Une panne de source est rendue dans le bilan
     (``source_error``), pas levée.
     """
@@ -71,6 +71,7 @@ class CollectionRunner(Protocol):
         max_offers: int,
         on_progress: ProgressCallback,
         should_cancel: Callable[[], bool],
+        candidate_id: str,
     ) -> CollectionReport: ...
 
 
@@ -82,6 +83,9 @@ class CollectionJob:
     status: str
     progress: CollectionProgress
     report: CollectionReport | None = None
+    # Recherche à laquelle la passe rattache ses offres (OPP-186) : le front n'affiche le bilan
+    # que sous cette recherche.
+    candidate_id: str = ""
     error: str | None = None
     # Arrêt coopératif demandé (OPP-209) : vrai dès qu'un ``cancel`` a été accepté, tant que le
     # runner n'a pas atteint son prochain point de contrôle — de quoi afficher « arrêt en cours ».
@@ -109,7 +113,13 @@ class CollectionJobRegistry:
         self._cancel_events: dict[str, threading.Event] = {}
 
     def start(
-        self, *, what: str, where: str, max_offers: int, source: str = "adzuna"
+        self,
+        *,
+        what: str,
+        where: str,
+        max_offers: int,
+        candidate_id: str,
+        source: str = "adzuna",
     ) -> str:
         """Enregistre un job ``running`` et lance la passe en fond ; rend son ``job_id``.
 
@@ -125,7 +135,7 @@ class CollectionJobRegistry:
                 )
             job_id = uuid4().hex
             self._jobs[job_id] = CollectionJob(
-                id=job_id, status=RUNNING, progress=_EMPTY_PROGRESS
+                id=job_id, status=RUNNING, progress=_EMPTY_PROGRESS, candidate_id=candidate_id
             )
             self._active = job_id
             cancel_event = threading.Event()
@@ -137,6 +147,7 @@ class CollectionJobRegistry:
             "what": what,
             "where": where,
             "max_offers": max_offers,
+            "candidate_id": candidate_id,
         }
         self._spawn(lambda: self._run(job_id, params, cancel_event))
         return job_id

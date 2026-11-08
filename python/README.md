@@ -65,10 +65,10 @@ inchangées par décision).
 | `POST /recommendations/{recommendation_id}/letter` | Génère la lettre (LLM) |
 | `PUT /recommendations/{recommendation_id}/letter` | Édite la lettre |
 | `DELETE /recommendations/{recommendation_id}/letter` | Supprime la lettre |
-| `GET /offers` | Catalogue du pool d'offres, annoté du score de match |
-| `POST /offers` | Intake d'une offre par texte collé (OPP-145) ou URL (OPP-148) |
+| `GET /offers` | Catalogue des offres ; avec `?candidate_id`, seulement celles de cette recherche, annotées du score de match (OPP-186) |
+| `POST /offers` | Intake d'une offre par texte collé (OPP-145) ou URL (OPP-148), rattachée à la recherche `candidate_id` (requis, OPP-186) |
 | `GET /collect` | État du job de collecte actif, s'il y en a un (OPP-208) |
-| `POST /collect` | Lance une collecte asynchrone, source `adzuna` (`what` requis), `rss` ou `ats` (job de fond, OPP-170) |
+| `POST /collect` | Lance une collecte asynchrone pour la recherche `candidate_id` (requis, OPP-186), source `adzuna` (`what` requis), `rss` ou `ats` (job de fond, OPP-170) |
 | `GET /collect/{job_id}` | Sonde la progression d'un job de collecte |
 | `POST /collect/{job_id}/cancel` | Annule un job de collecte en cours |
 | `GET /system/llm/status` | État du LLM local : Ollama joignable, modèle présent (OPP-193) |
@@ -181,7 +181,8 @@ Port surchargeable par `OPPORTUNE_API_PORT` (défaut `8000`). Le frontend React 
 
 `POST /offers` accepte **soit** `text` (le texte de l'offre, OPP-145), **soit** `url` (le
 back récupère la page et en extrait le texte, OPP-148 — le texte prime si les deux sont
-fournis). La collecte par URL extrait le texte via **BeautifulSoup**, confiné dans l'extra
+fournis). `candidate_id` (requis) désigne la recherche où ranger l'offre : chaque recherche a
+ses propres offres (OPP-186, table de liens `candidate_offers`). La collecte par URL extrait le texte via **BeautifulSoup**, confiné dans l'extra
 `scrape` (le cœur reste sans dépendance) :
 
 ```bash

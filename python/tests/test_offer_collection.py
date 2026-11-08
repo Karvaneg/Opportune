@@ -7,6 +7,8 @@ un doublon) et la résilience par offre.
 
 import json
 
+import pytest
+
 from app.llm_client import LLMError, MockLLMClient
 from app.offer import Offer, compute_offer_id
 from app.offer_collection import SOURCE_CAP_FACTOR, collect_offers, source_cap
@@ -351,3 +353,98 @@ def test_source_cap_leaves_room_for_duplicates():
     cap = source_cap(max_new)
 
     assert cap == max_new * SOURCE_CAP_FACTOR
+
+
+# --- Recherche cible (OPP-186) ------------------------------------------------------------
+
+
+class FakeLinks:
+    """Faux dépôt des liens offre ↔ recherche (contrat ``CandidateOfferRepository``)."""
+
+    def __init__(self, links=()):
+        self.links: set[tuple[str, str]] = set(links)
+
+    def link(self, candidate_id, offer_id):
+        self.links.add((candidate_id, offer_id))
+
+    def is_linked(self, candidate_id, offer_id):
+        return (candidate_id, offer_id) in self.links
+
+
+def _raw(name):
+    return RawOffer(source="indeed", raw_text=f"offre {name}", url=f"https://x.com/{name}")
+
+
+def _id(raw):
+    return compute_offer_id(raw.source, raw.url, raw.raw_text)
+
+
+def test_new_offer_is_linked_to_the_target_search():
+    raw = _raw("a")
+    links = FakeLinks()
+
+    report = collect_offers(
+        ListSource([raw]),
+        client=MockLLMClient([_response("A")]),
+        store=FakeOfferStore(),
+        candidate_id="cand-a",
+        memberships=links,
+    )
+
+    assert report.stored == 1
+    assert links.links == {("cand-a", _id(raw))}
+
+
+def test_offer_known_from_another_search_is_linked_as_new_without_llm():
+    raw = _raw("a")
+    store = FakeOfferStore()
+    collect_offers(ListSource([raw]), client=MockLLMClient([_response("A")]), store=store)
+    links = FakeLinks({("cand-a", _id(raw))})
+    client = MockLLMClient([])
+
+    report = collect_offers(
+        ListSource([raw]), client=client, store=store, candidate_id="cand-b", memberships=links
+    )
+
+    assert (report.stored, report.duplicates) == (1, 0)
+    assert ("cand-b", _id(raw)) in links.links
+    assert client.calls == []
+
+
+def test_offer_already_in_the_target_search_is_a_duplicate():
+    raw = _raw("a")
+    store = FakeOfferStore()
+    collect_offers(ListSource([raw]), client=MockLLMClient([_response("A")]), store=store)
+    links = FakeLinks({("cand-a", _id(raw))})
+
+    report = collect_offers(
+        ListSource([raw]),
+        client=MockLLMClient([]),
+        store=store,
+        candidate_id="cand-a",
+        memberships=links,
+    )
+
+    assert (report.stored, report.duplicates) == (0, 1)
+
+
+def test_failed_intake_links_nothing():
+    links = FakeLinks()
+
+    report = collect_offers(
+        ListSource([_raw("a")]),
+        client=MockLLMClient(["pas du json"]),
+        store=FakeOfferStore(),
+        candidate_id="cand-a",
+        memberships=links,
+    )
+
+    assert len(report.failures) == 1
+    assert links.links == set()
+
+
+def test_candidate_id_without_memberships_is_refused():
+    with pytest.raises(ValueError):
+        collect_offers(
+            ListSource([]), client=MockLLMClient([]), store=FakeOfferStore(), candidate_id="c"
+        )

@@ -18,9 +18,10 @@ export const offerKeys = {
 };
 
 /**
- * Catalogue paginé des offres : `GET /offers` (OPP-146). `candidateId` (optionnel) annote
- * chaque offre de son score de match pour ce candidat ; vide = catalogue brut (scores
- * `null`). `stage` (optionnel, OPP-164) filtre **côté serveur** par étape d'entonnoir, sur
+ * Catalogue paginé des offres d'une recherche : `GET /offers?candidate_id=` (OPP-146, OPP-186).
+ * Seules les offres de la recherche `candidateId` sont listées, annotées de leur score de match.
+ * Sans recherche (`""` : périmètre vide ou pas encore chargé), la requête n'est **pas** envoyée :
+ * sans `candidate_id`, le back rendrait les offres de toutes les recherches. `stage` (optionnel, OPP-164) filtre **côté serveur** par étape d'entonnoir, sur
  * tout le pool avant pagination — le `total` et les cartes du cockpit concordent alors même
  * au-delà d'une page. Plus récentes d'abord (tri serveur, OPP-152).
  */
@@ -31,6 +32,7 @@ export function useOffers(page: number, candidateId: string, stage = "") {
   return useQuery({
     queryKey: offerKeys.catalog(page, candidateId, stage),
     queryFn: () => apiFetch<OffersCatalogPage>(`/offers?${params}`),
+    enabled: candidateId !== "",
     placeholderData: keepPreviousData, // évite le clignotement entre pages/candidats/étapes
   });
 }
@@ -42,12 +44,15 @@ export interface AddOfferVariables {
   url?: string;
   /** Provenance (défaut « collée » pour le texte, le domaine pour une URL). */
   source?: string;
+  /** Recherche à laquelle l'offre est rattachée (OPP-186) : requise par le back. */
+  candidate_id: string;
 }
 
 /**
  * Ajoute une offre, par texte collé (OPP-145) ou par URL (OPP-148) : `POST /offers`. Le back
  * analyse via LLM puis persiste (id dérivé du texte → pas de doublon). Latence LLM (+ fetch
- * pour une URL) → l'appelant gère l'attente. Erreurs remontées telles quelles : 400 (saisie
+ * pour une URL) → l'appelant gère l'attente. L'offre est rattachée à la recherche `candidate_id`
+ * (OPP-186) : elle n'apparaît que dans le catalogue de cette recherche. Erreurs remontées telles quelles : 400 (saisie
  * ou URL refusée/SSRF), 502 (analyse/LLM, ou récupération de l'URL impossible). Au succès,
  * invalide le catalogue (préfixe `["offers"]`, toutes pages/candidats) pour que la nouvelle
  * offre y apparaisse sans rechargement (OPP-161).
@@ -60,6 +65,8 @@ export function useAddOffer() {
 }
 
 export interface CollectOffersVariables {
+  /** Recherche à laquelle les offres collectées sont rattachées (OPP-186) : requise par le back. */
+  candidate_id: string;
   /** Connecteur : `adzuna` (défaut côté back), `rss` ou `ats` (entreprises ciblées, OPP-226). */
   source?: "adzuna" | "rss" | "ats";
   /** Poste recherché : requis pour Adzuna (400 sinon), filtre facultatif des intitulés pour

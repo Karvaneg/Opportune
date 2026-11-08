@@ -165,3 +165,34 @@ def test_failed_settings_write_puts_back_the_previous_data(tmp_path, monkeypatch
     assert not files[0].exists()
     assert files[1].read_bytes() == b"anciens flux"
     assert files[2].read_bytes() == b"anciennes entreprises"
+
+
+def test_import_of_an_export_older_than_offers_per_search_links_its_offers(tmp_path):
+    # Export d'avant OPP-186 : offres et recherches, sans table de liens. Après import, chaque
+    # offre importée doit appartenir aux recherches importées, sinon le catalogue serait vide.
+    from app.candidate_offer_store import CandidateOfferStore
+    from app.candidate_registry import CandidateRegistry
+    from app.offer import Offer
+
+    source = connect(str(tmp_path / "old.db"))
+    OfferStore(source).save(
+        Offer(
+            id="o1", title="Dev", company="Acme", location="Paris", skills=["Python"],
+            seniority="Senior", contract_type="CDI", summary="s", attention_points=[],
+            source="indeed", url="http://o1", raw_text="t",
+        )
+    )
+    CandidateRegistry(source).add("cand-marie")
+    content = build_archive(
+        source, _settings(tmp_path, "old-settings"), app_version="1.0.0",
+        exported_at="2026-11-05T10:00:00",
+    )
+    source.close()
+    target = connect(str(tmp_path / "target.db"))
+    ensure_schema(target)
+
+    _restore(content, target, _settings(tmp_path, "target-settings"))
+
+    imported_ids = [offer.id for offer in OfferStore(target).list_all()]
+    assert len(imported_ids) == 1
+    assert CandidateOfferStore(target).offer_ids("cand-marie") == imported_ids

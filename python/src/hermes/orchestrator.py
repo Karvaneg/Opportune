@@ -305,7 +305,7 @@ class HermesOrchestrator:
     def funnel_state_by_offer(
         self, candidate_id: str, applied_recommendation_ids: Collection[str] = ()
     ) -> dict[str, tuple[str | None, bool]]:
-        """``(statut de décision, candidaté ?)`` par offre du pool — **source unique** de l'entonnoir.
+        """``(statut de décision, candidaté ?)`` par offre de la recherche — **source unique** de l'entonnoir.
 
         Alimente à la fois les compteurs (``candidate_stats``) et l'annotation/le filtre par
         étape du catalogue (OPP-164), pour que cartes du cockpit et liste concordent toujours.
@@ -321,7 +321,7 @@ class HermesOrchestrator:
         applied_offer_ids = {d.offer_id for d in decisions if d.id in applied}
         return {
             offer_id: (status_by_offer.get(offer_id), offer_id in applied_offer_ids)
-            for offer_id in self.recommendations.offer_ids()
+            for offer_id in self.recommendations.offer_ids(candidate_id)
         }
 
     def candidate_activity(
@@ -339,7 +339,7 @@ class HermesOrchestrator:
         Agrège un journal **transversal** horodaté : décisions tranchées (chaque validation
         humaine de l'historique), lettres de motivation et candidatures déclarées (via les
         résolveurs ``letters_at`` / ``applied_at`` — l'orchestrateur ignore ces services, câblés
-        par la couche API), et offres ajoutées au catalogue (pool partagé).
+        par la couche API), et offres ajoutées à la recherche (OPP-186).
 
         Les offres du pool sont **plafonnées** à ``offer_limit`` (les plus récentes) *avant* la
         fusion : sinon un catalogue fraîchement alimenté (collecte réelle) noierait les événements
@@ -353,7 +353,8 @@ class HermesOrchestrator:
         le pool et les candidatures. Un candidat du périmètre encore sans profil obtient un flux
         (souvent vide) plutôt qu'une erreur — le cockpit n'affiche pas de bandeau rouge.
         """
-        offers = self.recommendations.offers.list_all()
+        # Seules les offres de la recherche (OPP-186) alimentent les événements « offre ajoutée ».
+        offers = self.recommendations.offers_for(candidate_id)
         title_of = {offer.id: offer.title for offer in offers}
 
         decisions = self.decisions.list_for_candidate(candidate_id)
