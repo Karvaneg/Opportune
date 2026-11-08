@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiDelete, apiFetch, apiPost } from "./client";
 import { useApiMutation } from "./mutations";
+import { activityKeys } from "./activity";
 import { offerKeys } from "./offers";
 import { statsKeys } from "./stats";
 import { scoringQualityKeys } from "./scoringQuality";
@@ -17,6 +18,25 @@ import type {
 export const recommendationKeys = {
   detail: (id: string) => ["recommendation", id] as const,
 };
+
+/**
+ * Vues qui dépendent de l'état d'une offre pour la recherche (décision, candidature, suivi) :
+ * compteurs et activité de l'Accueil, qualité du score, listes d'offres filtrées par étape, et
+ * listes de runs qui affichent et filtrent le statut de décision. Toute mutation qui change cet
+ * état les invalide **toutes**, avec le détail de la recommandation : une liste unique évite
+ * qu'une vue soit oubliée et réaffichée périmée au retour (OPP-244, `staleTime` de 30 s).
+ */
+function offerStateKeys(recommendationId: string) {
+  return [
+    recommendationKeys.detail(recommendationId),
+    statsKeys.all,
+    activityKeys.all,
+    scoringQualityKeys.all,
+    offerKeys.all,
+    ["run"],
+    ["runs"],
+  ];
+}
 
 /** Verbes de validation humaine acceptés par `POST /recommendations/{id}/decision`. */
 export type DecisionVerb = "approve" | "reject" | "defer";
@@ -41,8 +61,9 @@ export function useRecommendation(recommendationId: string) {
 /**
  * Validation humaine d'une recommandation : `POST /recommendations/{id}/decision` (OPP-108).
  * Bâtie sur le socle des mutations (OPP-105) : jeton injecté, puis invalidation du détail
- * → `status` et historique se rafraîchissent en direct, sans rechargement. Les erreurs
- * (400/403/404) remontent telles quelles (`ApiHttpError`) pour affichage par l'appelant.
+ * → `status` et historique se rafraîchissent en direct, sans rechargement. La décision change
+ * l'étape de l'offre : toutes les vues qui en dépendent sont invalidées (`offerStateKeys`). Les
+ * erreurs (400/403/404) remontent telles quelles (`ApiHttpError`) pour affichage par l'appelant.
  */
 export function useValidateRecommendation(recommendationId: string) {
   return useApiMutation<RecommendationDetail, ValidateVariables>({
@@ -51,7 +72,7 @@ export function useValidateRecommendation(recommendationId: string) {
         `/recommendations/${encodeURIComponent(recommendationId)}/decision`,
         variables,
       ),
-    invalidateKeys: () => [recommendationKeys.detail(recommendationId), scoringQualityKeys.all],
+    invalidateKeys: () => offerStateKeys(recommendationId),
   });
 }
 
@@ -110,7 +131,7 @@ export function useMarkApplied(recommendationId: string) {
         `/applications/${encodeURIComponent(recommendationId)}/applied`,
         variables,
       ),
-    invalidateKeys: () => [recommendationKeys.detail(recommendationId), scoringQualityKeys.all, statsKeys.all, offerKeys.all],
+    invalidateKeys: () => offerStateKeys(recommendationId),
   });
 }
 
@@ -125,7 +146,7 @@ export function useUnmarkApplied(recommendationId: string) {
       apiDelete<ApplicationIntent>(
         `/applications/${encodeURIComponent(recommendationId)}/applied`,
       ),
-    invalidateKeys: () => [recommendationKeys.detail(recommendationId), scoringQualityKeys.all, statsKeys.all, offerKeys.all],
+    invalidateKeys: () => offerStateKeys(recommendationId),
   });
 }
 
@@ -149,6 +170,6 @@ export function useAddTrackingEvent(recommendationId: string) {
         `/applications/${encodeURIComponent(recommendationId)}/tracking`,
         variables,
       ),
-    invalidateKeys: () => [recommendationKeys.detail(recommendationId), statsKeys.all, offerKeys.all],
+    invalidateKeys: () => offerStateKeys(recommendationId),
   });
 }

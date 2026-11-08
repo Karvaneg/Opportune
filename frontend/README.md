@@ -63,6 +63,21 @@ npm run build      # typecheck + build de production (dist/, embarqué dans le b
 En production, il n'y a plus de serveur Vite : le binaire API sert lui-même `dist/` sur le
 même origin que l'API (OPP-191).
 
+### Tests de bout en bout (Playwright, OPP-244)
+
+```bash
+npx playwright install chromium   # une seule fois
+npm run test:e2e                  # compile le front (vite build) puis lance les scénarios
+npm run test:e2e -- --ui          # interface : lancer un scénario, revoir chaque étape
+E2E_SLOWMO=500 npm run test:e2e -- --headed   # navigateur visible, 500 ms entre les actions
+```
+
+Les scénarios (`e2e/`) tournent dans Chromium sur le front compilé, servi par la vraie API
+Python sur le port 8765 (`e2e/start-api.mjs`). Les bases et réglages vont dans un dossier
+temporaire, effacé à la fin : tes vraies données ne sont jamais touchées. Ils couvrent
+uniquement l'espace **Démo**, restauré avant chaque scénario, donc ni LLM ni réseau. L'API
+est lancée avec le venv `../python/.venv` (ou l'interpréteur de `OPPORTUNE_E2E_PYTHON`).
+
 ## Docker (optionnel)
 
 Image toujours fonctionnelle, mais plus utilisée par défaut (`npm` en local suffit).
