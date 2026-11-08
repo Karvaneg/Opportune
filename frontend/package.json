@@ -10,7 +10,8 @@
     "lint": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:e2e": "vite build && playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -23,6 +24,7 @@
     "react-router-dom": "^7.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.0.0",
     "@testing-library/jest-dom": "^6.6.3",

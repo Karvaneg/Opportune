@@ -36,5 +36,7 @@ export default defineConfig({
     globals: true,
     setupFiles: "./tests/setup.ts",
     css: false,
+    // Les scénarios Playwright (`e2e/`, OPP-244) tournent à part, dans un vrai navigateur.
+    include: ["tests/**/*.test.{ts,tsx}"],
   },
 });

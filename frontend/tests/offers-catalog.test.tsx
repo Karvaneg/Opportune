@@ -273,9 +273,7 @@ describe("OffersPage", () => {
 
     renderOffers(path);
 
-    // Deux allers-retours (page demandée puis page ramenée) : délai élargi pour une machine
-    // chargée, où le délai par défaut d'1 s a été dépassé (1,4 s observé).
-    expect(await screen.findByText(pagerLabel, undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(await screen.findByText(pagerLabel)).toBeInTheDocument();
   });
 
   // --- Actions « Nouvelle analyse » et « Ajouter une offre » (déplacées de l'Accueil, OPP-238) ---
