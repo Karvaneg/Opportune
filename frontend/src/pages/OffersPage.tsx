@@ -1,12 +1,16 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEvaluateOffer, useOffers } from "../api/offers";
+import { useProfileReady } from "../api/profile";
 import { CATALOG_STAGE_LABELS, isCatalogStage } from "../api/funnel";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { useIsReviewer } from "../auth/roles";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
+import { AddOffer } from "../components/AddOffer";
 import { CollectOffers } from "../components/CollectOffers";
+import { LaunchRun } from "../components/LaunchRun";
 import { Pager } from "../components/Pager";
+import { ProfileRequiredNotice } from "../components/ProfileRequiredNotice";
 import { ErrorNotice, Loading } from "../components/States";
 import { openExternal } from "../lib/openExternal";
 
@@ -21,10 +25,28 @@ export function OffersPage() {
   // Recherche active pour le score : sélection **partagée** avec le reste de l'app (sélecteur
   // global, OPP-184) — elle suit la navigation, p. ex. depuis une carte-compteur du cockpit.
   const { target } = useTargetCandidate();
-  // La curation du pool (collecte Adzuna ci-dessous, ajout depuis l'accueil) est réservée au
+  const { hash, key: locationKey } = useLocation();
+  // Arrivée sur un ancrage (`/offres#nouvelle-analyse`, bouton du guide de démarrage) : on fait
+  // défiler jusqu'au bloc, une seule fois par navigation (`key` de la location). Le bloc
+  // n'apparaît qu'une fois la recherche active connue, d'où `target` dans les dépendances ; un
+  // changement de recherche ensuite ne refait pas défiler (l'ancrage reste dans l'adresse).
+  // Garde optionnel : `scrollIntoView` n'existe pas sous jsdom.
+  const scrolledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hash || scrolledFor.current === locationKey) return;
+    const block = document.getElementById(hash.slice(1));
+    if (!block) return;
+    scrolledFor.current = locationKey;
+    block.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }, [hash, locationKey, target]);
+  // La curation du pool (collecte Adzuna et ajout d'une offre ci-dessous) est réservée au
   // rôle reviewer : le message de catalogue vide n'oriente vers ces actions que si elles sont
   // réellement disponibles (sinon « ci-dessus » pointerait vers un bloc masqué).
   const isReviewer = useIsReviewer();
+  // Profil vierge (résolu) : la collecte et l'analyse sont grisées. Une seule invite au CV, en
+  // tête de page, plutôt qu'une sous chacun des deux boutons (OPP-238).
+  const profile = useProfileReady(target);
+  const profileBlocked = target !== "" && !profile.ready && !profile.isPending;
   // Numéro de page porté par l'URL (`?page=`, OPP-239) : il survit à l'aller-retour vers une
   // fiche d'offre. Absent ou invalide → page 1 ; la page 1 n'est jamais écrite dans l'URL.
   const page = parsePage(searchParams.get("page"));
@@ -82,7 +104,36 @@ export function OffersPage() {
     <section className="space-y-6">
       <h2 className="text-xl font-semibold text-ink">Offres</h2>
 
+      {profileBlocked && (
+        <ProfileRequiredNotice action="la collecte et l'analyse des offres" />
+      )}
+
       <CollectOffers />
+
+      {/* Actions sur le catalogue (OPP-238, auparavant sur l'Accueil) : analyser les offres
+          pour la recherche active, ou en ajouter une à la main. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {target !== "" && (
+          <div
+            id="nouvelle-analyse"
+            className="flex flex-col gap-2 rounded-lg border border-border bg-surface-raised p-4"
+          >
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
+              Nouvelle analyse
+            </h3>
+            <p className="text-sm text-ink-muted">
+              Opportune passe en revue les offres de ton catalogue, les score pour ton profil
+              et met en avant les plus pertinentes à étudier.
+            </p>
+            {/* Bouton ancré en bas : la carte s'aligne en hauteur sur « Ajouter une offre »,
+                l'action reste au même niveau que son bouton voisin plutôt que de flotter. */}
+            <div className="mt-auto pt-1">
+              <LaunchRun showProfileNotice={false} />
+            </div>
+          </div>
+        )}
+        <AddOffer />
+      </div>
 
       {stageFilter && (
         <div className="flex items-center gap-2 text-sm">
@@ -105,7 +156,7 @@ export function OffersPage() {
             {stageFilter
               ? `Aucune offre « ${CATALOG_STAGE_LABELS[stageFilter]} » pour cette recherche.`
               : isReviewer
-                ? "Aucune offre dans le catalogue. Récupère-en de nouvelles ci-dessus, ou ajoute-en une depuis l'accueil."
+                ? "Aucune offre dans le catalogue. Récupère-en de nouvelles ou ajoute-en une ci-dessus."
                 : "Aucune offre dans le catalogue pour le moment."}
           </p>
         ) : (

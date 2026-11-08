@@ -17,7 +17,6 @@ import { requestSettingsAttention } from "../lib/settingsAttention";
 import type { CollectionReport } from "../api/types";
 import { AdzunaRequiredNotice } from "./AdzunaRequiredNotice";
 import { LlmRequiredNotice } from "./LlmRequiredNotice";
-import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
 import { ErrorNotice } from "./States";
 
 /**
@@ -206,11 +205,9 @@ export function CollectOffers() {
           </span>
         )}
       </div>
-      {profileBlocked ? (
-        <ProfileRequiredNotice />
-      ) : (
-        !llm.ready && llm.reason && <LlmRequiredNotice reason={llm.reason} />
-      )}
+      {/* Profil vierge : l'invite au CV est en tête de la page Offres (OPP-238), pas ici. On
+          n'ajoute pas l'invite de l'assistant local tant que le CV manque : une chose à la fois. */}
+      {!profileBlocked && !llm.ready && llm.reason && <LlmRequiredNotice reason={llm.reason} />}
       {hasAtsCompanies && (
         <p className="text-xs text-ink-muted">
           « Collecter mes entreprises ciblées » récupère les offres en France de tes entreprises.

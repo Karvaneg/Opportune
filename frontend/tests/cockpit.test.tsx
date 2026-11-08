@@ -147,65 +147,13 @@ describe("CockpitPage (OPP-164)", () => {
     expect(await screen.findByText(/PAGE OFFRES stage=postule/)).toBeInTheDocument();
   });
 
-  it("propose les raccourcis Lancer une analyse et Ajouter une offre (reviewer)", async () => {
+  it("n'affiche plus « Nouvelle analyse » ni « Ajouter une offre », déplacés sur Offres (OPP-238)", async () => {
     stubFetch();
+
     renderCockpit();
 
-    expect(await screen.findByRole("button", { name: "Lancer une analyse" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Texte de l'offre")).toBeInTheDocument();
-  });
-
-  it("désactive « Lancer une analyse » tant que le profil est vierge (OPP-219)", async () => {
-    const ok = (b: unknown) =>
-      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-    const notFound = () =>
-      Promise.resolve({
-        ok: false, status: 404, json: () => Promise.resolve({ error: "profil introuvable" }),
-      } as Response);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string) => {
-        const s = String(url);
-        if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
-        if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
-        if (s.includes("/activity")) return ok(ACTIVITY);
-        if (s.includes("/profile")) return notFound(); // profil vierge
-        if (s.includes("/runs")) return ok({ items: [], page: 1, page_size: 20, total: 0, total_pages: 0 });
-        if (s.includes("/scoring-quality")) return ok(SCORING_QUALITY);
-        return ok(STATS);
-      }),
-    );
-    renderCockpit();
-
-    // Le raccourci « Lancer une analyse » (LaunchRun) est désactivé et oriente vers l'import CV.
-    // On attend la résolution du profil (404) via l'invite, puis on vérifie le bouton.
-    expect(await screen.findByText(/Ajoute d'abord ton CV/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Lancer une analyse" })).toBeDisabled();
-  });
-
-  it("ajoute une offre en collant son texte (POST /offers) depuis le cockpit", async () => {
-    const calls = stubFetch();
-    renderCockpit();
-
-    await userEvent.type(
-      await screen.findByLabelText("Texte de l'offre"),
-      "Nous recrutons un Data Engineer",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Ajouter l'offre" }));
-
-    expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
-    const posted = calls.filter((c) => c.url.includes("/offers"));
-    expect(posted).toHaveLength(1);
-    expect((posted[0].body as { text?: string }).text).toContain("Data Engineer");
-  });
-
-  it("cache « Ajouter une offre » à un non-reviewer", async () => {
-    stubFetch(STATS, "candidate");
-    renderCockpit();
-
-    // Les compteurs restent visibles, mais pas le formulaire d'ajout (reviewer-gated).
     await screen.findByText("À étudier");
+    expect(screen.queryByText("Nouvelle analyse")).toBeNull();
     expect(screen.queryByLabelText("Texte de l'offre")).toBeNull();
   });
 

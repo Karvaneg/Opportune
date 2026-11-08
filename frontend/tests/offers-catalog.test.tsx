@@ -266,6 +266,97 @@ describe("OffersPage", () => {
     expect(await screen.findByText(pagerLabel)).toBeInTheDocument();
   });
 
+  // --- Actions « Nouvelle analyse » et « Ajouter une offre » (déplacées de l'Accueil, OPP-238) ---
+
+  /** fetch factice des actions : profil renseigné ou vierge (404), POST /offers journalisé. */
+  function stubActionsFetch({ role = "reviewer", profileFilled = true } = {}) {
+    const posts: { url: string; body: unknown }[] = [];
+    const ok = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/me"))
+          return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/profile"))
+          return profileFilled
+            ? ok({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
+                location: null, languages: [], total_experience_years: null, experiences: [] })
+            : Promise.resolve({
+                ok: false, status: 404, json: () => Promise.resolve({ error: "profil introuvable" }),
+              } as Response);
+        if (s.includes("/offers") && init?.method === "POST") {
+          posts.push({ url: s, body: JSON.parse(String(init.body ?? "{}")) });
+          return ok({ id: "o1", title: "Data Engineer", company: "Holis" });
+        }
+        return ok(CATALOG);
+      }),
+    );
+    return posts;
+  }
+
+  it("propose « Nouvelle analyse » et « Ajouter une offre » au reviewer (OPP-238)", async () => {
+    stubActionsFetch();
+
+    renderOffers();
+
+    expect(await screen.findByRole("button", { name: "Lancer une analyse" })).toBeInTheDocument();
+    expect(screen.getByText("Nouvelle analyse").closest("#nouvelle-analyse")).not.toBeNull();
+    expect(screen.getByLabelText("Texte de l'offre")).toBeInTheDocument();
+  });
+
+  it("désactive « Lancer une analyse » tant que le profil est vierge (OPP-219, OPP-238)", async () => {
+    stubActionsFetch({ profileFilled: false });
+
+    renderOffers();
+
+    // Une seule invite au CV, en tête de page, pour la collecte et l'analyse (OPP-238).
+    expect(await screen.findByText(/Ajoute d'abord ton CV/)).toHaveTextContent(
+      "pour activer la collecte et l'analyse des offres",
+    );
+    expect(screen.getByRole("button", { name: "Lancer une analyse" })).toBeDisabled();
+  });
+
+  it("ajoute une offre en collant son texte (POST /offers) depuis la page Offres (OPP-238)", async () => {
+    const posts = stubActionsFetch();
+    renderOffers();
+
+    await userEvent.type(
+      await screen.findByLabelText("Texte de l'offre"),
+      "Nous recrutons un Data Engineer",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter l'offre" }));
+
+    expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect((posts[0].body as { text?: string }).text).toContain("Data Engineer");
+  });
+
+  it("arrivée sur #nouvelle-analyse : défile une fois jusqu'au bloc d'analyse (OPP-238)", async () => {
+    stubActionsFetch();
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    renderOffers("/#nouvelle-analyse");
+
+    await screen.findByRole("button", { name: "Lancer une analyse" });
+    await screen.findByText("Lead Java");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.contexts[0]).toHaveAttribute("id", "nouvelle-analyse");
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  it("cache « Ajouter une offre » à un non-reviewer (OPP-238)", async () => {
+    stubActionsFetch({ role: "candidate" });
+
+    renderOffers();
+
+    await screen.findByText("Lead Java");
+    expect(screen.queryByLabelText("Texte de l'offre")).toBeNull();
+  });
+
   // --- Bouton « Récupérer de nouvelles offres » (collecte asynchrone, OPP-170) ---
 
   // Réponse factice avec statut explicite (202 au démarrage, 200 au sondage).
@@ -630,7 +721,10 @@ describe("OffersPage", () => {
 
     await screen.findByText("Lead Java"); // catalogue chargé
     // On attend la résolution du profil (404) via l'invite, puis on vérifie le bouton.
-    expect(await screen.findByText(/Ajoute d'abord ton CV/)).toBeInTheDocument();
+    // Une seule invite au CV, en tête de page, pour la collecte et l'analyse (OPP-238).
+    expect(await screen.findByText(/Ajoute d'abord ton CV/)).toHaveTextContent(
+      "pour activer la collecte et l'analyse des offres",
+    );
     expect(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     ).toBeDisabled();
