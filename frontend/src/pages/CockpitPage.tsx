@@ -81,7 +81,7 @@ export function CockpitPage() {
   );
 }
 
-/** Les compteurs d'avancement (entonnoir + entretiens à venir) + le total du pool. */
+/** Les compteurs d'avancement (entonnoir + entretiens à venir + relances) + le total du pool. */
 function StatCards({
   stats,
 }: {
@@ -91,11 +91,12 @@ function StatCards({
     postule: number;
     offres_total: number;
     entretiens_prevus: number;
+    a_relancer: number;
   };
 }) {
   return (
     <div className="space-y-2">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard
           label="À étudier"
           value={stats.a_etudier}
@@ -125,6 +126,14 @@ function StatCards({
           value={stats.entretiens_prevus ?? 0}
           stage="entretien"
           tone="bg-ink/5 text-ink hover:border-ink/20"
+        />
+        {/* Relances dues (OPP-235) : filtre transverse « a_relancer » du catalogue. Teinte
+            danger : c'est une action en retard. `?? 0` : API antérieure à OPP-235 → 0. */}
+        <StatCard
+          label="À relancer"
+          value={stats.a_relancer ?? 0}
+          stage="a_relancer"
+          tone="bg-danger/10 text-danger hover:border-danger/30"
         />
       </div>
       <p className="text-sm text-ink-muted">{stats.offres_total} offre(s) au total</p>

@@ -1,12 +1,13 @@
 import { AdzunaSettings } from "../components/AdzunaSettings";
 import { AtsSettings } from "../components/AtsSettings";
 import { DataTransferSettings } from "../components/DataTransferSettings";
+import { FollowUpSettings } from "../components/FollowUpSettings";
 import { RssSettings } from "../components/RssSettings";
 
 /**
  * Page « Réglages » : la configuration locale de l'app — les clés API de la collecte Adzuna
  * (OPP-222), les URLs des flux RSS à suivre (OPP-195) et les pages carrière des entreprises
- * ciblées (OPP-226), et la sauvegarde des données de l'espace (OPP-232). Regroupée à part des pages du périmètre
+ * ciblées (OPP-226), les délais de relance (OPP-235) et la sauvegarde des données de l'espace (OPP-232). Regroupée à part des pages du périmètre
  * (accueil, profil, offres) : c'est une configuration machine, pas du contenu lié à une recherche.
  */
 export function SettingsPage() {
@@ -16,6 +17,7 @@ export function SettingsPage() {
       <AdzunaSettings />
       <RssSettings />
       <AtsSettings />
+      <FollowUpSettings />
       <DataTransferSettings />
     </section>
   );

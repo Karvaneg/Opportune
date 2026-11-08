@@ -78,6 +78,8 @@ inchangées par décision).
 | `PUT /settings/adzuna` | Enregistre les clés Adzuna saisies dans l'app |
 | `GET /settings/rss` | URLs de flux RSS enregistrées (OPP-195) |
 | `PUT /settings/rss` | Remplace la liste des flux RSS (liste vide = tout supprimer, OPP-225) |
+| `GET /settings/follow-up` | Délais de relance, en jours (OPP-235) |
+| `PUT /settings/follow-up` | Remplace les délais de relance après une candidature et après un entretien (OPP-235) |
 | `GET /settings/ats` | Entreprises ciblées enregistrées (pages carrière Greenhouse/Lever, OPP-226) |
 | `PUT /settings/ats` | Vérifie auprès de l'ATS puis enregistre les entreprises (liste vide = tout supprimer) |
 | `POST /data/export` | Rend l'archive `.zip` de l'espace (base + réglages, clés Adzuna comprises) en base64 (`archive_base64`) avec un nom daté (`filename`) ; le front l'enregistre où l'utilisateur choisit (OPP-232) |

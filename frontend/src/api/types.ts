@@ -1,3 +1,5 @@
+import type { FollowUpState } from "./followUps";
+
 // Contrat de l'API Hermes (V2), fidèle à python/src/api/app.py — OPP-100.
 // Le frontend ne déduit AUCUNE information métier absente de ce contrat.
 
@@ -112,6 +114,11 @@ export interface ApplicationIntent {
    * vide tant que rien n'est noté), absent si le back ne le monte pas.
    */
   tracking?: TrackingEvent[];
+  /**
+   * Relances (OPP-235) : celle à faire aujourd'hui (`due`) et la prochaine pas encore due
+   * (`next`). Présent avec `tracking` ; les deux sont `null` hors candidature déclarée.
+   */
+  follow_up?: FollowUpState;
 }
 
 /**
@@ -231,7 +238,7 @@ export interface CatalogOffer {
  * et non encore tranchées (piles « à traiter ») ; `postule` : candidatures déclarées ;
  * `offres_total` : taille du pool évalué (formations comprises). `entretiens_prevus` : nombre
  * d'entretiens à venir (événements de suivi `interview` dont la date prévue est aujourd'hui ou
- * plus tard, OPP-223).
+ * plus tard, OPP-223). `a_relancer` : candidatures dont une relance est due aujourd'hui (OPP-235).
  */
 export interface CandidateStats {
   a_etudier: number;
@@ -239,6 +246,7 @@ export interface CandidateStats {
   postule: number;
   offres_total: number;
   entretiens_prevus: number;
+  a_relancer: number;
 }
 
 /** Scores d'un groupe d'offres (retenues ou rejetées), cf. `GET /candidates/{id}/scoring-quality`. */
