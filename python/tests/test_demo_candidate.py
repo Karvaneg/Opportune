@@ -13,7 +13,14 @@ from app.db import connect
 from app.decision import decision_id
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
-from app.demo_candidate import DEMO_CANDIDATE_ID, _DEMO_OFFERS, reset_demo, seed_demo_candidate
+from app.demo_candidate import (
+    DEMO_CANDIDATE_ID,
+    DEMO_CANDIDATE_NAME,
+    _DEMO_OFFERS,
+    migrate_demo_search_label,
+    reset_demo,
+    seed_demo_candidate,
+)
 from app.letter_store import LetterStore
 from app.offer_store import OfferStore
 from app.profile_store import ProfileStore
@@ -140,7 +147,7 @@ def test_reset_demo_vide_tout(conn):
     assert DecisionStore(conn).count() == 0
 
     # Table rase complète (OPP-195) : le slot du candidat démo est vidé lui aussi → périmètre
-    # vide, le sélecteur invite à créer une nouvelle recherche (plus d'« Alex Demo » résiduelle).
+    # vide, le sélecteur invite à créer une nouvelle recherche (plus de recherche démo résiduelle).
     assert CandidateRegistry(conn).list_ids() == []
 
     # « Restaurer l'exemple » (reset + seed) ramène le slot et la vitrine canonique.
@@ -162,3 +169,44 @@ def test_seed_links_every_demo_offer_to_the_demo_search(conn):
     linked = CandidateOfferStore(conn).offer_ids(DEMO_CANDIDATE_ID)
 
     assert sorted(linked) == sorted(offer.id for offer in _DEMO_OFFERS.values())
+
+
+def _demo_search_label(conn) -> str:
+    return next(s.label for s in CandidateRegistry(conn).list() if s.id == DEMO_CANDIDATE_ID)
+
+
+def test_seed_names_the_demo_search_after_the_job_not_the_person(conn):
+    # OPP-245 : la recherche porte le nom du poste ; le profil garde le nom de la personne.
+    _seed(conn)
+
+    assert _demo_search_label(conn) == "Dev Python"
+    assert ProfileStore(conn).get(DEMO_CANDIDATE_ID).name == DEMO_CANDIDATE_NAME
+
+
+def test_migrate_renames_a_demo_search_still_labelled_with_the_old_default(conn):
+    # Base démo créée avant OPP-245 : le seed avait posé « Alex Démo » comme libellé.
+    _seed(conn)
+    CandidateRegistry(conn).rename(DEMO_CANDIDATE_ID, "Alex Démo")
+
+    migrate_demo_search_label(conn)
+
+    assert _demo_search_label(conn) == "Dev Python"
+
+
+def test_migrate_keeps_a_demo_search_label_given_by_hand(conn):
+    _seed(conn)
+    CandidateRegistry(conn).rename(DEMO_CANDIDATE_ID, "Mon test")
+
+    migrate_demo_search_label(conn)
+
+    assert _demo_search_label(conn) == "Mon test"
+
+
+def test_migrate_does_not_recreate_the_demo_search_after_a_reset(conn):
+    # « Repartir de zéro » vide le registre : la migration ne doit pas ressusciter la recherche.
+    _seed(conn)
+    reset_demo(conn)
+
+    migrate_demo_search_label(conn)
+
+    assert CandidateRegistry(conn).list_ids() == []

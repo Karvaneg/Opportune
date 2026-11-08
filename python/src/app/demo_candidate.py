@@ -45,6 +45,13 @@ from hermes.run_store import RunStore
 DEMO_CANDIDATE_ID = "cand-demo"
 DEMO_CANDIDATE_NAME = "Alex Démo"
 
+# Libellé de la **recherche** démo dans le sélecteur (OPP-245) : une recherche porte sur un
+# poste, pas sur une personne. Distinct du nom du profil (``DEMO_CANDIDATE_NAME``), qui reste
+# celui de la personne fictive (signature de la lettre). Ancien libellé, posé par le seed
+# avant OPP-245 : sert à renommer une base démo existante (cf. ``migrate_demo_search_label``).
+DEMO_SEARCH_LABEL = "Dev Python"
+_LEGACY_DEMO_SEARCH_LABEL = "Alex Démo"
+
 # Id **fixe** du run de démo : à id constant, re-seeder upsert le même run (convergent) au lieu
 # d'en empiler un par re-seed. Le run figure une analyse déjà passée (Historique peuplé) et coche
 # l'étape « Lancer une analyse » du guide d'accueil — la vitrine montre une boucle complète.
@@ -262,7 +269,7 @@ def seed_demo_candidate(
 
     # 0. Périmètre : le candidat démo est enrôlé dans le registre (OPP-183) — son slot existe
     #    indépendamment du profil (il survit à un « repartir de zéro », cf. ``reset_demo``).
-    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID, label=DEMO_CANDIDATE_NAME)
+    CandidateRegistry(conn).add(DEMO_CANDIDATE_ID, label=DEMO_SEARCH_LABEL)
 
     # 1. Profil démo (upsert : écrase toujours vers le profil canonique — 100 % synthétique).
     profiles.save(create_profile(**_demo_profile_kwargs()))
@@ -344,6 +351,21 @@ def seed_demo_candidate(
     )
 
 
+def migrate_demo_search_label(conn: sqlite3.Connection) -> None:
+    """Renomme la recherche démo « Alex Démo » en « Dev Python » dans une base existante (OPP-245).
+
+    Le seed ne tourne qu'à la création de la base démo et à « Restaurer l'exemple », et
+    ``CandidateRegistry.add`` ne réécrit pas le libellé d'une recherche existante. Sans cette
+    étape, une base démo créée avant OPP-245 garderait l'ancien nom. On ne renomme que si le
+    libellé vaut encore l'ancienne valeur par défaut : un nom donné à la main est conservé.
+    Idempotent ; sans effet sur une base vidée (« repartir de zéro »).
+    """
+    registry = CandidateRegistry(conn)
+    for search in registry.list():
+        if search.id == DEMO_CANDIDATE_ID and search.label == _LEGACY_DEMO_SEARCH_LABEL:
+            registry.rename(DEMO_CANDIDATE_ID, DEMO_SEARCH_LABEL)
+
+
 def reset_demo(conn: sqlite3.Connection) -> None:
     """Vide **toutes** les données de la base démo — bac à sable repartant de zéro (OPP-182).
 
@@ -356,7 +378,7 @@ def reset_demo(conn: sqlite3.Connection) -> None:
 
     Table rase **complète** : le registre des recherches est vidé lui aussi, candidat démo
     compris (OPP-195). Le périmètre devient vide → le sélecteur invite à **créer une nouvelle
-    recherche**, au lieu de laisser une « Alex Demo » sans données (dont le profil répondrait 404).
+    recherche**, au lieu de laisser une recherche démo sans données (dont le profil répondrait 404).
     « Restaurer l'exemple » (``reset_demo`` puis ``seed_demo_candidate``) réinsère le slot et la
     vitrine canonique.
     """
