@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useLaunchRun } from "../api/runs";
+import { useBackState } from "../api/useBackState";
 import { useProfileReady } from "../api/profile";
 import { useTargetCandidate } from "../api/useTargetCandidate";
 import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
@@ -19,6 +20,8 @@ import { ErrorNotice } from "./States";
  */
 export function LaunchRun({ showProfileNotice = true }: { showProfileNotice?: boolean }) {
   const navigate = useNavigate();
+  // Le retour du run lancé ramène à la page d'où on l'a lancé (Offres ou Historique, OPP-240).
+  const backState = useBackState();
   // `target` reste toujours une recherche du périmètre (cf. useTargetCandidate), donc le POST
   // cible une valeur valide.
   const { target } = useTargetCandidate();
@@ -45,7 +48,7 @@ export function LaunchRun({ showProfileNotice = true }: { showProfileNotice?: bo
               // vivent dans un run bien persisté → on y navigue pour les montrer.
               onSuccess: (data) => {
                 if (data.total > 0 || data.errors.length > 0)
-                  navigate(`/runs/${encodeURIComponent(data.run_id)}`);
+                  navigate(`/runs/${encodeURIComponent(data.run_id)}`, { state: backState });
               },
             })
           }

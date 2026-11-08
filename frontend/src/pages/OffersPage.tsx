@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEvaluateOffer, useOffers } from "../api/offers";
 import { useProfileReady } from "../api/profile";
+import { useBackState } from "../api/useBackState";
+import { useClampPage, usePageParam } from "../api/usePageParam";
+import { useSearchParamsUpdate } from "../api/useSearchParamsUpdate";
 import { CATALOG_STAGE_LABELS, isCatalogStage } from "../api/funnel";
 import { useTargetCandidate } from "../api/useTargetCandidate";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
@@ -20,7 +23,7 @@ import { openExternal } from "../lib/openExternal";
  * voit tout le stock, pas seulement les offres évaluées par un run.
  */
 export function OffersPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   // Recherche active pour le score : sélection **partagée** avec le reste de l'app (sélecteur
   // global, OPP-184) — elle suit la navigation, p. ex. depuis une carte-compteur du cockpit.
   const { target } = useTargetCandidate();
@@ -43,17 +46,8 @@ export function OffersPage() {
   const profile = useProfileReady(target);
   const profileBlocked = target !== "" && !profile.ready && !profile.isPending;
   // Numéro de page porté par l'URL (`?page=`, OPP-239) : il survit à l'aller-retour vers une
-  // fiche d'offre. Absent ou invalide → page 1 ; la page 1 n'est jamais écrite dans l'URL.
-  const page = parsePage(searchParams.get("page"));
-  const setPage = (next: number) =>
-    setSearchParams(
-      (prev) => {
-        if (next <= 1) prev.delete("page");
-        else prev.set("page", String(next));
-        return prev;
-      },
-      { replace: true },
-    );
+  // fiche d'offre (cf. `usePageParam`).
+  const [page, setPage] = usePageParam();
   // Filtre par étape d'entonnoir, piloté par l'URL (clic sur une carte du cockpit, OPP-164).
   const rawStage = searchParams.get("stage");
   const stageFilter = isCatalogStage(rawStage) ? rawStage : null;
@@ -77,23 +71,15 @@ export function OffersPage() {
   );
   const items = data?.items ?? [];
   // Page au-delà de la dernière (favori `?page=50`, catalogue qui a diminué, recherche changée
-  // depuis une autre page) : on se ramène sur la dernière page. On attend la vraie réponse,
-  // pas les données de la page précédente affichées pendant le chargement.
-  const lastPage = data ? Math.max(data.total_pages, 1) : null;
-  useEffect(() => {
-    if (lastPage !== null && !isPlaceholderData && page > lastPage) setPage(lastPage);
-  }, [lastPage, isPlaceholderData, page]);
+  // depuis une autre page) : on se ramène sur la dernière page.
+  useClampPage(page, setPage, { data, isPlaceholderData, isFetching });
 
-  const clearFilter = () => {
-    setSearchParams(
-      (prev) => {
-        prev.delete("stage");
-        prev.delete("page");
-        return prev;
-      },
-      { replace: true },
-    );
-  };
+  const updateParams = useSearchParamsUpdate();
+  const clearFilter = () =>
+    updateParams((params) => {
+      params.delete("stage");
+      params.delete("page");
+    });
 
   return (
     <section className="space-y-6">
@@ -189,7 +175,7 @@ export function OffersPage() {
  */
 function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: string }) {
   const navigate = useNavigate();
-  const location = useLocation();
+  const backState = useBackState();
   const evaluate = useEvaluateOffer();
 
   const openFiche = () =>
@@ -200,7 +186,7 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
           navigate(`/recommendations/${encodeURIComponent(reco.recommendation_id)}`, {
             // Le « ← Retour » de la fiche revient à cette liste telle quelle : chemin, filtre
             // `?stage=` et page `?page=` (OPP-239), pas à la home par défaut.
-            state: { from: location.pathname + location.search },
+            state: backState,
           }),
       },
     );
@@ -294,16 +280,6 @@ function ScoreBadge({
       {score}/100
     </span>
   );
-}
-
-/**
- * Lit `?page=` : suite de chiffres valant au moins 1, sinon page 1. La vérification stricte
- * écarte `1e21` ou `2.0`, que `Number` accepte mais que le back refuserait (400).
- */
-function parsePage(raw: string | null): number {
-  if (raw === null || !/^\d+$/.test(raw)) return 1;
-  const n = Number(raw);
-  return Number.isSafeInteger(n) && n >= 1 ? n : 1;
 }
 
 /** Formatage tolérant : valeur brute si la date n'est pas parsable. */

@@ -1,8 +1,11 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useRunRecommendations } from "../api/runs";
 import type { AdvisoryStatus, DecisionStatus } from "../api/types";
+import { useBackState } from "../api/useBackState";
+import { useClampPage, usePageParam } from "../api/usePageParam";
+import { useSearchParamsUpdate } from "../api/useSearchParamsUpdate";
 import { Pager } from "./Pager";
+
 import { ErrorNotice, Loading } from "./States";
 import { StatusBadge } from "./StatusBadge";
 
@@ -19,15 +22,34 @@ const DECISION_OPTIONS: { value: DecisionStatus; label: string }[] = [
   { value: "deferred", label: "Reporté" },
 ];
 
-/** Consultation paginée des recommandations d'un run, filtrable par statut (OPP-100/109). */
+/**
+ * Consultation paginée des recommandations d'un run, filtrable par statut (OPP-100/109). La
+ * page et les filtres sont dans l'adresse (`?page=`, `?advisory=`, `?decision=`, OPP-240) : le
+ * retour depuis une fiche ramène à la même liste. Une valeur de filtre inconnue vaut « Toutes ».
+ */
 export function RunRecommendations({ runId }: { runId: string }) {
-  const [page, setPage] = useState(1);
-  const [advisory, setAdvisory] = useState<AdvisoryStatus | "">("");
-  const [decision, setDecision] = useState<DecisionStatus | "">("");
-  const { data, isPending, isError, error, isFetching } = useRunRecommendations(runId, page, {
-    advisoryStatus: advisory,
-    decisionStatus: decision,
-  });
+  // Retour d'une fiche : ce run avec sa page et ses filtres ; `fromState` garde l'origine du
+  // run (page de l'Historique) pour « Changer de run » (OPP-240).
+  const backState = useBackState();
+  const [searchParams] = useSearchParams();
+  const updateParams = useSearchParamsUpdate();
+  const [page, setPage] = usePageParam();
+  const advisory = pick(searchParams.get("advisory"), ADVISORY_OPTIONS);
+  const decision = pick(searchParams.get("decision"), DECISION_OPTIONS);
+  const { data, isPending, isError, error, isFetching, isPlaceholderData } = useRunRecommendations(
+    runId,
+    page,
+    { advisoryStatus: advisory, decisionStatus: decision },
+  );
+  useClampPage(page, setPage, { data, isPlaceholderData, isFetching });
+
+  // Un changement de filtre recadre la pagination sur la page 1.
+  const setFilter = (key: "advisory" | "decision", value: string) =>
+    updateParams((params) => {
+      if (value) params.set(key, value);
+      else params.delete(key);
+      params.delete("page");
+    });
 
   return (
     <div className="space-y-3">
@@ -38,10 +60,7 @@ export function RunRecommendations({ runId }: { runId: string }) {
           <select
             aria-label="Filtre pré-évaluation"
             value={advisory}
-            onChange={(e) => {
-              setAdvisory(e.target.value as AdvisoryStatus | "");
-              setPage(1); // un changement de filtre recadre la pagination sur la page 1
-            }}
+            onChange={(e) => setFilter("advisory", e.target.value)}
             className="ml-2 rounded-md border border-border px-2 py-1"
           >
             <option value="">Toutes</option>
@@ -57,10 +76,7 @@ export function RunRecommendations({ runId }: { runId: string }) {
           <select
             aria-label="Filtre décision"
             value={decision}
-            onChange={(e) => {
-              setDecision(e.target.value as DecisionStatus | "");
-              setPage(1);
-            }}
+            onChange={(e) => setFilter("decision", e.target.value)}
             className="ml-2 rounded-md border border-border px-2 py-1"
           >
             <option value="">Toutes</option>
@@ -99,7 +115,7 @@ export function RunRecommendations({ runId }: { runId: string }) {
                 <div>
                   <Link
                     to={`/recommendations/${encodeURIComponent(item.recommendation_id)}`}
-                    state={{ from: `/runs/${runId}` }}
+                    state={backState}
                     className="font-medium text-ink hover:underline"
                   >
                     {item.title || item.offer_id}
@@ -124,12 +140,17 @@ export function RunRecommendations({ runId }: { runId: string }) {
             page={data.page}
             totalPages={data.total_pages}
             total={data.total}
-            onPrev={() => setPage((p) => Math.max(1, p - 1))}
-            onNext={() => setPage((p) => p + 1)}
+            onPrev={() => setPage(Math.max(1, page - 1))}
+            onNext={() => setPage(page + 1)}
             busy={isFetching}
           />
         </>
       )}
     </div>
   );
+}
+
+/** Valeur de filtre lue dans l'adresse : une des options connues, sinon « Toutes » (`""`). */
+function pick<T extends string>(raw: string | null, options: { value: T }[]): T | "" {
+  return options.find((o) => o.value === raw)?.value ?? "";
 }

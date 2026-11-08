@@ -62,13 +62,14 @@ const VERB_BUTTONS: { verb: DecisionVerb; label: string; tone: string }[] = [
  * Page /recommendations/:id — détail en lecture seule d'une recommandation (OPP-107).
  * Socle d'ancrage des actions à venir (validation OPP-108, candidature OPP-110).
  *
- * Le lien « retour » cible le run d'origine quand on arrive depuis sa liste (via
- * `location.state.from`) ; en deep-link direct, il retombe sur la liste des runs.
+ * Le lien « retour » cible la liste d'origine (run ou Offres, avec sa page et ses filtres, via
+ * `location.state.from`) ; en deep-link direct, il retombe sur l'Accueil.
  */
 export function RecommendationPage() {
   const { id = "" } = useParams();
   const location = useLocation();
-  const backTo = (location.state as { from?: string } | null)?.from ?? "/";
+  const origin = location.state as { from?: string; fromState?: unknown } | null;
+  const backTo = origin?.from ?? "/";
   const { data, isPending, isError, error } = useRecommendation(id);
 
   const is404 = isError && error instanceof ApiHttpError && error.status === 404;
@@ -77,7 +78,13 @@ export function RecommendationPage() {
     <section className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-ink">Recommandation</h2>
-        <Link to={backTo} className="text-sm text-ink-muted hover:text-ink">
+        {/* `fromState` : l'origine de la page d'où l'on vient (ex. la page de l'Historique d'un
+            run), rendue au retour pour que le retour suivant y ramène aussi (OPP-240). */}
+        <Link
+          to={backTo}
+          state={origin?.fromState}
+          className="text-sm text-ink-muted hover:text-ink"
+        >
           ← Retour
         </Link>
       </div>
