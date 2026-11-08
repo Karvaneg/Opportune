@@ -76,6 +76,9 @@ _FUNNEL_STAGES = frozenset({A_ETUDIER, A_POSTULER, POSTULE})
 # d'entonnoir (une telle offre est aussi « postulé ») ; la sélection des id concernés est
 # calculée par la couche API (suivi + date du jour) et passée en argument.
 _STAGE_ENTRETIEN = "entretien"
+# Filtre transverse (OPP-235) : les candidatures **à relancer** aujourd'hui. Même principe :
+# la couche API résout les id concernés (suivi, délais réglés, date du jour).
+_STAGE_A_RELANCER = "a_relancer"
 
 
 def _utcnow_iso() -> str:
@@ -558,6 +561,7 @@ class HermesOrchestrator:
         stage: str | None = None,
         applied_recommendation_ids: Collection[str] = (),
         interview_recommendation_ids: Collection[str] = (),
+        follow_up_recommendation_ids: Collection[str] = (),
     ) -> tuple[list[OfferCatalogEntry], int, dict[str, tuple[str | None, bool]]]:
         """Catalogue paginé des offres + score de match + état d'entonnoir pour ``candidate_id``.
 
@@ -582,14 +586,18 @@ class HermesOrchestrator:
                 for offer_id, (status, applied) in state.items()
                 if funnel_stage(status, applied) == stage
             ]
-        elif stage == _STAGE_ENTRETIEN:
-            # Offres dont la candidature a un entretien à venir : la couche API a résolu les
-            # ``recommendation_id`` concernés (suivi + date du jour). On préserve l'ordre du pool.
-            interview = set(interview_recommendation_ids)
+        elif stage in (_STAGE_ENTRETIEN, _STAGE_A_RELANCER):
+            # Filtres transverses : la couche API a résolu les ``recommendation_id`` concernés
+            # (entretien à venir, ou relance due). On préserve l'ordre du pool.
+            selected = set(
+                interview_recommendation_ids
+                if stage == _STAGE_ENTRETIEN
+                else follow_up_recommendation_ids
+            )
             matching = [
                 offer_id
                 for offer_id in state
-                if decision_id(candidate_id, offer_id) in interview
+                if decision_id(candidate_id, offer_id) in selected
             ]
         else:
             # ``stage`` inconnu (ou sans candidat déjà traité plus haut) → catalogue complet.

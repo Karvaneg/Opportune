@@ -57,7 +57,7 @@ import binascii
 import re
 import sqlite3
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Protocol
 from urllib.parse import parse_qs, unquote
 
@@ -72,12 +72,14 @@ if TYPE_CHECKING:
     from app.offer_collection import CollectionReport
     from app.profile_service import ProfileService
     from app.rss_feeds_store import RssFeedsStore
+    from app.follow_up_settings_store import FollowUpSettingsStore
     from app.ats_client import AtsClient
     from app.data_transfer_service import DataTransferService
     from app.ats_companies_store import AtsCompaniesStore
 
 from app.action_service import ActionNotAllowedError, ActionService, UnknownTargetError
 from app.application_tracking import TrackingError
+from app.follow_up import FollowUpDue, FollowUpSchedule, follow_up_due, next_follow_up
 from app.candidate_stats import count_upcoming_interviews
 from app.application_tracking_service import (
     ApplicationTrackingService,
@@ -204,6 +206,7 @@ _LLM_STATUS = re.compile(r"^/system/llm/status$")
 _LLM_SETUP = re.compile(r"^/system/llm/setup$")
 _SETTINGS_ADZUNA = re.compile(r"^/settings/adzuna$")
 _SETTINGS_RSS = re.compile(r"^/settings/rss$")
+_SETTINGS_FOLLOW_UP = re.compile(r"^/settings/follow-up$")
 _SETTINGS_ATS = re.compile(r"^/settings/ats$")
 # Export / import des données d'un espace (OPP-232).
 _DATA_EXPORT = re.compile(r"^/data/export$")
@@ -292,6 +295,7 @@ class HermesApi:
         data_transfer: "DataTransferService | None" = None,
         conn: "sqlite3.Connection | None" = None,
         tracking: ApplicationTrackingService | None = None,
+        follow_up_settings: "FollowUpSettingsStore | None" = None,
     ) -> None:
         self.orchestrator = orchestrator
         # Service des actions sensibles (candidature/message). Optionnel : si absent, les
@@ -341,6 +345,9 @@ class HermesApi:
         # données de l'app. Optionnel : si absent, /settings/rss n'est pas monté (404 neutre).
         # Contrairement aux clés Adzuna, ces URLs ne sont pas des secrets : les routes les relisent.
         self.rss_feeds = rss_feeds
+        # Délais de relance réglés par l'utilisateur (OPP-235). Optionnel : si absent,
+        # /settings/follow-up n'est pas monté (404) et les relances suivent les délais par défaut.
+        self.follow_up_settings = follow_up_settings
         # Entreprises ciblées sur un ATS (OPP-226) : store fichier dans le dossier de données de
         # l'espace. Optionnel : si absent, /settings/ats n'est pas monté (404 neutre). Le client
         # sert à vérifier chaque nouvelle entreprise auprès de son ATS à l'enregistrement ;
@@ -612,6 +619,15 @@ class HermesApi:
             self._require(method, "PUT", path)
             return self._put_rss_settings(body, user)
 
+        if _SETTINGS_FOLLOW_UP.match(path):
+            # Délais de relance (OPP-235) : 404 neutre si le store n'est pas câblé.
+            if self.follow_up_settings is None:
+                raise self._not_found(user, "réglages de relance non disponibles")
+            if method.upper() == "GET":
+                return self._get_follow_up_settings(user)
+            self._require(method, "PUT", path)
+            return self._put_follow_up_settings(body, user)
+
         if _DATA_EXPORT.match(path) or _DATA_IMPORT.match(path):
             # Export / import des données de l'espace (OPP-232) : 404 si non câblé.
             if self.data_transfer is None:
@@ -838,14 +854,18 @@ class HermesApi:
         )
         # Entretiens prévus (OPP-223) : le suivi n'existe que pour des candidatures déclarées,
         # donc on n'interroge que les ``applied_ids`` (pas de recommandation non postulée à sonder).
-        # Comptage « à venir » déterminé par la date du jour (UTC), cohérent avec la borne UI.
+        # Comptage « à venir » au jour local, comme les relances : sinon, vers minuit, une même
+        # candidature serait à la fois « entretien à venir » et « à relancer ».
         entretiens_prevus = 0
+        a_relancer = 0
         if self.tracking is not None and applied_ids:
             histories = self.tracking.history_for(list(applied_ids))
-            today = datetime.now(timezone.utc).date()
+            today = self._local_today()
             entretiens_prevus = count_upcoming_interviews(
                 (event for events in histories.values() for event in events), today
             )
+            # Relances dues (OPP-235) : réutilise l'historique déjà chargé.
+            a_relancer = len(self._follow_up_ids(applied_ids, histories, today))
         return Response(
             200,
             {
@@ -854,6 +874,8 @@ class HermesApi:
                 "postule": stats.postule,
                 "offres_total": stats.offres_total,
                 "entretiens_prevus": entretiens_prevus,
+                # Candidatures à relancer aujourd'hui (OPP-235) : carte « À relancer ».
+                "a_relancer": a_relancer,
             },
         )
 
@@ -874,6 +896,63 @@ class HermesApi:
         )
 
         return Response(200, asdict(quality))
+
+    def _follow_up_schedule(self) -> FollowUpSchedule:
+        """Délais de relance enregistrés, ou délais par défaut sans store câblé."""
+        if self.follow_up_settings is None:
+            return FollowUpSchedule()
+        return self.follow_up_settings.load()
+
+    @staticmethod
+    def _local_today() -> date:
+        """Jour local de la machine (app local-first), pas le jour UTC."""
+        return datetime.now().astimezone().date()
+
+    def _follow_up_ids(
+        self, applied_ids: set[str], histories: dict[str, tuple], today: date
+    ) -> set[str]:
+        """Candidatures déclarées dont une relance est due ``today`` (OPP-235).
+
+        ``histories`` : historiques de suivi déjà chargés par l'appelant (pas de 2e lecture).
+        """
+        if self.actions is None:
+            return set()
+        applied_ts = self.actions.applied_at_for(list(applied_ids))
+        schedule = self._follow_up_schedule()
+        return {
+            rid
+            for rid, applied_at in applied_ts.items()
+            if follow_up_due(applied_at, histories.get(rid, ()), schedule, today) is not None
+        }
+
+    @staticmethod
+    def _serialize_schedule(schedule: FollowUpSchedule) -> dict:
+        return {
+            "after_application": list(schedule.after_application),
+            "after_interview": list(schedule.after_interview),
+        }
+
+    def _get_follow_up_settings(self, user: User | None) -> Response:
+        """Délais de relance (OPP-235) : ``{"after_application": [...], "after_interview": [...]}``."""
+        self._guard_reviewer(user)
+        return Response(200, self._serialize_schedule(self._follow_up_schedule()))
+
+    def _put_follow_up_settings(self, body: dict, user: User | None) -> Response:
+        """Enregistre les délais de relance (OPP-235) ; 400 si une liste est invalide.
+
+        Réponse : les délais réellement enregistrés, que l'UI réaffiche.
+        """
+        self._guard_reviewer(user)
+        assert self.follow_up_settings is not None  # garanti par le dispatch (404 sinon)
+        try:
+            saved = self.follow_up_settings.save(
+                body.get("after_application"), body.get("after_interview")
+            )
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from exc
+        except OSError as exc:
+            raise ApiError(500, f"enregistrement des délais de relance impossible : {exc}") from exc
+        return Response(200, self._serialize_schedule(saved))
 
     def _get_activity(self, candidate_id: str, user: User | None) -> Response:
         """Flux d'activité récente du candidat pour le cockpit (OPP-165).
@@ -1146,15 +1225,21 @@ class HermesApi:
         # ``recommendation_id`` dont la candidature a un entretien à venir, puis on les passe à
         # l'orchestrateur. Calculé seulement quand ce filtre est demandé, et uniquement sur les
         # candidatures déclarées (seules porteuses de suivi).
+        # Filtre « à relancer » (OPP-235) : même principe, candidatures dont une relance est due.
+        # Jour local dans les deux cas, comme les compteurs du cockpit.
         interview_ids: set[str] = set()
-        if stage == "entretien" and self.tracking is not None and applied_ids:
+        follow_up_ids: set[str] = set()
+        if stage in ("entretien", "a_relancer") and self.tracking is not None and applied_ids:
             histories = self.tracking.history_for(list(applied_ids))
-            today = datetime.now(timezone.utc).date()
-            interview_ids = {
-                rid
-                for rid, events in histories.items()
-                if count_upcoming_interviews(events, today) > 0
-            }
+            today = self._local_today()
+            if stage == "entretien":
+                interview_ids = {
+                    rid
+                    for rid, events in histories.items()
+                    if count_upcoming_interviews(events, today) > 0
+                }
+            else:
+                follow_up_ids = self._follow_up_ids(applied_ids, histories, today)
 
         # Pas d'exigence de profil : un candidat possédé sans profil (« nouveau profil ») voit les
         # offres **sans score annoté** (cf. `_resolve_profile`), pas un 404 — le filtre par étape
@@ -1166,6 +1251,7 @@ class HermesApi:
             stage=stage,
             applied_recommendation_ids=applied_ids,
             interview_recommendation_ids=interview_ids,
+            follow_up_recommendation_ids=follow_up_ids,
         )
 
         total_pages = (total + page_size - 1) // page_size
@@ -2191,12 +2277,32 @@ class HermesApi:
         # Un historique n'existe que pour une candidature déclarée (``applied_at``) : inutile de
         # requêter tant qu'on ne l'est pas, la liste est alors forcément vide.
         if self.tracking is not None:
-            payload["tracking"] = (
-                [
-                    self._serialize_tracking_event(e)
-                    for e in self.tracking.history(recommendation_id)
-                ]
+            history = (
+                self.tracking.history(recommendation_id)
                 if application.applied_at is not None
                 else []
             )
+            payload["tracking"] = [self._serialize_tracking_event(e) for e in history]
+            # Relances (OPP-235) : celle à faire aujourd'hui et la prochaine pas encore due.
+            follow_up = {"due": None, "next": None}
+            if application.applied_at is not None:
+                schedule, today = self._follow_up_schedule(), self._local_today()
+                args = (application.applied_at, history, schedule, today)
+                follow_up = {
+                    "due": self._serialize_follow_up(follow_up_due(*args)),
+                    "next": self._serialize_follow_up(next_follow_up(*args)),
+                }
+            payload["follow_up"] = follow_up
         return payload
+
+    @staticmethod
+    def _serialize_follow_up(due: FollowUpDue | None) -> dict | None:
+        if due is None:
+            return None
+        return {
+            "since": due.since,
+            "start_date": due.start_date.isoformat(),
+            "due_date": due.due_date.isoformat(),
+            "step": due.step,
+            "total": due.total,
+        }

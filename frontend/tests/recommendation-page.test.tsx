@@ -575,6 +575,63 @@ describe("RecommendationPage — suivi post-candidature (OPP-223)", () => {
   });
 });
 
+describe("RecommendationPage — relances (OPP-235)", () => {
+  const APPLIED = {
+    confirmed: true,
+    confirmed_at: "2026-10-18T12:00:00+00:00",
+    status: "simulated",
+    applied: true,
+    applied_at: "2026-10-19T09:00:00+00:00",
+    tracking: [],
+  };
+  const DUE = {
+    since: "candidature", start_date: "2026-10-19", due_date: "2026-10-27", step: 2, total: 2,
+  };
+
+  it("relance due : badge en tête, bandeau, et « J'ai relancé » note la relance", async () => {
+    const bodies: Array<{ kind?: string }> = [];
+    const detail = { ...DETAIL, application: { ...APPLIED, follow_up: { due: DUE, next: null } } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        const s = String(url);
+        const ok = (b: unknown) =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/tracking")) {
+          bodies.push(JSON.parse(String(init?.body ?? "{}")));
+          return ok({ events: [] });
+        }
+        return ok(detail);
+      }),
+    );
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    await userEvent.click(await screen.findByRole("button", { name: "J'ai relancé" }));
+
+    expect(screen.getByText("À relancer")).toBeInTheDocument();
+    expect(screen.getByText(/2e relance sur 2 à faire/)).toBeInTheDocument();
+    expect(screen.getByText(/due depuis le 27\/10\/2026/)).toBeInTheDocument();
+    await waitFor(() => expect(bodies.at(-1)?.kind).toBe("no_response"));
+  });
+
+  it("relance pas encore due : ligne « Prochaine relance » dans l'historique, sans bandeau", async () => {
+    const next = { ...DUE, due_date: "2026-10-24", step: 1 };
+    stubFetch(200, { ...DETAIL, application: { ...APPLIED, follow_up: { due: null, next } } });
+
+    renderPage();
+    await screen.findByText("Développeur Full-Stack");
+
+    expect(
+      await screen.findByText(/Prochaine relance : 1re relance sur 2 \(après la candidature du 19\/10\/2026\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("le 24/10/2026")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "J'ai relancé" })).toBeNull();
+    expect(screen.queryByText("À relancer")).toBeNull();
+  });
+});
+
 /** fetch factice à état : /me, GET détail (status/score paramétrables), POST /rescore → 90. */
 function stubRescoreFlow(status = "pending") {
   let current = { ...DETAIL, status, score: 50, comment: null as string | null };

@@ -31,6 +31,7 @@ const runsPage = (total: number) => ({
 
 const NO_STATS: CandidateStats = {
   a_etudier: 0, a_postuler: 0, postule: 0, offres_total: 0, entretiens_prevus: 0,
+  a_relancer: 0,
 };
 const WITH_OFFERS: CandidateStats = { ...NO_STATS, offres_total: 12 };
 

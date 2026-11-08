@@ -81,7 +81,7 @@ def test_stats_all_undecided_are_a_etudier(env):
     assert resp.status == 200
     assert resp.body == {
         "a_etudier": 3, "a_postuler": 0, "postule": 0, "offres_total": 3,
-        "entretiens_prevus": 0,
+        "entretiens_prevus": 0, "a_relancer": 0,
     }
 
 
@@ -98,7 +98,7 @@ def test_stats_funnel_follows_my_decisions(env):
     stats = env.dispatch("GET", "/candidates/cand-1/stats", None, None).body
     assert stats == {
         "a_etudier": 1, "a_postuler": 1, "postule": 1, "offres_total": 3,
-        "entretiens_prevus": 0,
+        "entretiens_prevus": 0, "a_relancer": 1,
     }
 
 

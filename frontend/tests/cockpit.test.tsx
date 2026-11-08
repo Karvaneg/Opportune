@@ -9,6 +9,7 @@ import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
 
 const STATS = {
   a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12, entretiens_prevus: 1,
+  a_relancer: 4,
 };
 
 const SCORING_QUALITY = {
@@ -107,6 +108,9 @@ describe("CockpitPage (OPP-164)", () => {
     // Entretiens prévus (OPP-223) : 4e carte.
     expect(screen.getByText("Entretiens prévus")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
+    // À relancer (OPP-235) : 5e carte.
+    expect(screen.getByText("À relancer")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText(/12 offre\(s\) au total/)).toBeInTheDocument();
   });
 
@@ -116,6 +120,15 @@ describe("CockpitPage (OPP-164)", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /Entretiens prévus/ }));
     expect(await screen.findByText(/PAGE OFFRES stage=entretien/)).toBeInTheDocument();
+  });
+
+  it("un clic sur « À relancer » ouvre Offres filtré sur « a_relancer » (OPP-235)", async () => {
+    stubFetch();
+    renderCockpit();
+
+    await userEvent.click(await screen.findByRole("button", { name: /À relancer/ }));
+
+    expect(await screen.findByText(/PAGE OFFRES stage=a_relancer/)).toBeInTheDocument();
   });
 
   it("un clic sur « À postuler » ouvre Offres filtré sur cette étape", async () => {

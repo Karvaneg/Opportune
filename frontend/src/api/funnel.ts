@@ -36,17 +36,19 @@ export function isFunnelStage(value: string | null): value is FunnelStage {
 /**
  * Filtres du catalogue d'offres pilotés par l'URL (`?stage=`). Les trois étapes d'entonnoir,
  * plus `entretien` — un filtre **transverse** (OPP-223) : les offres candidatées dont un
- * entretien est à venir. Ce n'est pas une étape d'entonnoir (une telle offre reste « postulé »),
+ * entretien est à venir, et `a_relancer` (OPP-235), les candidatures dont une relance est due.
+ * Ce n'est pas une étape d'entonnoir (une telle offre reste « postulé »),
  * d'où un type distinct de `FunnelStage`.
  */
-export type CatalogStage = FunnelStage | "entretien";
+export type CatalogStage = FunnelStage | "entretien" | "a_relancer";
 
 export const CATALOG_STAGE_LABELS: Record<CatalogStage, string> = {
   ...FUNNEL_LABELS,
   entretien: "Entretien à venir",
+  a_relancer: "À relancer",
 };
 
-/** Vrai si `value` est un filtre de catalogue connu (étape d'entonnoir ou « entretien »). */
+/** Vrai si `value` est un filtre de catalogue connu (étape d'entonnoir, « entretien » ou « à relancer »). */
 export function isCatalogStage(value: string | null): value is CatalogStage {
-  return isFunnelStage(value) || value === "entretien";
+  return isFunnelStage(value) || value === "entretien" || value === "a_relancer";
 }

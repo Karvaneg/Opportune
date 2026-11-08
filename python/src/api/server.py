@@ -477,6 +477,10 @@ def assemble_api(
     # Entreprises ciblées sur un ATS (OPP-226) : pages carrière saisies par l'utilisateur, une
     # liste par espace (non secrète, relue telle quelle dans l'UI).
     ats_companies = AtsCompaniesStore(default_ats_companies_path(settings_dir))
+    # Délais de relance (OPP-235) : un fichier par espace, délais par défaut s'il est absent.
+    from app.follow_up_settings_store import FollowUpSettingsStore, default_follow_up_path
+
+    follow_up_settings = FollowUpSettingsStore(default_follow_up_path(settings_dir))
 
     def collection_runner(
         *,
@@ -601,6 +605,7 @@ def assemble_api(
         llm_setup=llm_setup,
         adzuna_credentials=adzuna_credentials,
         rss_feeds=rss_feeds,
+        follow_up_settings=follow_up_settings,
         ats_companies=ats_companies,
         conn=conn,
     )
@@ -629,6 +634,7 @@ def _data_transfer_for(api, conn, *, settings_dir: "Path | None"):
     from app.ats_companies_store import default_ats_companies_path
     from app.data_transfer_service import DataTransferService
     from app.database_schema import ensure_schema
+    from app.follow_up_settings_store import default_follow_up_path
     from app.rss_feeds_store import default_rss_feeds_path
 
     return DataTransferService(
@@ -637,6 +643,7 @@ def _data_transfer_for(api, conn, *, settings_dir: "Path | None"):
             default_credentials_path(settings_dir),
             default_rss_feeds_path(settings_dir),
             default_ats_companies_path(settings_dir),
+            default_follow_up_path(settings_dir),
         ],
         app_version=__version__,
         ensure_schema=ensure_schema,
@@ -736,6 +743,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
         demo.adzuna_credentials.clear()
         demo.rss_feeds.clear()
         demo.ats_companies.clear()
+        demo.follow_up_settings.clear()
         # Le témoin reste (ou est posé) : un redémarrage ne doit pas re-remplir après un vidage.
         mark_demo_settings_seeded(demo_settings_dir)
 

@@ -17,6 +17,7 @@ import {
   useGenerateLetter,
   useLetter,
 } from "../api/letters";
+import { followUpOrigin, followUpRank, formatIsoDay } from "../api/followUps";
 import { useLlmReady } from "../api/system";
 import { useIsReviewer } from "../auth/roles";
 import type {
@@ -141,6 +142,12 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
               <span className="text-sm font-semibold text-ink">{reco.score}</span>
             )}
             <StatusBadge kind="decision" value={reco.status} />
+            {/* Relance due (OPP-235) : repérable dès l'ouverture de la fiche. */}
+            {reco.application?.follow_up?.due && (
+              <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+                À relancer
+              </span>
+            )}
           </div>
         </div>
 
@@ -267,6 +274,7 @@ function DecisionTimeline({
   // `parseIsoDate` traite les dates seules en heure locale (sinon elles se classent à minuit
   // UTC, donc potentiellement le mauvais jour face aux timestamps de décision).
   items.sort((a, b) => parseIsoDate(a.at).getTime() - parseIsoDate(b.at).getTime());
+  const next = application?.follow_up?.next ?? null;
 
   return (
     <div>
@@ -323,6 +331,15 @@ function DecisionTimeline({
               <span className="shrink-0 text-xs text-ink-muted">{formatDate(item.at)}</span>
             </li>
           ))}
+          {/* Prochaine relance prévue (OPP-235), pas encore due : ligne grisée en fin de frise. */}
+          {next && (
+            <li className="flex items-start justify-between gap-4 rounded-lg border border-dashed border-border p-3 text-ink-muted">
+              <span className="text-sm">
+                Prochaine relance : {followUpRank(next)} ({followUpOrigin(next)})
+              </span>
+              <span className="shrink-0 text-xs">le {formatIsoDay(next.due_date)}</span>
+            </li>
+          )}
         </ol>
       )}
     </div>
@@ -611,6 +628,10 @@ function ApplicationTracking({
 
   if (!isReviewer || application?.applied !== true) return null;
 
+  const due = application.follow_up?.due ?? null;
+  // « J'ai relancé » : note la relance en un clic, sans passer par la liste des événements.
+  const noteFollowUp = () => addEvent.mutate({ kind: "no_response" });
+
   const submit = () =>
     addEvent.mutate(
       {
@@ -628,6 +649,23 @@ function ApplicationTracking({
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-muted">
         Suivi
       </h3>
+      {/* Relance due (OPP-235) : quoi faire, depuis quand, et un bouton pour la noter. */}
+      {due && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-danger/30 bg-danger/10 p-3">
+          <p className="text-sm text-ink">
+            <span className="font-medium">{followUpRank(due)} à faire</span>, due depuis le{" "}
+            {formatIsoDay(due.due_date)} ({followUpOrigin(due)}).
+          </p>
+          <button
+            type="button"
+            onClick={noteFollowUp}
+            disabled={addEvent.isPending}
+            className="rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-danger-strong disabled:opacity-50"
+          >
+            J'ai relancé
+          </button>
+        </div>
+      )}
       <p className="mb-3 text-sm text-ink-muted">
         Note où en est cette candidature : un entretien, un refus, une offre reçue. Chaque
         événement est daté et s'ajoute à l'historique ci-dessous.
