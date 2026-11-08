@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useRunDetail } from "../api/runs";
 import { RunRecommendations } from "../components/RunRecommendations";
 import { ErrorNotice, Loading } from "../components/States";
@@ -15,6 +15,9 @@ import { ErrorNotice, Loading } from "../components/States";
  */
 export function RunDetailPage() {
   const { runId = "" } = useParams();
+  // Retour vers la liste d'où l'on vient (Historique avec sa page, OPP-240) ; en accès direct,
+  // l'Historique (et non l'Accueil, qui n'est plus la liste des runs depuis OPP-164).
+  const backTo = (useLocation().state as { from?: string } | null)?.from ?? "/historique";
   const { data, isPending, isError, error } = useRunDetail(runId);
 
   return (
@@ -23,7 +26,7 @@ export function RunDetailPage() {
         <h2 className="text-xl font-semibold text-ink">
           Run <span className="font-mono text-base text-ink-muted">{runId}</span>
         </h2>
-        <Link to="/" className="text-sm text-ink-muted hover:text-ink">
+        <Link to={backTo} className="text-sm text-ink-muted hover:text-ink">
           ← Changer de run
         </Link>
       </div>
@@ -55,8 +58,8 @@ export function RunDetailPage() {
               Recommandations
             </h3>
             <RunRecommendations key={runId} runId={runId} />
-            {/* key={runId} : remonte le composant à chaque changement de run → l'état de
-                pagination/filtres repart à zéro, aucune reco d'un run précédent ne persiste. */}
+            {/* key={runId} : remonte le composant à chaque changement de run, aucune reco d'un
+                run précédent ne persiste. La page et les filtres sont dans l'adresse (OPP-240). */}
           </div>
         </>
       )}

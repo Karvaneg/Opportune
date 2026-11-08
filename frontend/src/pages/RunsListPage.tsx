@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useDeleteRun, useRuns } from "../api/runs";
 import type { RunSummary } from "../api/types";
+import { useBackState, type BackState } from "../api/useBackState";
+import { useClampPage, usePageParam } from "../api/usePageParam";
 import { LaunchRun } from "../components/LaunchRun";
 import { Pager } from "../components/Pager";
 import { ErrorNotice, Loading } from "../components/States";
@@ -13,14 +15,19 @@ import { ErrorNotice, Loading } from "../components/States";
  * Offres (OPP-238).
  */
 export function RunsListPage() {
-  const [page, setPage] = useState(1);
-  const { data, isPending, isError, error, isFetching } = useRuns(page);
+  // Page dans l'adresse (`?page=`, OPP-240) : elle survit à l'aller-retour vers un run.
+  const [page, setPage] = usePageParam();
+  const { data, isPending, isError, error, isFetching, isPlaceholderData } = useRuns(page);
+  useClampPage(page, setPage, { data, isPlaceholderData, isFetching });
+  // Le retour d'un run ramène à cette page de l'Historique (OPP-240), qu'on l'ouvre depuis la
+  // liste ou par son ID.
+  const backState = useBackState();
 
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h2 className="text-xl font-semibold text-ink">Historique</h2>
-        <DirectAccess />
+        <DirectAccess backState={backState} />
       </div>
 
       <LaunchRun />
@@ -38,15 +45,15 @@ export function RunsListPage() {
           <div className="space-y-3">
             <ul className="space-y-2">
               {data.items.map((run) => (
-                <RunRow key={run.run_id} run={run} />
+                <RunRow key={run.run_id} run={run} backState={backState} />
               ))}
             </ul>
             <Pager
               page={data.page}
               totalPages={data.total_pages}
               total={data.total}
-              onPrev={() => setPage((p) => Math.max(1, p - 1))}
-              onNext={() => setPage((p) => p + 1)}
+              onPrev={() => setPage(Math.max(1, page - 1))}
+              onNext={() => setPage(page + 1)}
               busy={isFetching}
             />
           </div>
@@ -55,10 +62,14 @@ export function RunsListPage() {
   );
 }
 
-function RunRow({ run }: { run: RunSummary }) {
+function RunRow({ run, backState }: { run: RunSummary; backState: BackState }) {
   return (
     <li className="flex flex-col gap-3 rounded-lg border border-border bg-surface-raised p-4 hover:border-border-strong sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <Link to={`/runs/${encodeURIComponent(run.run_id)}`} className="min-w-0 flex-1">
+      <Link
+        to={`/runs/${encodeURIComponent(run.run_id)}`}
+        state={backState}
+        className="min-w-0 flex-1"
+      >
         <p className="truncate font-mono text-sm text-ink">{run.run_id}</p>
         <p className="text-sm text-ink-muted">
           {run.candidate_id} · {formatDate(run.executed_at)}
@@ -135,14 +146,14 @@ function DeleteRunButton({ runId }: { runId: string }) {
 }
 
 /** Accès direct à un run par saisie d'ID (secours quand on connaît déjà le run_id). */
-function DirectAccess() {
+function DirectAccess({ backState }: { backState: BackState }) {
   const [runId, setRunId] = useState("");
   const navigate = useNavigate();
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     const trimmed = runId.trim();
-    if (trimmed) navigate(`/runs/${encodeURIComponent(trimmed)}`);
+    if (trimmed) navigate(`/runs/${encodeURIComponent(trimmed)}`, { state: backState });
   }
 
   return (
