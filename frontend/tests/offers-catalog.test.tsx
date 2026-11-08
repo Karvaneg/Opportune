@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -273,7 +273,9 @@ describe("OffersPage", () => {
 
     renderOffers(path);
 
-    expect(await screen.findByText(pagerLabel)).toBeInTheDocument();
+    // Deux allers-retours (page demandée puis page ramenée) : délai élargi pour une machine
+    // chargée, où le délai par défaut d'1 s a été dépassé (1,4 s observé).
+    expect(await screen.findByText(pagerLabel, undefined, { timeout: 3000 })).toBeInTheDocument();
   });
 
   // --- Actions « Nouvelle analyse » et « Ajouter une offre » (déplacées de l'Accueil, OPP-238) ---
@@ -342,6 +344,8 @@ describe("OffersPage", () => {
     expect(await screen.findByText(/Offre ajoutée : Data Engineer/)).toBeInTheDocument();
     expect(posts).toHaveLength(1);
     expect((posts[0].body as { text?: string }).text).toContain("Data Engineer");
+    // L'offre est rangée dans la recherche active (OPP-186).
+    expect((posts[0].body as { candidate_id?: string }).candidate_id).toBe("cand-1");
   });
 
   it("arrivée sur #nouvelle-analyse : défile une fois jusqu'au bloc d'analyse (OPP-238)", async () => {
@@ -377,7 +381,7 @@ describe("OffersPage", () => {
   it("démarre une collecte (POST /collect → 202) puis sonde et affiche le bilan", async () => {
     const posts: Array<{ url: string; body: unknown }> = [];
     const job = {
-      job_id: "job-1", status: "done", error: null,
+      job_id: "job-1", status: "done", error: null, candidate_id: "cand-1",
       progress: { collected: 4, stored: 1, duplicates: 3, failures: 0, enriched: 2, enriched_recovered: 1 },
       report: {
         collected: 4, stored: 1, duplicates: 3, failures: 0, source_error: null,
@@ -418,13 +422,13 @@ describe("OffersPage", () => {
     // Compteurs d'enrichissement visibles quand une offre a été enrichie (OPP-169).
     expect(screen.getByText(/2 enrichies \(1 récupérée\)/)).toBeInTheDocument();
     expect(posts).toHaveLength(1);
-    expect(posts[0].body).toEqual({ what: "python", where: "Paris" });
+    expect(posts[0].body).toEqual({ what: "python", where: "Paris", candidate_id: "cand-1" });
   });
 
   it("propose « Collecter mes flux RSS » quand des flux sont configurés et poste source=rss (OPP-195)", async () => {
     const posts: Array<{ body: unknown }> = [];
     const job = {
-      job_id: "job-rss", status: "done", error: null,
+      job_id: "job-rss", status: "done", error: null, candidate_id: "cand-1",
       progress: noProgress,
       report: {
         collected: 2, stored: 2, duplicates: 0, failures: 0, source_error: null,
@@ -459,13 +463,13 @@ describe("OffersPage", () => {
 
     expect(await screen.findByText(/2 nouvelles offres/)).toBeInTheDocument();
     expect(posts).toHaveLength(1);
-    expect(posts[0].body).toEqual({ source: "rss" });
+    expect(posts[0].body).toEqual({ source: "rss", candidate_id: "cand-1" });
   });
 
   it("propose « Collecter mes entreprises ciblées », poste source=ats et affiche hors France et échecs (OPP-226)", async () => {
     const posts: Array<{ body: unknown }> = [];
     const job = {
-      job_id: "job-ats", status: "done", error: null,
+      job_id: "job-ats", status: "done", error: null, candidate_id: "cand-1",
       progress: noProgress,
       report: {
         collected: 3, stored: 3, duplicates: 0, failures: 0, source_error: null,
@@ -506,13 +510,13 @@ describe("OffersPage", () => {
     expect(await screen.findByText(/3 nouvelles offres/)).toBeInTheDocument();
     expect(screen.getByText(/12 hors France/)).toBeInTheDocument();
     expect(screen.getByText(/Entreprises non interrogées : entreprise introuvable sur Lever : ghost/)).toBeInTheDocument();
-    expect(posts).toEqual([{ body: { source: "ats" } }]);
+    expect(posts).toEqual([{ body: { source: "ats", candidate_id: "cand-1" } }]);
   });
 
   it("filtre la collecte des entreprises ciblées sur le poste saisi et affiche les offres hors poste (OPP-226)", async () => {
     const posts: Array<{ body: unknown }> = [];
     const job = {
-      job_id: "job-ats", status: "done", error: null,
+      job_id: "job-ats", status: "done", error: null, candidate_id: "cand-1",
       progress: noProgress,
       report: {
         collected: 3, stored: 3, duplicates: 0, failures: 0, source_error: null,
@@ -552,7 +556,7 @@ describe("OffersPage", () => {
 
     expect(await screen.findByText(/3 nouvelles offres/)).toBeInTheDocument();
     expect(screen.getByText(/9 hors poste/)).toBeInTheDocument();
-    expect(posts).toEqual([{ body: { source: "ats", what: "data analyst" } }]);
+    expect(posts).toEqual([{ body: { source: "ats", what: "data analyst", candidate_id: "cand-1" } }]);
   });
 
   it("ne propose pas la collecte des entreprises ciblées sans entreprise enregistrée (OPP-226)", async () => {
@@ -579,11 +583,11 @@ describe("OffersPage", () => {
   it("sonde jusqu'à la fin : progression en cours puis bilan final", async () => {
     let getCalls = 0;
     const running = {
-      job_id: "job-2", status: "running", error: null, report: null,
+      job_id: "job-2", status: "running", error: null, candidate_id: "cand-1", report: null,
       progress: { collected: 2, stored: 1, duplicates: 1, failures: 0, enriched: 0, enriched_recovered: 0 },
     };
     const done = {
-      job_id: "job-2", status: "done", error: null,
+      job_id: "job-2", status: "done", error: null, candidate_id: "cand-1",
       progress: { collected: 5, stored: 3, duplicates: 2, failures: 0, enriched: 0, enriched_recovered: 0 },
       report: {
         collected: 5, stored: 3, duplicates: 2, failures: 0, source_error: null,
@@ -629,7 +633,7 @@ describe("OffersPage", () => {
   });
 
   it("exige un poste : bouton désactivé à vide, puis transmet le poste saisi (OPP-195)", async () => {
-    const posts: Array<{ body: { what?: string; where?: string } }> = [];
+    const posts: Array<{ body: { what?: string; where?: string; candidate_id?: string } }> = [];
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, options?: RequestInit) => {
@@ -644,7 +648,7 @@ describe("OffersPage", () => {
             return res(202, { job_id: "job-3" });
           }
           return res(200, {
-            job_id: "job-3", status: "done", error: null, progress: noProgress,
+            job_id: "job-3", status: "done", error: null, candidate_id: "cand-1", progress: noProgress,
             report: { ...noProgress, source_error: null },
           });
         }
@@ -669,6 +673,7 @@ describe("OffersPage", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0].body.what).toBe("infirmier");
     expect(posts[0].body.where).toBe("");
+    expect(posts[0].body.candidate_id).toBe("cand-1");
   });
 
   it("affiche l'erreur de source quand la collecte échoue côté Adzuna", async () => {
@@ -683,7 +688,7 @@ describe("OffersPage", () => {
         if (s.includes("/collect")) {
           if (options?.method === "POST") return res(202, { job_id: "job-4" });
           return res(200, {
-            job_id: "job-4", status: "done", error: null, progress: noProgress,
+            job_id: "job-4", status: "done", error: null, candidate_id: "cand-1", progress: noProgress,
             report: {
               ...noProgress,
               source_error: "AdzunaAuthError: identifiants manquants",
@@ -834,6 +839,58 @@ describe("OffersPage", () => {
     expect(
       screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }),
     ).toBeDisabled();
+  });
+
+  it("sans recherche, ne demande pas le catalogue de toutes les recherches (OPP-186)", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      const s = String(url);
+      if (s.includes("/searches")) return res(200, { items: [] });
+      if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+      if (s.includes("/me")) return res(200, { id: "u", owned_count: 0, owned_candidate_ids: [] });
+      return res(200, CATALOG);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderOffers();
+
+    expect(await screen.findByText(/Aucune recherche pour le moment/)).toBeInTheDocument();
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls.some((u) => u.includes("/offers"))).toBe(false);
+  });
+
+  it("n'affiche pas sous la recherche active le bilan d'une collecte faite pour une autre (OPP-186)", async () => {
+    const job = {
+      job_id: "job-1", status: "done", error: null, candidate_id: "cand-2",
+      progress: noProgress,
+      report: { collected: 4, stored: 1, duplicates: 3, failures: 0, source_error: null,
+        enriched: 0, enriched_recovered: 0 },
+    };
+    const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+      const s = String(url);
+      if (s.includes("/searches")) return res(200, { items: [{ id: "cand-1", label: "Marie" }] });
+      if (s.includes("/system/llm/status")) return res(200, { model_present: true, ollama_reachable: true });
+      if (s.includes("/me")) return res(200, ME);
+      if (s.includes("/profile")) return res(200, READY_PROFILE);
+      if (s.includes("/collect")) {
+        if (options?.method === "POST") return res(202, { job_id: "job-1" });
+        if (s.split("?")[0].endsWith("/collect")) return res(200, { job: null });
+        return res(200, job);
+      }
+      return res(200, CATALOG);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderOffers();
+    await screen.findByText("Lead Java");
+    await userEvent.type(screen.getByLabelText("Poste recherché"), "python");
+
+    await userEvent.click(screen.getByRole("button", { name: /Récupérer de nouvelles offres/ }));
+
+    // Bouton réactivé = job lu comme terminé : le bilan aurait été affiché à ce moment-là.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Récupérer de nouvelles offres/ })).toBeEnabled(),
+    );
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/collect/job-1"))).toBe(true);
+    expect(screen.queryByText(/nouvelle offre/)).not.toBeInTheDocument();
   });
 
   it("n'affiche pas l'invite Adzuna quand les clés sont configurées (OPP-195)", async () => {

@@ -26,7 +26,7 @@ export function OffersPage() {
   const [searchParams] = useSearchParams();
   // Recherche active pour le score : sélection **partagée** avec le reste de l'app (sélecteur
   // global, OPP-184) — elle suit la navigation, p. ex. depuis une carte-compteur du cockpit.
-  const { target } = useTargetCandidate();
+  const { target, isPending: searchesPending } = useTargetCandidate();
   const { hash, key: locationKey } = useLocation();
   // Arrivée sur un ancrage (`/offres#nouvelle-analyse`, bouton du guide de démarrage) : on fait
   // défiler jusqu'au bloc, une seule fois par navigation (`key` de la location). Le bloc
@@ -133,7 +133,15 @@ export function OffersPage() {
           </div>
         )}
 
-        {isPending && <Loading label="Chargement des offres…" />}
+        {/* Sans recherche active, le catalogue n'est pas demandé (OPP-186) : on n'attend rien. */}
+        {(target !== "" ? isPending : searchesPending) && (
+          <Loading label="Chargement des offres…" />
+        )}
+        {target === "" && !searchesPending && (
+          <p className="text-sm text-ink-muted">
+            Aucune recherche pour le moment. Crée une recherche ci-dessus pour commencer.
+          </p>
+        )}
         {isError && <ErrorNotice error={error} />}
 
         {!isError &&

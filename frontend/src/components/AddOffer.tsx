@@ -1,22 +1,26 @@
 import { useState } from "react";
 import { useAddOffer } from "../api/offers";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import { ErrorNotice } from "./States";
 
 /**
  * Ajoute une offre au catalogue, par texte collé (OPP-145) ou par URL (OPP-148). Le back l'analyse
  * via LLM (latence → « Ajout en cours… »). Au succès, le catalogue est invalidé (cf.
  * `useAddOffer`) : la nouvelle offre apparaît dans la liste. Sur la page Offres (OPP-238), après un
- * passage par l'Accueil (OPP-164).
+ * passage par l'Accueil (OPP-164). L'offre est ajoutée à la recherche active (OPP-186).
  */
 export function AddOffer() {
+  const { target } = useTargetCandidate();
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const add = useAddOffer();
 
-  // Le texte prime (comme côté back) ; sinon on envoie l'URL. Un seul des deux suffit.
-  const canSubmit = text.trim() !== "" || url.trim() !== "";
+  // Le texte prime (comme côté back) ; sinon on envoie l'URL. Un seul des deux suffit. Sans
+  // recherche active (périmètre vide ou pas encore chargé), il n'y a nulle part où ranger l'offre.
+  const canSubmit = target !== "" && (text.trim() !== "" || url.trim() !== "");
   const submit = () => {
-    const variables = text.trim() !== "" ? { text } : { url };
+    const variables =
+      text.trim() !== "" ? { text, candidate_id: target } : { url, candidate_id: target };
     add.mutate(variables, {
       onSuccess: () => {
         setText("");

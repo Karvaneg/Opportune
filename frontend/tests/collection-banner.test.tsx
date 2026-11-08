@@ -47,6 +47,7 @@ describe("CollectionBanner (OPP-208)", () => {
       report: null,
       error: null,
       cancel_requested: false,
+      candidate_id: "cand-1",
     });
     const { container } = renderBanner();
 
@@ -73,6 +74,7 @@ describe("CollectionBanner (OPP-208)", () => {
       report: null,
       error: null,
       cancel_requested: false,
+      candidate_id: "cand-1",
     };
     const calls: string[] = [];
     vi.stubGlobal(
@@ -108,6 +110,7 @@ describe("CollectionBanner (OPP-208)", () => {
       report: null,
       error: null,
       cancel_requested: true,
+      candidate_id: "cand-1",
     });
     const { container } = renderBanner();
 

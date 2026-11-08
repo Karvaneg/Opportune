@@ -377,6 +377,8 @@ export interface CollectionJob {
   progress: CollectionProgress;
   report: CollectionReport | null;
   error: string | null;
+  /** Recherche qui reçoit les offres de la passe (OPP-186). */
+  candidate_id: string;
   /** Arrêt coopératif demandé (OPP-209) : vrai tant que le runner n'a pas atteint son point de contrôle. */
   cancel_requested: boolean;
 }
