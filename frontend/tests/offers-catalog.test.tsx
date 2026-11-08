@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OffersPage } from "../src/pages/OffersPage";
 import { funnelStage } from "../src/api/funnel";
@@ -188,6 +188,82 @@ describe("OffersPage", () => {
     // Filtre levé : la requête repart sans stage, les deux offres réapparaissent.
     expect(await screen.findByRole("button", { name: "Lead Java" })).toBeInTheDocument();
     expect(urls.some((u) => u.includes("/offers") && !u.includes("stage="))).toBe(true);
+  });
+
+  it("le retour depuis une fiche ramène à la même liste : même filtre, même page (OPP-239)", async () => {
+    // Le stub sert une liste de 3 pages et renvoie la page demandée dans `?page=`.
+    const urls: string[] = [];
+    const ok = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/me"))
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        if (s.includes("/rescore"))
+          return ok({ recommendation_id: "cand-1:b", candidate_id: "cand-1", offer_id: "b" });
+        urls.push(s);
+        const page = Number(new URL(s, "http://x").searchParams.get("page"));
+        return ok({ ...CATALOG, page, total: 45, total_pages: 3 });
+      }),
+    );
+    // Fiche factice : son « ← Retour » suit `state.from`, comme RecommendationPage.
+    function FicheStub() {
+      const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
+      return <Link to={from}>← Retour</Link>;
+    }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <AuthProvider>
+        <QueryClientProvider client={qc}>
+          <TargetCandidateProvider>
+            <MemoryRouter initialEntries={["/offres?stage=a_postuler"]}>
+              <Routes>
+                <Route path="/offres" element={<OffersPage />} />
+                <Route path="/recommendations/:id" element={<FicheStub />} />
+              </Routes>
+            </MemoryRouter>
+          </TargetCandidateProvider>
+        </QueryClientProvider>
+      </AuthProvider>,
+    );
+
+    await screen.findByText("Page 1 / 3 · 45 au total");
+    await userEvent.click(screen.getByRole("button", { name: "Suivant" }));
+    await screen.findByText("Page 2 / 3 · 45 au total");
+    await userEvent.click(screen.getByRole("button", { name: "Full-stack" }));
+    await userEvent.click(await screen.findByRole("link", { name: "← Retour" }));
+
+    expect(await screen.findByText("Page 2 / 3 · 45 au total")).toBeInTheDocument();
+    expect(screen.getByText("Filtré : À postuler")).toBeInTheDocument();
+    const lastOffersCall = urls.filter((u) => u.includes("/offers")).at(-1);
+    expect(lastOffersCall).toContain("page=2");
+    expect(lastOffersCall).toContain("stage=a_postuler");
+  });
+
+  it.each([
+    ["au-delà de la dernière page : ramenée à la dernière", "/?page=50", "Page 3 / 3 · 45 au total"],
+    ["mal formée (1e21) : page 1, sans erreur du serveur", "/?page=1e21", "Page 1 / 3 · 45 au total"],
+  ])("page dans l'adresse %s (OPP-239)", async (_case, path, pagerLabel) => {
+    const ok = (b: unknown) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const s = String(url);
+        if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
+        if (s.includes("/me"))
+          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        const page = Number(new URL(s, "http://x").searchParams.get("page"));
+        return ok({ ...CATALOG, page, total: 45, total_pages: 3 });
+      }),
+    );
+
+    renderOffers(path);
+
+    expect(await screen.findByText(pagerLabel)).toBeInTheDocument();
   });
 
   // --- Bouton « Récupérer de nouvelles offres » (collecte asynchrone, OPP-170) ---
