@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEvaluateOffer, useOffers } from "../api/offers";
 import { CATALOG_STAGE_LABELS, isCatalogStage } from "../api/funnel";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
@@ -25,27 +25,53 @@ export function OffersPage() {
   // rôle reviewer : le message de catalogue vide n'oriente vers ces actions que si elles sont
   // réellement disponibles (sinon « ci-dessus » pointerait vers un bloc masqué).
   const isReviewer = useIsReviewer();
-  const [page, setPage] = useState(1);
+  // Numéro de page porté par l'URL (`?page=`, OPP-239) : il survit à l'aller-retour vers une
+  // fiche d'offre. Absent ou invalide → page 1 ; la page 1 n'est jamais écrite dans l'URL.
+  const page = parsePage(searchParams.get("page"));
+  const setPage = (next: number) =>
+    setSearchParams(
+      (prev) => {
+        if (next <= 1) prev.delete("page");
+        else prev.set("page", String(next));
+        return prev;
+      },
+      { replace: true },
+    );
   // Filtre par étape d'entonnoir, piloté par l'URL (clic sur une carte du cockpit, OPP-164).
   const rawStage = searchParams.get("stage");
   const stageFilter = isCatalogStage(rawStage) ? rawStage : null;
   // Bascule de recherche (sélecteur global) : on revient en page 1, sinon on resterait sur une
-  // page hors bornes pour une recherche au catalogue plus court.
-  useEffect(() => setPage(1), [target]);
+  // page hors bornes pour une recherche au catalogue plus court. On ne réagit qu'à un vrai
+  // changement de recherche : ni au montage, ni au passage de « aucune » (résolution du
+  // sélecteur au montage) à la recherche active, qui effaceraient la page lue dans l'URL.
+  // On ne mémorise que les recherches non vides : A → « aucune » → B remet bien en page 1.
+  const previousTarget = useRef(target);
+  useEffect(() => {
+    const previous = previousTarget.current;
+    if (target) previousTarget.current = target;
+    if (target && previous && previous !== target) setPage(1);
+  }, [target]);
   // Filtrage **côté serveur** : le pool entier est filtré avant pagination, donc `total` et le
   // Pager concordent avec les compteurs du cockpit même au-delà d'une page.
-  const { data, isPending, isError, error, isFetching } = useOffers(
+  const { data, isPending, isError, error, isFetching, isPlaceholderData } = useOffers(
     page,
     target,
     stageFilter ?? "",
   );
   const items = data?.items ?? [];
+  // Page au-delà de la dernière (favori `?page=50`, catalogue qui a diminué, recherche changée
+  // depuis une autre page) : on se ramène sur la dernière page. On attend la vraie réponse,
+  // pas les données de la page précédente affichées pendant le chargement.
+  const lastPage = data ? Math.max(data.total_pages, 1) : null;
+  useEffect(() => {
+    if (lastPage !== null && !isPlaceholderData && page > lastPage) setPage(lastPage);
+  }, [lastPage, isPlaceholderData, page]);
 
   const clearFilter = () => {
-    setPage(1);
     setSearchParams(
       (prev) => {
         prev.delete("stage");
+        prev.delete("page");
         return prev;
       },
       { replace: true },
@@ -93,8 +119,8 @@ export function OffersPage() {
               page={data.page}
               totalPages={data.total_pages}
               total={data.total}
-              onPrev={() => setPage((p) => Math.max(1, p - 1))}
-              onNext={() => setPage((p) => p + 1)}
+              onPrev={() => setPage(Math.max(1, page - 1))}
+              onNext={() => setPage(page + 1)}
               busy={isFetching}
             />
           </div>
@@ -112,6 +138,7 @@ export function OffersPage() {
  */
 function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: string }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const evaluate = useEvaluateOffer();
 
   const openFiche = () =>
@@ -120,8 +147,9 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
       {
         onSuccess: (reco) =>
           navigate(`/recommendations/${encodeURIComponent(reco.recommendation_id)}`, {
-            // Le « ← Retour » de la fiche revient aux Offres (pas à la home Runs par défaut).
-            state: { from: "/offres" },
+            // Le « ← Retour » de la fiche revient à cette liste telle quelle : chemin, filtre
+            // `?stage=` et page `?page=` (OPP-239), pas à la home par défaut.
+            state: { from: location.pathname + location.search },
           }),
       },
     );
@@ -215,6 +243,16 @@ function ScoreBadge({
       {score}/100
     </span>
   );
+}
+
+/**
+ * Lit `?page=` : suite de chiffres valant au moins 1, sinon page 1. La vérification stricte
+ * écarte `1e21` ou `2.0`, que `Number` accepte mais que le back refuserait (400).
+ */
+function parsePage(raw: string | null): number {
+  if (raw === null || !/^\d+$/.test(raw)) return 1;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) && n >= 1 ? n : 1;
 }
 
 /** Formatage tolérant : valeur brute si la date n'est pas parsable. */
