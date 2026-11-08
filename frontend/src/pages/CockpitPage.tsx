@@ -4,8 +4,6 @@ import { useCandidateStats } from "../api/stats";
 import type { CatalogStage } from "../api/funnel";
 import type { ActivityEvent } from "../api/types";
 import { useTargetCandidate } from "../auth/useTargetCandidate";
-import { AddOffer } from "../components/AddOffer";
-import { LaunchRun } from "../components/LaunchRun";
 import { NewProfileGuide } from "../components/NewProfileGuide";
 import { ProfileSummaryCard } from "../components/ProfileSummaryCard";
 import { ScoringQualityCard } from "../components/ScoringQualityCard";
@@ -14,9 +12,9 @@ import { ErrorNotice, Loading } from "../components/States";
 /**
  * Cockpit — page d'accueil de synthèse (OPP-164). Répond à « qu'est-ce que je dois traiter
  * maintenant ? » : trois compteurs d'avancement (à étudier / à postuler / postulé) depuis
- * `GET /candidates/{id}/stats` (OPP-163), plus les raccourcis d'action (lancer une analyse,
- * ajouter une offre). Les deux premières cartes sont cliquables et ouvrent Offres pré-filtré
- * par action recommandée. Remplace l'ancien accueil « Runs », désormais sous « Historique ».
+ * `GET /candidates/{id}/stats` (OPP-163). Les actions sur les offres (lancer une analyse,
+ * ajouter une offre) vivent sur la page Offres (OPP-238). Les deux premières cartes sont
+ * cliquables et ouvrent Offres pré-filtré par action recommandée. Remplace l'ancien accueil « Runs », désormais sous « Historique ».
  */
 export function CockpitPage() {
   // Recherche active pour les compteurs : sélection partagée (sélecteur global, OPP-184).
@@ -50,29 +48,6 @@ export function CockpitPage() {
               Contrairement à eux, elle compte toutes mes décisions, y compris celles d'offres
               sorties du pool : ses totaux peuvent donc dépasser ceux des compteurs. */}
           <ScoringQualityCard candidateId={target} />
-
-          {/* Raccourcis d'action juste sous les compteurs : « que puis-je faire maintenant ? »
-              reste visible au-dessus du flux d'activité (esprit d'OPP-165, retour dogfood). */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div
-              id="nouvelle-analyse"
-              className="flex flex-col gap-2 rounded-lg border border-border bg-surface-raised p-4"
-            >
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
-                Nouvelle analyse
-              </h3>
-              <p className="text-sm text-ink-muted">
-                Opportune passe en revue les offres de ton catalogue, les score pour ton profil
-                et met en avant les plus pertinentes à étudier.
-              </p>
-              {/* Bouton ancré en bas : la carte s'aligne en hauteur sur « Ajouter une offre »,
-                  l'action reste au même niveau que son bouton voisin plutôt que de flotter. */}
-              <div className="mt-auto pt-1">
-                <LaunchRun />
-              </div>
-            </div>
-            <AddOffer />
-          </div>
 
           <ActivityFeed candidateId={target} />
         </>

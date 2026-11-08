@@ -14,9 +14,10 @@ import { ErrorNotice } from "./States";
  * Désactivé tant que le profil est vierge (OPP-219) : analyser sans profil n'a pas de sens (rien
  * à scorer). On oriente alors vers l'import CV plutôt que de laisser l'action échouer.
  *
- * Raccourci partagé entre le cockpit (OPP-164) et l'Historique.
+ * Raccourci partagé entre la page Offres (OPP-238) et l'Historique. `showProfileNotice` à
+ * `false` quand la page affiche déjà l'invite au CV en tête (page Offres).
  */
-export function LaunchRun() {
+export function LaunchRun({ showProfileNotice = true }: { showProfileNotice?: boolean }) {
   const navigate = useNavigate();
   // `target` reste toujours une recherche du périmètre (cf. useTargetCandidate), donc le POST
   // cible une valeur valide.
@@ -54,7 +55,7 @@ export function LaunchRun() {
           {launch.isPending ? "Analyse en cours…" : "Lancer une analyse"}
         </button>
       </div>
-      {blocked && <ProfileRequiredNotice />}
+      {blocked && showProfileNotice && <ProfileRequiredNotice />}
       {launch.data?.total === 0 && launch.data.errors.length === 0 && (
         <p className="text-sm text-ink-muted">Aucune nouvelle offre à évaluer.</p>
       )}

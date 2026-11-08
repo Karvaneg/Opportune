@@ -115,7 +115,11 @@ describe("NewProfileGuide (OPP-177)", () => {
     // Les trois actions sont offertes (navigation guidée).
     expect(screen.getByRole("link", { name: "Ajouter mon CV" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Récupérer des offres" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Lancer l'analyse" })).toBeInTheDocument();
+    // « Lancer l'analyse » ouvre la page Offres sur le bloc « Nouvelle analyse » (OPP-238).
+    expect(screen.getByRole("link", { name: "Lancer l'analyse" })).toHaveAttribute(
+      "href",
+      "/offres#nouvelle-analyse",
+    );
   });
 
   it("étape faite : un CV présent coche l'étape 1 (plus de bouton)", async () => {

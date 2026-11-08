@@ -10,7 +10,8 @@ import { ErrorNotice, Loading } from "../components/States";
 /**
  * Historique : liste paginée des runs du périmètre (GET /runs), + accès direct par ID.
  * Anciennement l'accueil (« Runs ») ; devenu l'onglet « Historique » quand l'accueil est
- * passé au cockpit (OPP-164). Le lanceur d'analyse reste disponible ici, en plus du cockpit.
+ * passé au cockpit (OPP-164). Le lanceur d'analyse reste disponible ici, en plus de la page
+ * Offres (OPP-238).
  */
 export function RunsListPage() {
   const [page, setPage] = useState(1);

@@ -7,7 +7,7 @@ import { ErrorNotice } from "./States";
  * Ajoute une offre au catalogue, par texte collé (OPP-145) ou par URL (OPP-148) — reviewer
  * uniquement (curation du pool partagé). Le back l'analyse via LLM (latence → « Ajout en
  * cours… »). Au succès, le catalogue est invalidé (cf. `useAddOffer`) : la nouvelle offre
- * apparaît dans l'onglet Offres. Raccourci du cockpit (OPP-164) — auparavant sur Offres (OPP-161).
+ * apparaît dans la liste. Sur la page Offres (OPP-238), après un passage par l'Accueil (OPP-164).
  */
 export function AddOffer() {
   const isReviewer = useIsReviewer();

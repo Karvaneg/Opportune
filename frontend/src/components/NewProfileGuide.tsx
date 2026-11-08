@@ -11,12 +11,6 @@ import { useTargetCandidate } from "../auth/useTargetCandidate";
 import { ImportDataPicker } from "./ImportDataPicker";
 import type { CandidateStats } from "../api/types";
 
-/** Fait défiler jusqu'à un ancrage de la page, en douceur. Pur confort de navigation (pas de
- * logique métier) : sous jsdom, `scrollIntoView` n'existe pas, d'où le garde optionnel. */
-function scrollToId(id: string) {
-  document.getElementById(id)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-}
-
 /** Remonte en haut de page, là où vit le bandeau d'installation de l'assistant local
  * (`LlmBanner`, hors du `<main>`) : il n'a pas d'ancrage propre, on vise donc le sommet. Garde
  * optionnel car `scrollTo` n'existe pas sous jsdom. */
@@ -25,8 +19,9 @@ function scrollToTop() {
 }
 
 /** Une étape du guide : son libellé, son état, et l'action qui y mène : un lien vers une autre
- * page (`to`), un défilement intra-page (`onClick`), ou un contrôle complet (`control`, ex. le
- * choix de fichier de l'import). */
+ * page, éventuellement sur un ancrage (`to`), une action sur place (`onClick`, ex. remonter au
+ * bandeau d'installation), ou un contrôle complet (`control`, ex. le choix de fichier de
+ * l'import). */
 type StepAction =
   | { label: string; to: string }
   | { label: string; onClick: () => void }
@@ -117,7 +112,8 @@ export function NewProfileGuide({
       // Runs du candidat ciblé (cf. `useRuns(1, candidateId)`). Erreur réseau → `data` absent →
       // étape non cochée : on propose l'action plutôt que de la masquer à tort.
       done: (runs.data?.total ?? 0) > 0,
-      action: { label: "Lancer l'analyse", onClick: () => scrollToId("nouvelle-analyse") },
+      // Le bloc « Nouvelle analyse » est sur la page Offres (OPP-238) : on l'ouvre sur ce bloc.
+      action: { label: "Lancer l'analyse", to: "/offres#nouvelle-analyse" },
     },
   ];
 
