@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useCreateSearch, useRenameSearch } from "../api/searches";
 import type { Search } from "../api/types";
-import { useIsReviewer } from "../auth/roles";
-import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import { ErrorNotice } from "./States";
 
 /** Libellé affichable d'une recherche : son nom, ou son id technique à défaut (enrôlée sans nom). */
@@ -13,8 +12,7 @@ function labelOf(search: Search): string {
 /**
  * Sélecteur global de recherche (OPP-184) — le cœur de l'UX « recherches multiples ». Une seule
  * barre, partagée par toutes les pages via `useTargetCandidate` : **basculer** d'une recherche à
- * l'autre, **créer** une recherche nommée, **renommer** l'active. La création / le renommage sont
- * réservés au rôle reviewer (modifier le périmètre) ; la bascule reste ouverte. Remplace les
+ * l'autre, **créer** une recherche nommée, **renommer** l'active. Remplace les
  * sélecteurs par page, qui n'affichaient que l'id brut.
  */
 export function SearchBar() {
@@ -24,7 +22,6 @@ export function SearchBar() {
   // bouton transitoire aussitôt détaché). On ne rend donc rien tant que le périmètre n'est pas
   // résolu.
   const { searches, target, setCandidate, isPending, isError, error } = useTargetCandidate();
-  const isReviewer = useIsReviewer();
   const create = useCreateSearch();
   const rename = useRenameSearch();
   // `idle` : sélecteur + actions ; `creating`/`renaming` : saisie du nom en ligne.
@@ -73,9 +70,8 @@ export function SearchBar() {
   // au lieu de laisser toute l'app paraître vide sans explication.
   if (isError) return <ErrorNotice error={error} />;
 
-  // Périmètre vide : rien à basculer. Un reviewer peut amorcer une première recherche.
+  // Périmètre vide : rien à basculer, on propose d'amorcer une première recherche.
   if (searches.length === 0 && mode === "idle") {
-    if (!isReviewer) return null;
     return (
       <div className="flex items-center gap-3">
         <span className="text-sm text-ink-muted">Aucune recherche.</span>
@@ -112,26 +108,24 @@ export function SearchBar() {
                 ))}
               </select>
             </label>
-            {isReviewer && (
-              <div className="flex items-center gap-1.5">
-                {active && (
-                  <button
-                    type="button"
-                    onClick={openRename}
-                    className="rounded-md px-2 py-1.5 text-sm text-ink-muted transition-colors hover:bg-ink/5 hover:text-ink"
-                  >
-                    Renommer
-                  </button>
-                )}
+            <div className="flex items-center gap-1.5">
+              {active && (
                 <button
                   type="button"
-                  onClick={openCreate}
-                  className="rounded-md px-2 py-1.5 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
+                  onClick={openRename}
+                  className="rounded-md px-2 py-1.5 text-sm text-ink-muted transition-colors hover:bg-ink/5 hover:text-ink"
                 >
-                  Nouvelle recherche
+                  Renommer
                 </button>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                onClick={openCreate}
+                className="rounded-md px-2 py-1.5 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
+              >
+                Nouvelle recherche
+              </button>
+            </div>
           </>
         ) : (
           <form onSubmit={submit} className="flex flex-wrap items-center gap-2">

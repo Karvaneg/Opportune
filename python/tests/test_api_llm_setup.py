@@ -6,7 +6,7 @@ téléchargement, sondage de l'avancement, et 404 quand le service n'est pas câ
 """
 
 from api.app import HermesApi
-from app.auth import LocalAuthProvider, REVIEWER, User
+from app.auth import LocalAuthProvider, User
 from app.db import connect
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
@@ -19,7 +19,7 @@ from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
 _GB = 1024**3
-OWNER = User("moi", REVIEWER, frozenset({"cand-1"}))
+OWNER = User("moi", frozenset({"cand-1"}))
 
 
 def _api(llm_setup) -> HermesApi:

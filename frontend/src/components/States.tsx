@@ -3,9 +3,9 @@ import { ApiHttpError } from "../api/client";
 
 /**
  * Encart d'information **neutre** (bord pointillé) : messages d'aide ou de prérequis non
- * bloquants — LLM à installer, clés Adzuna manquantes, flux RSS à renseigner, action réservée au
- * reviewer. Centralise le style partagé par ces encarts, pour qu'un ajustement de tokens (bord,
- * fond, espacement) se fasse à un seul endroit plutôt que recopié dans chaque composant.
+ * bloquants : LLM à installer, clés Adzuna manquantes, flux RSS à renseigner. Centralise le style
+ * partagé par ces encarts, pour qu'un ajustement de tokens (bord, fond, espacement) se fasse à un
+ * seul endroit plutôt que recopié dans chaque composant.
  */
 export function Hint({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (

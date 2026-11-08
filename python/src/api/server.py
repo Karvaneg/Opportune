@@ -23,7 +23,7 @@ from api.app import HermesApi
 from api.frontend_assets import content_type_for, resolve_static_file
 from api.host_guard import allowed_hosts, is_host_allowed
 from api.origin_guard import EXTRA_ORIGINS_ENV, allowed_origins, is_write_allowed
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 
 # Préfixe des appels de données (cf. front : ``src/api/client.ts``). En mode packagé,
 # l'API sert aussi le front : on route ``/api/*`` vers le dispatcher et le reste vers les
@@ -612,14 +612,14 @@ def assemble_api(
 
 
 def build_local_auth(owned_provider) -> LocalAuthProvider:
-    """Compose l'identité locale : un unique utilisateur ``reviewer`` au périmètre **dynamique**.
+    """Compose l'identité locale : un unique utilisateur au périmètre **dynamique**.
 
     Mono-utilisateur, sans jeton (OPP-181). Périmètre dérivé de la base (OPP-183) :
     ``owned_provider`` est un callable rappelé **à chaque requête** qui rend les ids du
     périmètre courant (registre des candidats), et non un ``frozenset`` figé au boot. Isolé
     de ``main`` pour être testable sans démarrer de serveur.
     """
-    user = User(id="moi", role=REVIEWER, owned_candidates=frozenset())
+    user = User(id="moi", owned_candidates=frozenset())
     return LocalAuthProvider(user, owned_provider=owned_provider)
 
 

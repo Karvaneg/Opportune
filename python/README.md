@@ -43,10 +43,10 @@ inchangées par décision).
 
 | Méthode & route | Rôle |
 |---|---|
-| `GET /me` | Sonde d'amorçage + identité locale (`{id, role, owned_count}`) |
+| `GET /me` | Sonde d'amorçage + identité locale (`{id, owned_count, owned_candidate_ids}`) |
 | `GET /searches` | Liste les recherches de l'espace (OPP-184) |
-| `POST /searches` | Crée une recherche nommée (rôle `reviewer`) |
-| `PUT /searches/{search_id}` | Renomme une recherche (rôle `reviewer`) |
+| `POST /searches` | Crée une recherche nommée |
+| `PUT /searches/{search_id}` | Renomme une recherche |
 | `GET /runs` | Listing paginé des runs du périmètre |
 | `GET /runs/{run_id}` | Détail d'un run (évaluations, erreurs) |
 | `DELETE /runs/{run_id}` | Supprime un run de l'historique |
@@ -60,11 +60,11 @@ inchangées par décision).
 | `POST /candidates/{candidate_id}/profile/cv` | Import d'un CV PDF → extraction + profil (OPP-174, LLM) |
 | `POST /candidates/{candidate_id}/offers/{offer_id}/rescore` | Recalcule le score d'une offre |
 | `GET /recommendations/{recommendation_id}` | Détail d'une recommandation |
-| `POST /recommendations/{recommendation_id}/decision` | Validation humaine (rôle `reviewer`) |
+| `POST /recommendations/{recommendation_id}/decision` | Validation humaine |
 | `GET /recommendations/{recommendation_id}/letter` | Lettre de motivation courante (si générée) |
-| `POST /recommendations/{recommendation_id}/letter` | Génère la lettre (LLM, rôle `reviewer`) |
-| `PUT /recommendations/{recommendation_id}/letter` | Édite la lettre (rôle `reviewer`) |
-| `DELETE /recommendations/{recommendation_id}/letter` | Supprime la lettre (rôle `reviewer`) |
+| `POST /recommendations/{recommendation_id}/letter` | Génère la lettre (LLM) |
+| `PUT /recommendations/{recommendation_id}/letter` | Édite la lettre |
+| `DELETE /recommendations/{recommendation_id}/letter` | Supprime la lettre |
 | `GET /offers` | Catalogue du pool d'offres, annoté du score de match |
 | `POST /offers` | Intake d'une offre par texte collé (OPP-145) ou URL (OPP-148) |
 | `GET /collect` | État du job de collecte actif, s'il y en a un (OPP-208) |
@@ -84,7 +84,7 @@ inchangées par décision).
 | `PUT /settings/ats` | Vérifie auprès de l'ATS puis enregistre les entreprises (liste vide = tout supprimer) |
 | `POST /data/export` | Rend l'archive `.zip` de l'espace (base + réglages, clés Adzuna comprises) en base64 (`archive_base64`) avec un nom daté (`filename`) ; le front l'enregistre où l'utilisateur choisit (OPP-232) |
 | `POST /data/import` | Remplace la base et les réglages par une archive (`archive_base64`) ; 400 si l'archive est invalide ou vient d'une version plus récente, 409 pendant une collecte |
-| `POST /applications/{recommendation_id}/confirm` | Action sensible : candidature (confirmation explicite + décision `approved` + rôle `reviewer`) |
+| `POST /applications/{recommendation_id}/confirm` | Action sensible : candidature (confirmation explicite + décision `approved`) |
 | `POST /applications/{recommendation_id}/applied` | Suivi : « j'ai candidaté » (date optionnelle) |
 | `DELETE /applications/{recommendation_id}/applied` | Annule la candidature déclarée |
 | `GET /applications/{recommendation_id}/tracking` | Historique de suivi post-candidature (OPP-223) |
@@ -103,8 +103,8 @@ permet au binaire autonome de livrer front et API sur le même origin.
 Gardes de sécurité (OPP-181, local-first) : l'API est **mono-utilisateur sur `localhost` et
 sans jeton** — toute requête est servie comme l'unique utilisateur local (pas de 401 en
 fonctionnement normal ; un filet 401 subsiste si un fournisseur d'auth strict était câblé).
-Restent la **propriété** de la ressource (sinon **404**) et, pour les actions réservées, le
-**rôle `reviewer`** (**403**). Les 404 sont **neutres** : « inexistant » et « hors périmètre »
+Reste la **propriété** de la ressource (sinon **404**) ; plus de contrôle de rôle (OPP-241).
+Les 404 sont **neutres** : « inexistant » et « hors périmètre »
 sont indistinguables (anti-énumération).
 
 Contrôle de l'en-tête `Origin` (OPP-233, `api/origin_guard.py`) : une écriture (`POST`, `PUT`,

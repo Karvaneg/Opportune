@@ -1,14 +1,14 @@
 """Tests des routes de profil candidat (GET/PUT /candidates/{id}/profile, OPP-158).
 
 Service profil réel adossé à un dépôt factice : on vérifie le contrat HTTP — sérialisation,
-garde propriétaire (404 neutre hors périmètre), garde reviewer sur l'édition, validation du
+garde propriétaire (404 neutre hors périmètre), validation du
 corps, profil absent rendu **vide en 200** (OPP-195), route optionnelle, et méthode non supportée.
 """
 
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision_service import DecisionService
@@ -53,8 +53,8 @@ def _service(*profiles):
 
 
 def _auth() -> LocalAuthProvider:
-    # Identité locale par défaut des tests : propriétaire reviewer de cand-1.
-    return LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"})))
+    # Identité locale par défaut des tests : propriétaire de cand-1.
+    return LocalAuthProvider(User("moi", frozenset({"cand-1"})))
 
 
 # --- GET ---------------------------------------------------------------------
@@ -120,7 +120,7 @@ def test_get_profile_owner_gated():
     # Propriétaire d'un autre candidat → 404 neutre (anti-énumération).
     foreign = _api(
         _service(_profile()),
-        auth=LocalAuthProvider(User("autre", REVIEWER, frozenset({"cand-2"}))),
+        auth=LocalAuthProvider(User("autre", frozenset({"cand-2"}))),
     )
     assert foreign.dispatch("GET", "/candidates/cand-1/profile", None, None).status == 404
     owner = _api(_service(_profile()), auth=_auth())
@@ -140,24 +140,11 @@ def test_put_profile_updates_skills():
     assert store.get("cand-1").skills == resp.body["skills"]  # persisté
 
 
-def test_put_profile_requires_reviewer():
-    body = {"skills": ["React"]}
-    # Propriétaire sans le rôle reviewer → 403.
-    viewer = _api(
-        _service(_profile()),
-        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
-    )
-    assert viewer.dispatch("PUT", "/candidates/cand-1/profile", body).status == 403
-    # Propriétaire reviewer → 200.
-    owner = _api(_service(_profile()), auth=_auth())
-    assert owner.dispatch("PUT", "/candidates/cand-1/profile", body).status == 200
-
-
-def test_put_profile_owner_gated_before_reviewer():
-    # Un reviewer d'un AUTRE candidat ne doit pas distinguer « existe » de « hors périmètre ».
+def test_put_profile_owner_gated():
+    # Le propriétaire d'un AUTRE candidat ne doit pas distinguer « existe » de « hors périmètre ».
     foreign = _api(
         _service(_profile()),
-        auth=LocalAuthProvider(User("autre", REVIEWER, frozenset({"cand-2"}))),
+        auth=LocalAuthProvider(User("autre", frozenset({"cand-2"}))),
     )
     resp = foreign.dispatch("PUT", "/candidates/cand-1/profile", {"skills": ["React"]})
     assert resp.status == 404

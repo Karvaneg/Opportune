@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AtsSettings } from "../src/components/AtsSettings";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 const respond = (status: number, body: unknown) =>
   Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) } as Response);
@@ -13,7 +13,6 @@ type Company = { url: string; ats: string; slug: string; offers_in_france: numbe
 /** fetch factice **stateful** : le PUT /settings/ats rend la réponse fournie et la mémorise
  * pour le GET suivant, comme le vrai back. */
 function stubSettings(
-  role = "reviewer",
   companies: Company[] = [],
   putResponse?: { status: number; body: unknown },
 ) {
@@ -24,7 +23,7 @@ function stubSettings(
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("/me"))
-        return respond(200, { id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return respond(200, { id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/settings/ats")) {
         if (init?.method === "PUT") {
           puts.push(JSON.parse(String(init?.body ?? "{}")));
@@ -43,11 +42,11 @@ function stubSettings(
 function renderSettings() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={queryClient}>
         <AtsSettings />
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -56,8 +55,8 @@ const SWILE: Company = { url: "https://jobs.lever.co/swile", ats: "lever", slug:
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AtsSettings (OPP-226)", () => {
-  it("affiche « Aucune entreprise » et le champ pour un reviewer", async () => {
-    stubSettings("reviewer", []);
+  it("affiche « Aucune entreprise » et le champ", async () => {
+    stubSettings([]);
 
     renderSettings();
 
@@ -66,7 +65,7 @@ describe("AtsSettings (OPP-226)", () => {
   });
 
   it("préremplit le champ avec les pages carrière enregistrées", async () => {
-    stubSettings("reviewer", [SWILE]);
+    stubSettings([SWILE]);
 
     renderSettings();
 
@@ -76,7 +75,7 @@ describe("AtsSettings (OPP-226)", () => {
   });
 
   it("enregistre, resynchronise le champ et affiche les offres en France des entreprises vérifiées", async () => {
-    const puts = stubSettings("reviewer", [], {
+    const puts = stubSettings([], {
       status: 200,
       body: { companies: [{ ...SWILE, offers_in_france: 17 }] },
     });
@@ -95,7 +94,7 @@ describe("AtsSettings (OPP-226)", () => {
   });
 
   it("affiche le refus du back (URL non reconnue) sans rien enregistrer", async () => {
-    stubSettings("reviewer", [], {
+    stubSettings([], {
       status: 400,
       body: { error: "URL non reconnue : https://wttj.com/x" },
     });
@@ -110,7 +109,7 @@ describe("AtsSettings (OPP-226)", () => {
   });
 
   it("supprime toutes les entreprises après confirmation quand on vide le champ", async () => {
-    const puts = stubSettings("reviewer", [SWILE]);
+    const puts = stubSettings([SWILE]);
     vi.stubGlobal("confirm", vi.fn(() => true));
     renderSettings();
     const field = await screen.findByLabelText("Pages carrière des entreprises ciblées");
@@ -123,7 +122,7 @@ describe("AtsSettings (OPP-226)", () => {
   });
 
   it("n'envoie rien si on annule la confirmation de suppression", async () => {
-    const puts = stubSettings("reviewer", [SWILE]);
+    const puts = stubSettings([SWILE]);
     vi.stubGlobal("confirm", vi.fn(() => false));
     renderSettings();
     const field = await screen.findByLabelText("Pages carrière des entreprises ciblées");
@@ -134,12 +133,4 @@ describe("AtsSettings (OPP-226)", () => {
     expect(puts).toEqual([]);
   });
 
-  it("n'expose pas de champ à un non-reviewer", async () => {
-    stubSettings("viewer", []);
-
-    renderSettings();
-
-    expect(await screen.findByText(/Un reviewer peut renseigner les entreprises ciblées/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("Pages carrière des entreprises ciblées")).not.toBeInTheDocument();
-  });
 });

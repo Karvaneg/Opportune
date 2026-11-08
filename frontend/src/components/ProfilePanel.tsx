@@ -1,6 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useProfile, useUpdateProfileSkills, useUploadCv } from "../api/profile";
-import { useIsReviewer } from "../auth/roles";
 import { ProfileExperiences } from "./ProfileExperiences";
 import { ErrorNotice, Hint, Loading } from "./States";
 import { fileToBase64 } from "../lib/fileToBase64";
@@ -14,11 +13,11 @@ const MAX_CV_BYTES = 10 * 1024 * 1024;
 const CONTRACT_TYPES = ["CDI", "freelance", "les deux"] as const;
 
 /**
- * Panneau « Mon profil » du cockpit (OPP-158) : consulte les compétences du candidat et, pour un
- * reviewer, les édite. Le scoring sous-estimait l'adéquation quand une compétence réellement
- * maîtrisée manquait des `skills` (ex. HTML/CSS, Agile, Scrum) ; combler ce trou de données ici
- * fiabilise le match. L'édition remplace la liste complète (`PUT /candidates/{id}/profile`) ;
- * au succès, le catalogue est invalidé → les scores se rafraîchissent sans rechargement.
+ * Panneau « Mon profil » du cockpit (OPP-158) : consulte et édite les compétences du candidat. Le
+ * scoring sous-estimait l'adéquation quand une compétence réellement maîtrisée manquait des
+ * `skills` (ex. HTML/CSS, Agile, Scrum) ; combler ce trou de données ici fiabilise le match.
+ * L'édition remplace la liste complète (`PUT /candidates/{id}/profile`) ; au succès, le catalogue
+ * est invalidé → les scores se rafraîchissent sans rechargement.
  *
  * Affiche aussi le **parcours** extrait du CV (OPP-176, lecture seule) : jusqu'ici l'import CV
  * peuplait les expériences en base sans que rien n'apparaisse à l'écran. Quand le profil est
@@ -31,7 +30,6 @@ const CONTRACT_TYPES = ["CDI", "freelance", "les deux"] as const;
  * profil — un `PUT /profile` renverrait 404 sans profil en base.
  */
 export function ProfilePanel({ candidateId }: { candidateId: string }) {
-  const isReviewer = useIsReviewer();
   const { data, isPending, isError, error } = useProfile(candidateId);
   const update = useUpdateProfileSkills();
   const upload = useUploadCv();
@@ -120,70 +118,67 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
       {isEmptyProfile && (
         <Hint>
           Ton profil est encore vide.{" "}
-          {isReviewer
-            ? "Importe ton CV (PDF) ci-dessous pour reconstituer automatiquement tes compétences et ton parcours."
-            : "Un reviewer peut importer un CV pour le reconstituer."}
+          Importe ton CV (PDF) ci-dessous pour reconstituer automatiquement tes compétences et ton
+          parcours.
         </Hint>
       )}
 
-      {isReviewer && (
-        <section className="space-y-1">
-          {/* Premier import : profil encore vierge, donc pas de type de contrat connu (le back
-              renvoie un profil vide avec `contract_type: ""`). On le demande ici (le back l'exige
-              à la création) ; une fois le profil créé, il le porte et ce sélecteur disparaît
-              (OPP-218/195). */}
-          {!data?.contract_type && (
-            <label className="block text-sm font-medium text-ink">
-              Type de contrat recherché
-              <select
-                value={contractType}
-                onChange={(e) => setContractType(e.target.value)}
-                disabled={upload.isPending}
-                aria-label="Type de contrat recherché"
-                className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
-              >
-                {CONTRACT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+      <section className="space-y-1">
+        {/* Premier import : profil encore vierge, donc pas de type de contrat connu (le back
+            renvoie un profil vide avec `contract_type: ""`). On le demande ici (le back l'exige
+            à la création) ; une fois le profil créé, il le porte et ce sélecteur disparaît
+            (OPP-218/195). */}
+        {!data?.contract_type && (
           <label className="block text-sm font-medium text-ink">
-            Importer un CV (PDF)
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={onCvSelected}
+            Type de contrat recherché
+            <select
+              value={contractType}
+              onChange={(e) => setContractType(e.target.value)}
               disabled={upload.isPending}
-              aria-label="Importer un CV PDF"
-              className="mt-1 block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-ink/5 disabled:opacity-50"
-            />
+              aria-label="Type de contrat recherché"
+              className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
+            >
+              {CONTRACT_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
           </label>
-          <p className="text-xs text-ink-muted">
-            Le CV est analysé localement pour reconstituer ton profil et ton parcours. Les
-            compétences corrigées à la main sont préservées.
-          </p>
-          {upload.isPending && (
-            // L'analyse est un appel LLM **local synchrone** qui peut durer plusieurs minutes :
-            // on l'annonce explicitement (avec un indicateur animé) pour que l'attente ne passe
-            // pas pour un gel de l'interface.
-            <div role="status" className="flex items-center gap-2 text-sm text-ink-muted">
-              <span
-                aria-hidden="true"
-                className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border border-t-ink-muted"
-              />
-              <span>Analyse du CV en cours — l'extraction locale prend 1 à 5 minutes.</span>
-            </div>
-          )}
-          {upload.isSuccess && (
-            <span className="text-sm text-success-text">Profil mis à jour depuis le CV.</span>
-          )}
-          {cvError && <ErrorNotice error={cvError} />}
-          {upload.isError && <ErrorNotice error={upload.error} />}
-        </section>
-      )}
+        )}
+        <label className="block text-sm font-medium text-ink">
+          Importer un CV (PDF)
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={onCvSelected}
+            disabled={upload.isPending}
+            aria-label="Importer un CV PDF"
+            className="mt-1 block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-ink/5 disabled:opacity-50"
+          />
+        </label>
+        <p className="text-xs text-ink-muted">
+          Le CV est analysé localement pour reconstituer ton profil et ton parcours. Les
+          compétences corrigées à la main sont préservées.
+        </p>
+        {upload.isPending && (
+          // L'analyse est un appel LLM **local synchrone** qui peut durer plusieurs minutes :
+          // on l'annonce explicitement (avec un indicateur animé) pour que l'attente ne passe
+          // pas pour un gel de l'interface.
+          <div role="status" className="flex items-center gap-2 text-sm text-ink-muted">
+            <span
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border border-t-ink-muted"
+            />
+            <span>Analyse du CV en cours : l'extraction locale prend 1 à 5 minutes.</span>
+          </div>
+        )}
+        {upload.isSuccess && (
+          <span className="text-sm text-success-text">Profil mis à jour depuis le CV.</span>
+        )}
+        {cvError && <ErrorNotice error={cvError} />}
+        {upload.isError && <ErrorNotice error={upload.error} />}
+      </section>
 
       {/* Édition des compétences : seulement quand un profil **existe vraiment** (au moins une
           compétence ou une expérience). Sur une recherche neuve, le back renvoie un profil vide en
@@ -208,63 +203,57 @@ export function ProfilePanel({ candidateId }: { candidateId: string }) {
                   className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-3 py-1 text-sm text-ink"
                 >
                   {skill}
-                  {isReviewer && (
-                    <button
-                      type="button"
-                      onClick={() => removeSkill(skill)}
-                      aria-label={`Retirer ${skill}`}
-                      className="text-ink-muted hover:text-danger"
-                    >
-                      ×
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeSkill(skill)}
+                    aria-label={`Retirer ${skill}`}
+                    className="text-ink-muted hover:text-danger"
+                  >
+                    ×
+                  </button>
                 </li>
               ))}
             </ul>
           )}
 
-          {isReviewer && (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addSkill();
-                    }
-                  }}
-                  placeholder="Ajouter une compétence (ex. HTML, Agile)…"
-                  aria-label="Ajouter une compétence"
-                  className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={addSkill}
-                  disabled={draft.trim() === ""}
-                  className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface disabled:opacity-50"
-                >
-                  Ajouter
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => update.mutate({ candidateId, skills })}
-                  disabled={!canSave}
-                  className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
-                >
-                  {update.isPending ? "Enregistrement…" : "Enregistrer les compétences"}
-                </button>
-                {update.isSuccess && !dirty && (
-                  <span className="text-sm text-success-text">Compétences à jour.</span>
-                )}
-                {update.isError && <ErrorNotice error={update.error} />}
-              </div>
-            </>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addSkill();
+                }
+              }}
+              placeholder="Ajouter une compétence (ex. HTML, Agile)…"
+              aria-label="Ajouter une compétence"
+              className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 text-sm"
+            />
+            <button
+              type="button"
+              onClick={addSkill}
+              disabled={draft.trim() === ""}
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface disabled:opacity-50"
+            >
+              Ajouter
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => update.mutate({ candidateId, skills })}
+              disabled={!canSave}
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:bg-brand-strong disabled:opacity-50"
+            >
+              {update.isPending ? "Enregistrement…" : "Enregistrer les compétences"}
+            </button>
+            {update.isSuccess && !dirty && (
+              <span className="text-sm text-success-text">Compétences à jour.</span>
+            )}
+            {update.isError && <ErrorNotice error={update.error} />}
+          </div>
         </section>
       )}
 

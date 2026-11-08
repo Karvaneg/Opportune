@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SearchBar } from "../src/components/SearchBar";
-import { AuthProvider } from "../src/auth/AuthContext";
-import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
+import { TargetCandidateProvider } from "../src/api/useTargetCandidate";
 import type { Search } from "../src/api/types";
 
 const ok = (b: unknown) =>
@@ -12,9 +12,9 @@ const ok = (b: unknown) =>
 
 /**
  * fetch factice **avec état** : une liste de recherches mutable, pour que POST/PUT se reflètent
- * dans le GET /searches suivant (invalidation React Query). `role` pilote le gating reviewer via /me.
+ * dans le GET /searches suivant (invalidation React Query).
  */
-function stubFetch(initial: Search[], role = "reviewer") {
+function stubFetch(initial: Search[]) {
   const searches = [...initial];
   const posted: unknown[] = [];
   const put: unknown[] = [];
@@ -42,7 +42,7 @@ function stubFetch(initial: Search[], role = "reviewer") {
       // React Query (structural sharing) — la vraie API renvoie un tableau neuf à chaque appel.
       if (s.includes("/searches")) return ok({ items: [...searches] });
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: searches.length, owned_candidate_ids: [] });
+        return ok({ id: "u", owned_count: searches.length, owned_candidate_ids: [] });
       return ok({});
     }),
   );
@@ -52,13 +52,13 @@ function stubFetch(initial: Search[], role = "reviewer") {
 function renderBar() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <SearchBar />
         </TargetCandidateProvider>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -129,15 +129,6 @@ describe("SearchBar (OPP-184)", () => {
     expect(within(select).getByRole("option", { name: "Nouveau" })).toBeInTheDocument();
   });
 
-  it("cache créer / renommer à un non-reviewer, mais garde la bascule", async () => {
-    stubFetch([{ id: "cand-1", label: "Data Analyst" }], "candidate");
-    renderBar();
-
-    expect(await screen.findByRole("combobox", { name: "Recherche active" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Nouvelle recherche" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Renommer" })).toBeNull();
-  });
-
   it("signale l'échec de GET /searches au lieu de paraître vide", async () => {
     // API HS sur /searches : sans surface d'erreur, toute l'app semblerait avoir un périmètre
     // vide. On doit afficher l'erreur, pas un silence (cf. revue OPP-184).
@@ -152,7 +143,7 @@ describe("SearchBar (OPP-184)", () => {
             json: () => Promise.resolve({ error: "Oups" }),
           } as Response);
         if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 0, owned_candidate_ids: [] });
+          return ok({ id: "u", owned_count: 0, owned_candidate_ids: [] });
         return ok({});
       }),
     );
@@ -162,7 +153,7 @@ describe("SearchBar (OPP-184)", () => {
     expect(screen.queryByText("Aucune recherche.")).toBeNull();
   });
 
-  it("périmètre vide : un reviewer peut amorcer une première recherche", async () => {
+  it("périmètre vide : on peut amorcer une première recherche", async () => {
     const { posted } = stubFetch([]);
     renderBar();
 

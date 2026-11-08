@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useSearchParams } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CockpitPage } from "../src/pages/CockpitPage";
-import { AuthProvider } from "../src/auth/AuthContext";
-import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
+import { TargetCandidateProvider } from "../src/api/useTargetCandidate";
 
 const STATS = {
   a_etudier: 3, a_postuler: 2, postule: 5, offres_total: 12, entretiens_prevus: 1,
@@ -32,8 +32,8 @@ const ACTIVITY = {
   ],
 };
 
-/** fetch factice : /me (reviewer, 1 candidat), /stats, /activity, POST /offers pour l'ajout. */
-function stubFetch(statsBody: unknown = STATS, role = "reviewer", activityBody: unknown = ACTIVITY) {
+/** fetch factice : /me (1 candidat), /stats, /activity, POST /offers pour l'ajout. */
+function stubFetch(statsBody: unknown = STATS, activityBody: unknown = ACTIVITY) {
   const calls: { url: string; body?: unknown }[] = [];
   const ok = (b: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -44,7 +44,7 @@ function stubFetch(statsBody: unknown = STATS, role = "reviewer", activityBody: 
       // Source du ciblage (OPP-184) : une recherche « cand-1 » dans le périmètre.
       if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/activity")) return ok(activityBody);
       if (s.includes("/profile")) return ok(PROFILE);
       // Profil établi (OPP-177) : au moins un run existe → le guide « Nouveau profil » reste masqué
@@ -72,7 +72,7 @@ function OffersProbe() {
 function renderCockpit() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <MemoryRouter initialEntries={["/"]}>
@@ -84,7 +84,7 @@ function renderCockpit() {
           </MemoryRouter>
         </TargetCandidateProvider>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -168,7 +168,7 @@ describe("CockpitPage (OPP-164)", () => {
   });
 
   it("flux d'activité vide → message dédié", async () => {
-    stubFetch(STATS, "reviewer", { items: [] });
+    stubFetch(STATS, { items: [] });
     renderCockpit();
 
     expect(await screen.findByText("Aucune activité récente.")).toBeInTheDocument();

@@ -19,7 +19,6 @@ import {
 } from "../api/letters";
 import { followUpOrigin, followUpRank, formatIsoDay } from "../api/followUps";
 import { useLlmReady } from "../api/system";
-import { useIsReviewer } from "../auth/roles";
 import type {
   ApplicationIntent,
   DecisionHistoryEvent,
@@ -347,12 +346,11 @@ function DecisionTimeline({
 }
 
 /**
- * Re-score ciblé d'une offre (OPP-150) — proposé **uniquement tant que l'offre n'est pas
- * arbitrée** (`status === "pending"`). Un run n'évalue plus que les offres nouvelles ; ce
- * bouton permet de recalculer à la demande le score d'une offre ancienne (p. ex. après mise
- * à jour du profil). Une offre déjà tranchée est figée → bouton absent (le back préserve de
- * toute façon la décision humaine). Au succès, le score affiché se rafraîchit (invalidation
- * du détail). Action de propriétaire (pas réservée aux reviewers), comme lancer un run.
+ * Re-score ciblé d'une offre (OPP-150), proposé **uniquement tant que l'offre n'est pas arbitrée**
+ * (`status === "pending"`). Un run n'évalue plus que les offres nouvelles ; ce bouton permet de
+ * recalculer à la demande le score d'une offre ancienne (p. ex. après mise à jour du profil). Une
+ * offre déjà tranchée est figée → bouton absent (le back préserve de toute façon la décision
+ * humaine). Au succès, le score affiché se rafraîchit (invalidation du détail).
  */
 function RescoreOffer({ reco }: { reco: RecommendationDetail }) {
   const rescore = useRescoreOffer(reco.recommendation_id, reco.candidate_id, reco.offer_id);
@@ -385,19 +383,12 @@ function RescoreOffer({ reco }: { reco: RecommendationDetail }) {
 }
 
 /**
- * Panneau de validation humaine (OPP-108) — visible pour les reviewers uniquement.
- * Les verbes mappent le contrat back ; le succès invalide le détail (via le hook) donc
- * `status` et historique se rafraîchissent en direct. Le back reste l'autorité finale
- * (403 en dernier recours) si la garde UI est contournée.
+ * Panneau de validation humaine (OPP-108). Les verbes mappent le contrat back ; le succès invalide
+ * le détail (via le hook) donc `status` et historique se rafraîchissent en direct.
  */
 function RecommendationActions({ recommendationId }: { recommendationId: string }) {
-  const isReviewer = useIsReviewer();
   const [comment, setComment] = useState("");
   const validate = useValidateRecommendation(recommendationId);
-
-  // Garde reviewer côté UI (OPP-106) : contrôles masqués pour les autres rôles. Défense en
-  // profondeur — le back conserve le 403 si la garde est contournée.
-  if (!isReviewer) return null;
 
   const submit = (decision: DecisionVerb) =>
     validate.mutate(
@@ -441,7 +432,7 @@ function RecommendationActions({ recommendationId }: { recommendationId: string 
 }
 
 /**
- * Note d'une **intention de candidater** (OPP-110) — reviewers uniquement. Double consentement
+ * Note d'une **intention de candidater** (OPP-110). Double consentement
  * via modale : ouvrir ne déclenche rien ; seule la confirmation POST l'action. L'action
  * n'envoie **rien** vers l'extérieur (exécution simulée en V2) : elle trace que tu comptes
  * candidater. L'état est **persistant** — relu depuis `reco.application` au chargement — et
@@ -454,7 +445,6 @@ function ApplicationConfirm({
   recommendationId: string;
   application: ApplicationIntent | null;
 }) {
-  const isReviewer = useIsReviewer();
   const [open, setOpen] = useState(false);
   // YYYY-MM-DD en **heure locale** (`en-CA` formate en ISO court) : `toISOString()` donnerait
   // la date UTC et pourrait proposer « demain » le soir pour un fuseau en retard sur UTC.
@@ -463,8 +453,6 @@ function ApplicationConfirm({
   const confirm = useConfirmApplication(recommendationId);
   const markApplied = useMarkApplied(recommendationId);
   const unmarkApplied = useUnmarkApplied(recommendationId);
-
-  if (!isReviewer) return null;
 
   // Trois états du cycle de vie. L'intention est notée dès qu'elle est en base (au chargement)
   // ou tout juste confirmée dans la session ; de même, « candidaté » vaut dès que le back le
@@ -608,7 +596,7 @@ function ApplicationConfirm({
 }
 
 /**
- * Suivi post-candidature (OPP-223) — reviewers uniquement, et seulement une fois la candidature
+ * Suivi post-candidature (OPP-223), seulement une fois la candidature
  * **déclarée** (même garde que le back, qui refuse 409 sinon). Permet d'ajouter un événement
  * daté (entretien prévu, rejet, offre reçue, relance) ; l'historique s'affiche dans la frise
  * ci-dessous. Aucun envoi : c'est du pointage de suivi, comme « j'ai candidaté ».
@@ -620,13 +608,12 @@ function ApplicationTracking({
   recommendationId: string;
   application: ApplicationIntent | null;
 }) {
-  const isReviewer = useIsReviewer();
   const [kind, setKind] = useState<TrackingEventKind>("interview");
   const [eventDate, setEventDate] = useState("");
   const [comment, setComment] = useState("");
   const addEvent = useAddTrackingEvent(recommendationId);
 
-  if (!isReviewer || application?.applied !== true) return null;
+  if (application?.applied !== true) return null;
 
   const due = application.follow_up?.due ?? null;
   // « J'ai relancé » : note la relance en un clic, sans passer par la liste des événements.
@@ -734,7 +721,7 @@ const LETTER_SOURCE_LABELS: Record<Letter["source"], string> = {
 };
 
 /**
- * Panneau lettre de motivation (OPP-147) — reviewers uniquement (contenu de candidature).
+ * Panneau lettre de motivation (OPP-147).
  * Trois états : aucune lettre (bouton Générer), lettre présente (corps + éditer / régénérer
  * / supprimer), édition en cours (zone de texte → PUT). La régénération d'une lettre existante
  * est un geste **explicite** : le back refuse (409) d'écraser en silence, donc l'UI demande
@@ -742,7 +729,6 @@ const LETTER_SOURCE_LABELS: Record<Letter["source"], string> = {
  * Un 404 sur la lettre n'est pas une erreur : c'est l'état « pas encore générée ».
  */
 function LetterPanel({ recommendationId }: { recommendationId: string }) {
-  const isReviewer = useIsReviewer();
   const { data, isPending, isError, error } = useLetter(recommendationId);
   const generate = useGenerateLetter(recommendationId);
   const edit = useEditLetter(recommendationId);
@@ -756,9 +742,6 @@ function LetterPanel({ recommendationId }: { recommendationId: string }) {
   const [draft, setDraft] = useState("");
   const [confirmRegen, setConfirmRegen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  // Garde reviewer côté UI (défense en profondeur ; le back garde le 403/404).
-  if (!isReviewer) return null;
 
   const is404 = isError && error instanceof ApiHttpError && error.status === 404;
   // Une lettre n'est « présente » que si la dernière requête a réussi et porte un corps

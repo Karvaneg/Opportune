@@ -10,7 +10,7 @@ directement via ``RunStore`` pour contrôler dates et périmètres.
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.db import connect
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
@@ -22,9 +22,9 @@ from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
 # Trois périmètres sur les mêmes runs : cand-1 seul, cand-1+cand-2, et aucun.
-ONE = User("moi", REVIEWER, frozenset({"cand-1"}))
-BOTH = User("moi", REVIEWER, frozenset({"cand-1", "cand-2"}))
-NONE = User("moi", REVIEWER, frozenset())
+ONE = User("moi", frozenset({"cand-1"}))
+BOTH = User("moi", frozenset({"cand-1", "cand-2"}))
+NONE = User("moi", frozenset())
 
 
 def _run(run_id: str, candidate_id: str, executed_at: str, *, evals=0, errs=0) -> HermesRun:

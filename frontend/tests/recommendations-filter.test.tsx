@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunRecommendations } from "../src/components/RunRecommendations";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 function item(id: string, decision_status = "pending") {
   return {
@@ -23,14 +23,14 @@ function item(id: string, decision_status = "pending") {
 const ok = (body: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
 
-/** fetch factice filtrable : /me reviewer ; la liste dépend de `decision_status`. */
+/** fetch factice filtrable : /me ; la liste dépend de `decision_status`. */
 function stubFilterableFetch() {
   const calls: string[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
       const s = String(url);
-      if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+      if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
       calls.push(s);
       const decision = new URL(s, "http://x").searchParams.get("decision_status");
       if (decision === "approved") {
@@ -59,13 +59,13 @@ function stubFilterableFetch() {
 function renderRecommendations() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <RunRecommendations runId="r1" />
         </MemoryRouter>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 

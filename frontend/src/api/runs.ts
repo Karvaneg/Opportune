@@ -53,7 +53,7 @@ export function useLaunchRun() {
 
 /**
  * Supprime un run : `DELETE /runs/{id}` (OPP-144). Variable = run_id. Au succès, invalide
- * la liste des runs → la ligne disparaît. Le back garde la propriété + le rôle reviewer.
+ * la liste des runs → la ligne disparaît. Le back vérifie la propriété du run.
  */
 export function useDeleteRun() {
   return useApiMutation<{ deleted: string }, string>({

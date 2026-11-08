@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProfileSummaryCard } from "../src/components/ProfileSummaryCard";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React", "Node.js"], contract_type: "CDI",
@@ -27,7 +27,7 @@ function stub(profile: unknown) {
     vi.fn((url: string) => {
       const s = String(url);
       if (s.includes("/me"))
-        return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/profile")) return profile === null ? notFound() : ok(profile);
       return ok({});
     }),
@@ -37,13 +37,13 @@ function stub(profile: unknown) {
 function renderCard() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <ProfileSummaryCard candidateId="cand-1" />
         </MemoryRouter>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 

@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useDeleteRun, useRuns } from "../api/runs";
-import { useIsReviewer } from "../auth/roles";
 import type { RunSummary } from "../api/types";
 import { LaunchRun } from "../components/LaunchRun";
 import { Pager } from "../components/Pager";
@@ -79,16 +78,12 @@ function RunRow({ run }: { run: RunSummary }) {
 }
 
 /**
- * Suppression d'un run (OPP-144) — reviewer uniquement (garde OPP-106 ; le back conserve
- * le 403). Confirmation explicite en deux temps (Supprimer → Confirmer / Annuler) plutôt
- * qu'une suppression au premier clic.
+ * Suppression d'un run (OPP-144). Confirmation explicite en deux temps (Supprimer → Confirmer /
+ * Annuler) plutôt qu'une suppression au premier clic.
  */
 function DeleteRunButton({ runId }: { runId: string }) {
-  const isReviewer = useIsReviewer();
   const [confirming, setConfirming] = useState(false);
   const del = useDeleteRun();
-
-  if (!isReviewer) return null;
 
   return (
     <span className="flex items-center gap-2">

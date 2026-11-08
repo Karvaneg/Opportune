@@ -2,12 +2,12 @@
 
 Le store est réel mais pointé sur un fichier temporaire (aucun secret réel, aucun réseau). On
 vérifie le contrat HTTP : état « configuré » (jamais les clés), enregistrement, validation,
-réservation au reviewer, et 404 quand le store n'est pas câblé.
+et 404 quand le store n'est pas câblé.
 """
 
 from api.app import HermesApi
 from app.adzuna_credentials_store import AdzunaCredentialsStore
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.db import connect
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
@@ -17,11 +17,10 @@ from app.recommendation_service import RecommendationService
 from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
-REVIEWER_USER = User("moi", REVIEWER, frozenset({"cand-1"}))
-VIEWER_USER = User("moi", "viewer", frozenset({"cand-1"}))
+LOCAL_USER = User("moi", frozenset({"cand-1"}))
 
 
-def _api(store, *, user=REVIEWER_USER) -> HermesApi:
+def _api(store, *, user=LOCAL_USER) -> HermesApi:
     conn = connect(":memory:")
     orchestrator = HermesOrchestrator(
         RecommendationService(ProfileStore(conn), OfferStore(conn)),
@@ -80,16 +79,6 @@ def test_put_rejects_missing_or_empty_fields(tmp_path):
     assert api.dispatch("PUT", "/settings/adzuna", {"app_id": "id"}).status == 400
     assert api.dispatch("PUT", "/settings/adzuna", {"app_id": "id", "app_key": ""}).status == 400
     assert api.dispatch("PUT", "/settings/adzuna", {"app_id": 123, "app_key": "k"}).status == 400
-
-
-def test_requires_reviewer_role(tmp_path):
-    viewer = _api(AdzunaCredentialsStore(tmp_path / "adzuna.json"), user=VIEWER_USER)
-
-    assert viewer.dispatch("GET", "/settings/adzuna", None, None).status == 403
-    assert (
-        viewer.dispatch("PUT", "/settings/adzuna", {"app_id": "id", "app_key": "key"}).status
-        == 403
-    )
 
 
 def test_route_absent_without_store():

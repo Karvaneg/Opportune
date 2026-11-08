@@ -2,8 +2,8 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProfilePage } from "../src/pages/ProfilePage";
-import { AuthProvider } from "../src/auth/AuthContext";
-import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
+import { TargetCandidateProvider } from "../src/api/useTargetCandidate";
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
@@ -14,7 +14,7 @@ const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
 
 /** fetch factice : /searches (périmètre paramétrable, source du ciblage), /me, /profile (figé). */
-function stub(candidates: string[], role = "reviewer") {
+function stub(candidates: string[]) {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
@@ -22,7 +22,7 @@ function stub(candidates: string[], role = "reviewer") {
       if (s.includes("/searches"))
         return ok({ items: candidates.map((id) => ({ id, label: id })) });
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: candidates.length, owned_candidate_ids: candidates });
+        return ok({ id: "u", owned_count: candidates.length, owned_candidate_ids: candidates });
       if (s.includes("/profile")) return ok(PROFILE);
       return ok({});
     }),
@@ -32,13 +32,13 @@ function stub(candidates: string[], role = "reviewer") {
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <ProfilePage />
         </TargetCandidateProvider>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 

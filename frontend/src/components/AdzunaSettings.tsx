@@ -1,29 +1,22 @@
 import { useState } from "react";
 import { useAdzunaSettings, useSaveAdzunaSettings } from "../api/settings";
-import { useIsReviewer } from "../auth/roles";
-import { ErrorNotice, Hint, Loading } from "./States";
+import { ErrorNotice, Loading } from "./States";
 import { openExternal } from "../lib/openExternal";
 
 /**
  * Réglage des identifiants Adzuna (OPP-222) : l'utilisateur saisit ses propres `app_id` + `app_key`
  * (inscription gratuite sur developer.adzuna.com), que la collecte d'offres utilise ensuite — plus
- * de clés codées en dur ni d'environnement. Reviewer uniquement (saisie de secrets = curation,
- * comme la collecte).
+ * de clés codées en dur ni d'environnement.
  *
  * Les clés sont des **secrets** : l'API ne renvoie jamais leur valeur (seulement l'état
  * « configuré »), et on vide les champs après enregistrement pour ne pas les laisser traîner à
  * l'écran. Le champ `app_key` est masqué (type password).
  */
 export function AdzunaSettings() {
-  const isReviewer = useIsReviewer();
   const { data, isPending, isError, error } = useAdzunaSettings();
   const save = useSaveAdzunaSettings();
   const [appId, setAppId] = useState("");
   const [appKey, setAppKey] = useState("");
-
-  if (!isReviewer) {
-    return <Hint>Un reviewer peut renseigner les clés Adzuna.</Hint>;
-  }
 
   if (isPending) return <Loading label="Chargement des réglages…" />;
   if (isError) return <ErrorNotice error={error} />;

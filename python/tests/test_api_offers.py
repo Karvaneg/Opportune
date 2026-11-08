@@ -1,13 +1,13 @@
 """Tests de l'endpoint d'intake d'offre collée (OPP-145).
 
 L'intake LLM est **injecté** (faux) : aucun réseau, aucun Ollama. On vérifie le contrat
-HTTP (validation, sérialisation, mapping d'erreurs, garde reviewer, route optionnelle).
+HTTP (validation, sérialisation, mapping d'erreurs, route optionnelle).
 """
 
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.db import connect
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
@@ -127,20 +127,6 @@ def test_offers_route_absent_without_intake():
 def test_offers_unsupported_method_405():
     # GET (catalogue) et POST (intake) sont montés ; toute autre méthode → 405.
     assert _api(lambda *a, **k: _offer()).dispatch("PUT", "/offers", None, None).status == 405
-
-
-def test_post_offers_requires_reviewer_role():
-    # Même périmètre (cand-1), rôle différent : sans reviewer → 403, avec → 201.
-    viewer = _api(
-        lambda raw_text, *, source, url="": _offer(),
-        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
-    )
-    assert viewer.dispatch("POST", "/offers", {"text": "x"}).status == 403
-    reviewer = _api(
-        lambda raw_text, *, source, url="": _offer(),
-        auth=LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"}))),
-    )
-    assert reviewer.dispatch("POST", "/offers", {"text": "x"}).status == 201
 
 
 # --- Voie URL (OPP-148) ------------------------------------------------------

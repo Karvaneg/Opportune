@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RssSettings } from "../src/components/RssSettings";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 const ok = (b: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -11,7 +11,7 @@ const ok = (b: unknown) =>
 /** fetch factice **stateful** : le PUT /settings/rss nettoie la liste (ne garde que les URLs
  * http(s)) et la mémorise pour le GET suivant — comme le vrai back, pour vérifier le refetch et
  * la resynchronisation du champ après enregistrement. */
-function stubSettings(role = "reviewer", feeds: string[] = []) {
+function stubSettings(feeds: string[] = []) {
   const puts: Array<Record<string, unknown>> = [];
   let state = feeds;
   vi.stubGlobal(
@@ -19,7 +19,7 @@ function stubSettings(role = "reviewer", feeds: string[] = []) {
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/settings/rss")) {
         if (init?.method === "PUT") {
           const body = JSON.parse(String(init?.body ?? "{}"));
@@ -39,19 +39,19 @@ function stubSettings(role = "reviewer", feeds: string[] = []) {
 function renderSettings() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <RssSettings />
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("RssSettings (OPP-195)", () => {
-  it("affiche « Aucun flux » et le champ pour un reviewer", async () => {
-    stubSettings("reviewer", []);
+  it("affiche « Aucun flux » et le champ", async () => {
+    stubSettings([]);
     renderSettings();
 
     expect(await screen.findByText("Aucun flux")).toBeInTheDocument();
@@ -59,7 +59,7 @@ describe("RssSettings (OPP-195)", () => {
   });
 
   it("préremplit le champ avec les flux enregistrés", async () => {
-    stubSettings("reviewer", ["https://a.example/f", "https://b.example/f"]);
+    stubSettings(["https://a.example/f", "https://b.example/f"]);
     renderSettings();
 
     const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
@@ -68,7 +68,7 @@ describe("RssSettings (OPP-195)", () => {
   });
 
   it("enregistre les flux (PUT feeds) et resynchronise le champ sur la liste nettoyée", async () => {
-    const puts = stubSettings("reviewer", []);
+    const puts = stubSettings([]);
     renderSettings();
     const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
 
@@ -84,7 +84,7 @@ describe("RssSettings (OPP-195)", () => {
   });
 
   it("supprime tous les flux quand on vide le champ et confirme (PUT feeds vide)", async () => {
-    const puts = stubSettings("reviewer", ["https://a.example/f"]);
+    const puts = stubSettings(["https://a.example/f"]);
     vi.stubGlobal("confirm", vi.fn(() => true));
     renderSettings();
     const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
@@ -98,7 +98,7 @@ describe("RssSettings (OPP-195)", () => {
   });
 
   it("n'envoie rien si l'utilisateur annule la confirmation de suppression", async () => {
-    const puts = stubSettings("reviewer", ["https://a.example/f"]);
+    const puts = stubSettings(["https://a.example/f"]);
     vi.stubGlobal("confirm", vi.fn(() => false));
     renderSettings();
     const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
@@ -111,7 +111,7 @@ describe("RssSettings (OPP-195)", () => {
   });
 
   it("efface le message de succès dès qu'on modifie le champ", async () => {
-    stubSettings("reviewer", []);
+    stubSettings([]);
     renderSettings();
     const field = (await screen.findByLabelText("URLs des flux RSS")) as HTMLTextAreaElement;
     await userEvent.type(field, "https://ok.example/f");
@@ -124,7 +124,7 @@ describe("RssSettings (OPP-195)", () => {
   });
 
   it("garde le bouton inactif sur champ vide quand aucun flux n'est enregistré", async () => {
-    stubSettings("reviewer", []);
+    stubSettings([]);
     renderSettings();
 
     await screen.findByLabelText("URLs des flux RSS");
@@ -132,11 +132,4 @@ describe("RssSettings (OPP-195)", () => {
     expect(screen.getByRole("button", { name: /Enregistrer les flux/ })).toBeDisabled();
   });
 
-  it("n'expose pas de champ à un non-reviewer", async () => {
-    stubSettings("viewer", []);
-    renderSettings();
-
-    expect(await screen.findByText(/Un reviewer peut renseigner/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("URLs des flux RSS")).not.toBeInTheDocument();
-  });
 });

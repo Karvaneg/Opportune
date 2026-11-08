@@ -11,8 +11,7 @@ import { useProfileReady } from "../api/profile";
 import { useAdzunaSettings, useAtsSettings, useRssSettings } from "../api/settings";
 import { useLlmReady } from "../api/system";
 import type { CollectOffersVariables } from "../api/offers";
-import { useIsReviewer } from "../auth/roles";
-import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import { requestSettingsAttention } from "../lib/settingsAttention";
 import type { CollectionReport } from "../api/types";
 import { AdzunaRequiredNotice } from "./AdzunaRequiredNotice";
@@ -20,18 +19,17 @@ import { LlmRequiredNotice } from "./LlmRequiredNotice";
 import { ErrorNotice } from "./States";
 
 /**
- * Récupère de nouvelles offres réelles depuis Adzuna (`POST /collect`, OPP-170) — reviewer
- * uniquement (curation du pool partagé). Un champ de recherche (mots-clés + lieu) cible la
- * passe ; le back l'exécute **de façon asynchrone** : le démarrage rend la main aussitôt avec
- * un `job_id`, puis on **sonde** l'avancement (`GET /collect/{job_id}`) jusqu'au bilan. La passe
- * fait un passage LLM par offre neuve → plusieurs minutes, suivies en direct (compteurs de
- * progression). À la complétion, si des offres ont été persistées, le catalogue est invalidé :
- * les nouvelles offres apparaissent sans rechargement. Une panne de la source (identifiants
- * manquants, quota) revient dans `source_error` du bilan, pas en erreur HTTP — on l'affiche
- * distinctement ; un `409` au démarrage signale qu'une collecte est déjà en cours.
+ * Récupère de nouvelles offres réelles depuis Adzuna (`POST /collect`, OPP-170). Un champ de
+ * recherche (mots-clés + lieu) cible la passe ; le back l'exécute **de façon asynchrone** : le
+ * démarrage rend la main aussitôt avec un `job_id`, puis on **sonde** l'avancement (`GET
+ * /collect/{job_id}`) jusqu'au bilan. La passe fait un passage LLM par offre neuve → plusieurs
+ * minutes, suivies en direct (compteurs de progression). À la complétion, si des offres ont été
+ * persistées, le catalogue est invalidé : les nouvelles offres apparaissent sans rechargement. Une
+ * panne de la source (identifiants manquants, quota) revient dans `source_error` du bilan, pas en
+ * erreur HTTP : on l'affiche distinctement ; un `409` au démarrage signale qu'une collecte est déjà
+ * en cours.
  */
 export function CollectOffers() {
-  const isReviewer = useIsReviewer();
   // Profil de la recherche active : la collecte n'a de sens qu'une fois le profil renseigné
   // (OPP-219). On la bloque tant qu'il est vierge et on oriente vers l'import CV.
   const { target } = useTargetCandidate();
@@ -99,8 +97,6 @@ export function CollectOffers() {
   const adzunaUnconfigured = adzuna.data?.configured === false;
   // L'invite n'apparaît que si aucun prérequis plus prioritaire ne manque.
   const adzunaMissing = !blocked && adzunaUnconfigured;
-
-  if (!isReviewer) return null;
 
   const launch = (variables: CollectOffersVariables) =>
     start.mutate(variables, {

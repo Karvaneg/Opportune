@@ -1,23 +1,20 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useExportData } from "../api/dataTransfer";
-import { useIsReviewer } from "../auth/roles";
 import { useSpace } from "../space/SpaceContext";
 import { ImportDataPicker } from "./ImportDataPicker";
 import { ErrorNotice } from "./States";
 
 /**
  * Sauvegarde des données (OPP-232) : exporter l'espace actif (« Mon espace » ou « Démo ») dans
- * un fichier, ou le remplacer par un export (changement d'ordinateur). Réservé au reviewer.
+ * un fichier, ou le remplacer par un export (changement d'ordinateur).
  */
 export function DataTransferSettings() {
-  const isReviewer = useIsReviewer();
   const { space } = useSpace();
   const exportData = useExportData();
   const queryClient = useQueryClient();
   const [imported, setImported] = useState(false);
 
-  if (!isReviewer) return null;
   const spaceName = space === "demo" ? "Démo" : "Mon espace";
 
   return (

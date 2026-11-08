@@ -1,15 +1,15 @@
 """Tests des endpoints de saisie des entreprises ciblées (/settings/ats, OPP-226).
 
 Store réel sur un fichier temporaire, client d'ATS factice (aucun réseau). On vérifie le contrat
-HTTP : lecture, enregistrement avec vérification, erreurs 400/502/500, réservation au reviewer, et
-404 quand le store n'est pas câblé.
+HTTP : lecture, enregistrement avec vérification, erreurs 400/502/500, et 404 quand le store
+n'est pas câblé.
 """
 
 from api.app import HermesApi
 from app.ats_client import AtsNotFoundError, AtsUnavailableError
 from app.ats_companies_store import AtsCompaniesStore
 from app.ats_company import LEVER, AtsCompany
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.db import connect
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
@@ -19,8 +19,7 @@ from app.recommendation_service import RecommendationService
 from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
-REVIEWER_USER = User("moi", REVIEWER, frozenset({"cand-1"}))
-VIEWER_USER = User("moi", "viewer", frozenset({"cand-1"}))
+LOCAL_USER = User("moi", frozenset({"cand-1"}))
 
 
 class FakeAtsClient:
@@ -34,7 +33,7 @@ class FakeAtsClient:
         return jobs
 
 
-def _api(store, *, client=None, user=REVIEWER_USER) -> HermesApi:
+def _api(store, *, client=None, user=LOCAL_USER) -> HermesApi:
     conn = connect(":memory:")
     orchestrator = HermesOrchestrator(
         RecommendationService(ProfileStore(conn), OfferStore(conn)),
@@ -128,16 +127,6 @@ def test_put_answers_500_when_the_file_cannot_be_written(tmp_path):
     assert "enregistrement des entreprises impossible" in response.body["error"]
 
 
-def test_requires_reviewer_role(tmp_path):
-    api = _api(AtsCompaniesStore(tmp_path / "ats.json"), user=VIEWER_USER)
-
-    get_response = api.dispatch("GET", "/settings/ats", None, None)
-    put_response = api.dispatch("PUT", "/settings/ats", {"companies": []})
-
-    assert get_response.status == 403
-    assert put_response.status == 403
-
-
 def test_route_absent_without_store():
     conn = connect(":memory:")
     orchestrator = HermesOrchestrator(
@@ -145,7 +134,7 @@ def test_route_absent_without_store():
         DecisionService(DecisionStore(conn)),
         runs=RunStore(conn),
     )
-    api = HermesApi(orchestrator, auth=LocalAuthProvider(REVIEWER_USER))
+    api = HermesApi(orchestrator, auth=LocalAuthProvider(LOCAL_USER))
 
     response = api.dispatch("GET", "/settings/ats", None, None)
 

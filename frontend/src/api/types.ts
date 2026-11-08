@@ -418,10 +418,9 @@ export interface SearchesResponse {
   items: Search[];
 }
 
-/** Identité du porteur du jeton (`GET /me`) — sonde d'authentification. */
+/** Identité locale (`GET /me`) : sonde de démarrage, l'API répond-elle ? (OPP-181). */
 export interface Me {
   id: string | null;
-  role: string | null;
   owned_count: number;
   /** Candidats du périmètre du porteur — cible d'un lancement de run (OPP-143). */
   owned_candidate_ids: string[];

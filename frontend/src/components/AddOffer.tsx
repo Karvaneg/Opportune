@@ -1,21 +1,17 @@
 import { useState } from "react";
 import { useAddOffer } from "../api/offers";
-import { useIsReviewer } from "../auth/roles";
 import { ErrorNotice } from "./States";
 
 /**
- * Ajoute une offre au catalogue, par texte collé (OPP-145) ou par URL (OPP-148) — reviewer
- * uniquement (curation du pool partagé). Le back l'analyse via LLM (latence → « Ajout en
- * cours… »). Au succès, le catalogue est invalidé (cf. `useAddOffer`) : la nouvelle offre
- * apparaît dans la liste. Sur la page Offres (OPP-238), après un passage par l'Accueil (OPP-164).
+ * Ajoute une offre au catalogue, par texte collé (OPP-145) ou par URL (OPP-148). Le back l'analyse
+ * via LLM (latence → « Ajout en cours… »). Au succès, le catalogue est invalidé (cf.
+ * `useAddOffer`) : la nouvelle offre apparaît dans la liste. Sur la page Offres (OPP-238), après un
+ * passage par l'Accueil (OPP-164).
  */
 export function AddOffer() {
-  const isReviewer = useIsReviewer();
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const add = useAddOffer();
-
-  if (!isReviewer) return null;
 
   // Le texte prime (comme côté back) ; sinon on envoie l'URL. Un seul des deux suffit.
   const canSubmit = text.trim() !== "" || url.trim() !== "";

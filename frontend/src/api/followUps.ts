@@ -3,7 +3,6 @@ import { apiFetch, apiPut } from "./client";
 import { useApiMutation } from "./mutations";
 import { offerKeys } from "./offers";
 import { statsKeys } from "./stats";
-import { useIsReviewer } from "../auth/roles";
 
 /**
  * Une relance d'une candidature (OPP-235) : celle à faire aujourd'hui ou la prochaine prévue,
@@ -35,13 +34,11 @@ export const followUpKeys = {
   settings: ["settings", "follow-up"] as const,
 };
 
-/** Délais de relance enregistrés. Réservé au reviewer côté back, comme les autres réglages. */
+/** Délais de relance enregistrés. */
 export function useFollowUpSettings() {
-  const isReviewer = useIsReviewer();
   return useQuery({
     queryKey: followUpKeys.settings,
     queryFn: () => apiFetch<FollowUpSettings>("/settings/follow-up"),
-    enabled: isReviewer,
   });
 }
 

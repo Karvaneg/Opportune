@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { useSearches } from "../api/searches";
-import type { Search } from "../api/types";
+import { useSearches } from "./searches";
+import type { Search } from "./types";
 
 /** Référence stable pour un périmètre vide : évite de recréer la valeur du contexte à chaque rendu. */
 const NO_SEARCHES: Search[] = [];

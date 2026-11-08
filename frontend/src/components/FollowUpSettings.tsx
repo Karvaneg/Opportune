@@ -4,8 +4,7 @@ import {
   useSaveFollowUpSettings,
   type FollowUpSettings as Delays,
 } from "../api/followUps";
-import { useIsReviewer } from "../auth/roles";
-import { ErrorNotice, Hint, Loading } from "./States";
+import { ErrorNotice, Loading } from "./States";
 
 /**
  * Réglage des délais de relance (OPP-235) : jours après une candidature, et après un entretien,
@@ -13,14 +12,10 @@ import { ErrorNotice, Hint, Loading } from "./States";
  * qu'il a enregistré, que l'on réaffiche.
  */
 export function FollowUpSettings() {
-  const isReviewer = useIsReviewer();
   const { data, isPending, isError, error } = useFollowUpSettings();
   // La mutation vit ici pour survivre au remontage du formulaire (message « enregistré » gardé).
   const save = useSaveFollowUpSettings();
 
-  if (!isReviewer) {
-    return <Hint>Un reviewer peut régler les délais de relance.</Hint>;
-  }
   if (isPending) return <Loading label="Chargement des réglages…" />;
   if (isError) return <ErrorNotice error={error} />;
 

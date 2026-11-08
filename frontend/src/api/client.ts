@@ -24,7 +24,7 @@ function withSpace(headers: Record<string, string>): Record<string, string> {
  * Erreur HTTP de l'API portant le `status` (et le corps si disponible).
  *
  * On conserve le `status` — au lieu d'un simple `Error` — pour que l'appelant distingue les
- * cas (400 saisie, 403 rôle, 404 neutre, 409 conflit) et réagisse en conséquence.
+ * cas (400 saisie, 403 origine refusée, 404 neutre, 409 conflit) et réagisse en conséquence.
  */
 export class ApiHttpError extends Error {
   readonly status: number;
@@ -42,9 +42,13 @@ export class ApiHttpError extends Error {
 function messageFor(status: number, body: ApiErrorBody | null): string {
   switch (status) {
     case 401:
-      return "Session expirée ou jeton invalide.";
+      // Plus de jeton ni de login (OPP-181) : un 401 ne vient plus que d'un fournisseur
+      // d'identité strict, jamais câblé en local.
+      return "Accès refusé par l'API.";
     case 403:
-      return "Accès refusé : rôle insuffisant.";
+      // Contrôle Origin/Host du serveur (OPP-233) : le corps donne la raison (hôte ou origine
+      // non autorisés), on l'affiche telle quelle.
+      return body?.error ? `Accès refusé : ${body.error}` : "Accès refusé.";
     case 404:
       // « Inexistant » et « hors périmètre » sont indistinguables côté API : message neutre.
       return "Ressource introuvable ou inaccessible.";

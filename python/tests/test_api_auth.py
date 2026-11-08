@@ -4,8 +4,8 @@ Matrice de sécurité sur ``HermesApi.dispatch`` (vrais dépôts SQLite en mémo
 OPP-181 il n'y a **plus de jeton** : l'identité est locale (``LocalAuthProvider``) et toujours
 résolue. On teste donc ce qui subsiste — et qu'OPP-183 (périmètre par recherche) réutilisera :
 - **404** sur une ressource hors périmètre (on ne révèle pas son existence) ;
-- **403** quand la ressource est possédée mais que le rôle ``reviewer`` manque ;
 - succès pour l'utilisateur autorisé ; ordre des gardes des actions sensibles.
+Plus de rôle depuis OPP-241 : l'utilisateur local a accès à tout son périmètre.
 
 Pour simuler différents périmètres on compose plusieurs ``HermesApi`` sur la **même** base,
 chacune portant une identité distincte (plus de bascule par en-tête). Plus la non-régression
@@ -25,7 +25,7 @@ from api.app import HermesApi
 from api.server import assemble_api, create_server
 from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision import decision_id
@@ -38,11 +38,10 @@ from app.recommendation_service import RecommendationService
 from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
-# Trois identités locales sur la même base : propriétaire reviewer, propriétaire sans le rôle,
-# et un tiers reviewer dont le périmètre (cand-2) ne couvre pas cand-1.
-OWNER = User("moi", REVIEWER, frozenset({"cand-1"}))
-VIEWER = User("moi", "viewer", frozenset({"cand-1"}))
-FOREIGN = User("autre", REVIEWER, frozenset({"cand-2"}))
+# Deux identités locales sur la même base : le propriétaire de cand-1, et un tiers dont le
+# périmètre (cand-2) ne couvre pas cand-1.
+OWNER = User("moi", frozenset({"cand-1"}))
+FOREIGN = User("autre", frozenset({"cand-2"}))
 
 
 def _offer(**overrides) -> Offer:
@@ -89,7 +88,7 @@ def env():
         return HermesApi(orchestrator, actions, LocalAuthProvider(user))
 
     bench = SimpleNamespace(
-        owner=api_as(OWNER), viewer=api_as(VIEWER), foreign=api_as(FOREIGN),
+        owner=api_as(OWNER), foreign=api_as(FOREIGN),
         orchestrator=orchestrator,
     )
     # Seed run-1 + décisions pending (le propriétaire lance la recommandation).
@@ -104,13 +103,11 @@ def test_owner_can_read_run(env):
     assert env.owner.dispatch("GET", "/runs/run-1").status == 200
 
 
-def test_delete_run_guards_existence_then_owner_then_reviewer(env):
+def test_delete_run_guards_existence_then_owner(env):
     # OPP-144 : ordre des gardes identique aux actions sensibles.
-    # autre est reviewer mais ne possède pas cand-1 → 404 neutre (propriété avant rôle).
+    # autre ne possède pas cand-1 → 404 neutre.
     assert env.foreign.dispatch("DELETE", "/runs/run-1").status == 404
-    # moi possède cand-1 mais n'est pas reviewer → 403.
-    assert env.viewer.dispatch("DELETE", "/runs/run-1").status == 403
-    # moi possède cand-1 et est reviewer → suppression effective.
+    # moi possède cand-1 → suppression effective.
     ok = env.owner.dispatch("DELETE", "/runs/run-1")
     assert ok.status == 200 and ok.body == {"deleted": "run-1"}
     # Puis le run a disparu.
@@ -123,7 +120,7 @@ def test_delete_run_guards_existence_then_owner_then_reviewer(env):
     f"/recommendations/{_RID}",
 ])
 def test_foreign_resource_is_404_not_403(env, path):
-    # autre est reviewer, mais cand-1 n'est pas dans son périmètre → 404 (pas 403).
+    # cand-1 n'est pas dans le périmètre d'autre → 404 (pas 403).
     assert env.foreign.dispatch("GET", path).status == 404
 
 
@@ -156,13 +153,6 @@ def test_post_recommendations_foreign_candidate_is_404(env):
     ).status == 404
 
 
-def test_post_recommendations_owner_without_reviewer_ok(env):
-    # moi possède cand-1 mais n'est pas reviewer : lancer une reco ne l'exige pas.
-    assert env.viewer.dispatch(
-        "POST", "/candidates/cand-1/recommendations", {"limit": 5}
-    ).status == 200
-
-
 def test_rescore_foreign_candidate_is_404(env):
     # OPP-150 : re-score hors périmètre → 404 neutre (propriété avant tout).
     assert env.foreign.dispatch(
@@ -170,28 +160,16 @@ def test_rescore_foreign_candidate_is_404(env):
     ).status == 404
 
 
-def test_rescore_owner_without_reviewer_ok(env):
-    # moi possède cand-1 sans le rôle reviewer : re-scorer une offre ne l'exige pas.
-    resp = env.viewer.dispatch("POST", "/candidates/cand-1/offers/off-app/rescore", {})
-    assert resp.status == 200
-    assert resp.body["offer_id"] == "off-app"
+# --- Validation humaine et actions sensibles ----------------------------------
 
-
-# --- Rôle reviewer (403) : validation humaine et actions sensibles -----------
-
-def test_decision_requires_reviewer_role(env):
-    # moi possède la ressource mais n'a pas le rôle → 403.
-    assert env.viewer.dispatch(
-        "POST", f"/recommendations/{_RID}/decision", {"decision": "approve"}
-    ).status == 403
-    # moi (owner) possède ET est reviewer → succès.
+def test_decision_by_owner_succeeds(env):
     ok = env.owner.dispatch("POST", f"/recommendations/{_RID}/decision", {"decision": "approve"})
     assert ok.status == 200
     assert ok.body["status"] == "approved"
 
 
-def test_decision_ownership_checked_before_role(env):
-    # autre est reviewer mais hors périmètre → 404 (existence/propriété), pas 403.
+def test_decision_foreign_candidate_is_404(env):
+    # autre est hors périmètre → 404 (existence/propriété).
     assert env.foreign.dispatch(
         "POST", f"/recommendations/{_RID}/decision", {"decision": "approve"}
     ).status == 404
@@ -204,16 +182,14 @@ def test_decision_unknown_recommendation_is_404(env):
     ).status == 404
 
 
-# --- Actions sensibles : chaîne existence → propriété → rôle → confirm -------
+# --- Actions sensibles : chaîne existence → propriété → confirm ---------------
 
 def test_confirm_application_authz_chain(env):
     # Hors périmètre → 404 (avant même la garde confirm).
     assert env.foreign.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True}).status == 404
-    # Possède mais pas reviewer → 403.
-    assert env.viewer.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True}).status == 403
-    # Reviewer + propriétaire mais confirm manquant → 400 (garde après la chaîne).
+    # Propriétaire mais confirm manquant → 400 (garde après la chaîne).
     assert env.owner.dispatch("POST", f"/applications/{_RID}/confirm", {}).status == 400
-    # Reviewer + propriétaire + confirm mais décision pending → 409.
+    # Propriétaire + confirm mais décision pending → 409.
     assert env.owner.dispatch("POST", f"/applications/{_RID}/confirm", {"confirm": True}).status == 409
     # Après validation humaine, la confirmation aboutit.
     env.owner.dispatch("POST", f"/recommendations/{_RID}/decision", {"decision": "approve"})
@@ -224,8 +200,7 @@ def test_confirm_application_authz_chain(env):
 
 def test_confirm_message_authz_chain(env):
     assert env.foreign.dispatch("POST", f"/messages/{_RID}/confirm", {"confirm": True}).status == 404
-    assert env.viewer.dispatch("POST", f"/messages/{_RID}/confirm", {"confirm": True}).status == 403
-    # Reviewer + propriétaire : contacter ne requiert pas approved → succès direct.
+    # Propriétaire : contacter ne requiert pas approved → succès direct.
     assert env.owner.dispatch("POST", f"/messages/{_RID}/confirm", {"confirm": True}).status == 200
 
 
@@ -458,16 +433,14 @@ def test_me_returns_local_identity(env):
     assert resp.status == 200
     assert resp.body == {
         "id": "moi",
-        "role": REVIEWER,
         "owned_count": 1,
         # OPP-143 : les candidats du propriétaire, pour lancer un run depuis le front.
         "owned_candidate_ids": ["cand-1"],
     }
 
 
-def test_me_reflects_role_and_scope(env):
-    # viewer : rôle non-reviewer ; foreign : reviewer, périmètre cand-2.
-    assert env.viewer.dispatch("GET", "/me").body["role"] == "viewer"
+def test_me_reflects_scope(env):
+    # foreign : périmètre cand-2.
     assert env.foreign.dispatch("GET", "/me").body["id"] == "autre"
     assert env.foreign.dispatch("GET", "/me").body["owned_candidate_ids"] == ["cand-2"]
 
@@ -488,5 +461,5 @@ def test_me_open_mode_has_no_identity():
     )
     resp = HermesApi(orchestrator).dispatch("GET", "/me")
     assert resp.status == 200
-    assert resp.body == {"id": None, "role": None, "owned_count": 0, "owned_candidate_ids": []}
+    assert resp.body == {"id": None, "owned_count": 0, "owned_candidate_ids": []}
     conn.close()

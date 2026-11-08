@@ -3,8 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEvaluateOffer, useOffers } from "../api/offers";
 import { useProfileReady } from "../api/profile";
 import { CATALOG_STAGE_LABELS, isCatalogStage } from "../api/funnel";
-import { useTargetCandidate } from "../auth/useTargetCandidate";
-import { useIsReviewer } from "../auth/roles";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import type { CatalogOffer, OfferKind, RecommendationAction } from "../api/types";
 import { AddOffer } from "../components/AddOffer";
 import { CollectOffers } from "../components/CollectOffers";
@@ -39,10 +38,6 @@ export function OffersPage() {
     scrolledFor.current = locationKey;
     block.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }, [hash, locationKey, target]);
-  // La curation du pool (collecte Adzuna et ajout d'une offre ci-dessous) est réservée au
-  // rôle reviewer : le message de catalogue vide n'oriente vers ces actions que si elles sont
-  // réellement disponibles (sinon « ci-dessus » pointerait vers un bloc masqué).
-  const isReviewer = useIsReviewer();
   // Profil vierge (résolu) : la collecte et l'analyse sont grisées. Une seule invite au CV, en
   // tête de page, plutôt qu'une sous chacun des deux boutons (OPP-238).
   const profile = useProfileReady(target);
@@ -155,9 +150,7 @@ export function OffersPage() {
           <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
             {stageFilter
               ? `Aucune offre « ${CATALOG_STAGE_LABELS[stageFilter]} » pour cette recherche.`
-              : isReviewer
-                ? "Aucune offre dans le catalogue. Récupère-en de nouvelles ou ajoute-en une ci-dessus."
-                : "Aucune offre dans le catalogue pour le moment."}
+              : "Aucune offre dans le catalogue. Récupère-en de nouvelles ou ajoute-en une ci-dessus."}
           </p>
         ) : (
           <div className="space-y-3">

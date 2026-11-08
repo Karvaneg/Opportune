@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunsListPage } from "../src/pages/RunsListPage";
-import { AuthProvider } from "../src/auth/AuthContext";
-import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
+import { TargetCandidateProvider } from "../src/api/useTargetCandidate";
 
 const PAGE = {
   items: [
@@ -31,7 +31,7 @@ function stubFetch(runsBody: unknown) {
             String(url).includes("/searches")
               ? { items: [{ id: "cand-1", label: "Marie" }] }
               : String(url).includes("/me")
-                ? { id: "u", role: "reviewer", owned_count: 1 }
+                ? { id: "u", owned_count: 1 }
                 : runsBody,
           ),
       } as Response),
@@ -54,7 +54,7 @@ function stubPaginatedFetch(pages: Record<number, unknown>) {
             s.includes("/searches")
               ? { items: [{ id: "cand-1", label: "Marie" }] }
               : s.includes("/me")
-                ? { id: "u", role: "reviewer", owned_count: 1 }
+                ? { id: "u", owned_count: 1 }
                 : pages[page],
           ),
       } as Response);
@@ -65,7 +65,7 @@ function stubPaginatedFetch(pages: Record<number, unknown>) {
 function renderList() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <MemoryRouter>
@@ -73,7 +73,7 @@ function renderList() {
           </MemoryRouter>
         </TargetCandidateProvider>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -111,7 +111,7 @@ describe("RunsListPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return okJson({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/profile"))
           return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
             location: null, languages: [], total_experience_years: null, experiences: [] });
@@ -141,7 +141,7 @@ describe("RunsListPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return okJson({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/profile"))
           return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
             location: null, languages: [], total_experience_years: null, experiences: [] });
@@ -169,7 +169,7 @@ describe("RunsListPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return okJson({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/profile"))
           return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
             location: null, languages: [], total_experience_years: null, experiences: [] });
@@ -188,7 +188,7 @@ describe("RunsListPage", () => {
     );
   });
 
-  it("supprime un run après confirmation explicite (reviewer)", async () => {
+  it("supprime un run après confirmation explicite", async () => {
     let deleted = false;
     const okJson = (b: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -198,7 +198,7 @@ describe("RunsListPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return okJson({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/profile"))
           return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
             location: null, languages: [], total_experience_years: null, experiences: [] });
@@ -231,7 +231,7 @@ describe("RunsListPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return okJson({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return okJson({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return okJson({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/profile"))
           return okJson({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
             location: null, languages: [], total_experience_years: null, experiences: [] });
@@ -240,7 +240,7 @@ describe("RunsListPage", () => {
           return Promise.resolve({
             ok: false,
             status: 403,
-            json: () => Promise.resolve({ error: "rôle reviewer requis" }),
+            json: () => Promise.resolve({ error: "origine non autorisée" }),
           } as Response);
         return okJson(PAGE); // GET /runs
       }),

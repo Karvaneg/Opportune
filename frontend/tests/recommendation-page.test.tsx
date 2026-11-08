@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecommendationPage } from "../src/pages/RecommendationPage";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 const DETAIL = {
   recommendation_id: "cand-1:off-app",
@@ -38,7 +38,7 @@ function stubFetch(status: number, body: unknown) {
         ok: isMe ? true : status >= 200 && status < 300,
         status: isMe ? 200 : status,
         json: () =>
-          Promise.resolve(isMe ? { id: "u", role: "reviewer", owned_count: 1 } : body),
+          Promise.resolve(isMe ? { id: "u", owned_count: 1 } : body),
       } as Response);
     }),
   );
@@ -47,7 +47,7 @@ function stubFetch(status: number, body: unknown) {
 function renderPage(id = "cand-1:off-app") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={[`/recommendations/${id}`]}>
           <Routes>
@@ -55,7 +55,7 @@ function renderPage(id = "cand-1:off-app") {
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -180,7 +180,7 @@ describe("RecommendationPage", () => {
 });
 
 /** fetch factice à état : /me (rôle paramétrable), GET détail, POST /decision → approved. */
-function stubDecisionFlow(role = "reviewer") {
+function stubDecisionFlow() {
   let current = {
     ...DETAIL,
     status: "pending",
@@ -195,7 +195,7 @@ function stubDecisionFlow(role = "reviewer") {
     "fetch",
     vi.fn((url: string) => {
       const s = String(url);
-      if (s.includes("/me")) return ok({ id: "u", role, owned_count: 1 });
+      if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
       if (s.includes("/decision")) {
         current = {
           ...current,
@@ -214,8 +214,8 @@ function stubDecisionFlow(role = "reviewer") {
 }
 
 describe("RecommendationPage — validation humaine (OPP-108)", () => {
-  it("un reviewer valide (approve) → statut à jour sans rechargement", async () => {
-    stubDecisionFlow("reviewer");
+  it("valider (approve) → statut à jour sans rechargement", async () => {
+    stubDecisionFlow();
     renderPage();
 
     // Au départ : décision en attente (badge principal + historique), aucun « Approuvé ».
@@ -230,16 +230,6 @@ describe("RecommendationPage — validation humaine (OPP-108)", () => {
     );
   });
 
-  it("un non-reviewer ne voit pas les boutons de validation (garde UI)", async () => {
-    stubDecisionFlow("candidate");
-    renderPage();
-
-    await screen.findByText("Développeur Full-Stack"); // détail chargé
-    expect(screen.queryByRole("button", { name: "Approuver" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Rejeter" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Reporter" })).toBeNull();
-  });
-
   it("les boutons Rejeter / Reporter envoient le verbe du contrat (reject / defer)", async () => {
     const bodies: { decision?: string }[] = [];
     vi.stubGlobal(
@@ -248,7 +238,7 @@ describe("RecommendationPage — validation humaine (OPP-108)", () => {
         const s = String(url);
         const ok = (b: unknown) =>
           Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
         if (s.includes("/decision")) {
           bodies.push(JSON.parse(String(init?.body ?? "{}")));
           return ok(DETAIL);
@@ -268,8 +258,8 @@ describe("RecommendationPage — validation humaine (OPP-108)", () => {
 });
 
 /** fetch factice : /me (rôle), GET détail, POST /applications/{id}/confirm paramétrable. */
-function stubApplication(opts: { role?: string; http?: number; body?: unknown } = {}) {
-  const { role = "reviewer", http = 200, body } = opts;
+function stubApplication(opts: { http?: number; body?: unknown } = {}) {
+  const { http = 200, body } = opts;
   const calls: string[] = [];
   const ok = (b: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -277,7 +267,7 @@ function stubApplication(opts: { role?: string; http?: number; body?: unknown } 
     "fetch",
     vi.fn((url: string) => {
       const s = String(url);
-      if (s.includes("/me")) return ok({ id: "u", role, owned_count: 1 });
+      if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
       if (s.includes("/applications/")) {
         calls.push(s);
         const success = body ?? { action_id: "a1", status: "simulated", already_confirmed: false };
@@ -380,7 +370,7 @@ describe("RecommendationPage — intention de candidater (OPP-110)", () => {
         const s = String(url);
         const ok = (b: unknown) =>
           Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
         if (s.includes("/applied")) {
           calls.push(s);
           detail.application.applied = true;
@@ -418,7 +408,7 @@ describe("RecommendationPage — intention de candidater (OPP-110)", () => {
         const s = String(url);
         const ok = (b: unknown) =>
           Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
         if (s.includes("/applied")) {
           bodies.push(JSON.parse(String(init?.body ?? "{}")));
           detail.application.applied = true;
@@ -457,7 +447,7 @@ describe("RecommendationPage — intention de candidater (OPP-110)", () => {
         const s = String(url);
         const ok = (b: unknown) =>
           Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
         if (s.includes("/applied") && init?.method === "DELETE") {
           detail.application.applied = false;
           detail.application.applied_at = null;
@@ -496,12 +486,6 @@ describe("RecommendationPage — intention de candidater (OPP-110)", () => {
     expect(screen.queryByRole("button", { name: "Je vais candidater" })).toBeNull();
   });
 
-  it("un non-reviewer ne voit pas le bouton d'intention", async () => {
-    stubApplication({ role: "candidate" });
-    renderPage();
-    await screen.findByText("Développeur Full-Stack");
-    expect(screen.queryByRole("button", { name: "Je vais candidater" })).toBeNull();
-  });
 });
 
 describe("RecommendationPage — suivi post-candidature (OPP-223)", () => {
@@ -550,7 +534,7 @@ describe("RecommendationPage — suivi post-candidature (OPP-223)", () => {
         const s = String(url);
         const ok = (b: unknown) =>
           Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
         if (s.includes("/tracking")) {
           bodies.push(JSON.parse(String(init?.body ?? "{}")));
           detail = {
@@ -597,7 +581,7 @@ describe("RecommendationPage — relances (OPP-235)", () => {
         const s = String(url);
         const ok = (b: unknown) =>
           Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-        if (s.includes("/me")) return ok({ id: "u", role: "reviewer", owned_count: 1 });
+        if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
         if (s.includes("/tracking")) {
           bodies.push(JSON.parse(String(init?.body ?? "{}")));
           return ok({ events: [] });
@@ -642,7 +626,7 @@ function stubRescoreFlow(status = "pending") {
     "fetch",
     vi.fn((url: string) => {
       const s = String(url);
-      if (s.includes("/me")) return ok({ id: "u", role: "candidate", owned_count: 1 });
+      if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
       if (s.includes("/rescore")) {
         calls.push(s);
         current = { ...current, score: 90 };

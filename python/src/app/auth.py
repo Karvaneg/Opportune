@@ -8,8 +8,8 @@ propriétaire de ses candidats.
 
 On conserve néanmoins l'abstraction injectable : le métier ne dépend que de
 ``authenticate(headers) -> User | None``, si bien que le fournisseur de périmètre peut évoluer
-sans toucher aux handlers. L'**autorisation** (propriété d'une ressource, rôle ``reviewer``) vit
-toujours dans les handlers, qui résolvent le propriétaire depuis la ressource persistée ; elle
+sans toucher aux handlers. L'**autorisation** (propriété d'une ressource) vit toujours dans
+les handlers, qui résolvent le propriétaire depuis la ressource persistée ; elle
 n'accorde jamais confiance à un identifiant fourni dans le corps. Le périmètre
 (``owned_candidates``) est désormais **dérivé dynamiquement de la base** à chaque requête
 (OPP-183) via un ``owned_provider`` adossé au ``CandidateRegistry`` — cf. ``LocalAuthProvider``.
@@ -20,26 +20,21 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 
-# Seul rôle distinct en V2 : requis pour la validation humaine et les actions sensibles.
-REVIEWER = "reviewer"
-
 
 @dataclass(frozen=True)
 class User:
-    """Identité : son id, son rôle et les candidats qu'elle possède."""
+    """Identité : son id et les candidats qu'elle possède.
+
+    Plus de rôle (OPP-241) : en local mono-utilisateur, l'unique utilisateur a accès à tout son
+    périmètre. Le rôle ``reviewer`` venait de l'époque multi-utilisateur.
+    """
 
     id: str
-    role: str
     owned_candidates: frozenset[str]
 
     def owns(self, candidate_id: str) -> bool:
         """L'utilisateur a-t-il ce candidat dans son périmètre ?"""
         return candidate_id in self.owned_candidates
-
-    @property
-    def is_reviewer(self) -> bool:
-        """Détient-il le rôle ``reviewer`` (validation humaine / actions sensibles) ?"""
-        return self.role == REVIEWER
 
 
 class LocalAuthProvider:

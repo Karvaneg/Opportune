@@ -41,12 +41,11 @@ message) sous **confirmation explicite obligatoire** (``{"confirm": true}``) : u
 ``approved`` (sinon 409) ; ils sont idempotents (``already_confirmed``) et **simulés** à ce
 stade. Ces routes ne sont montées que si un ``ActionService`` est fourni à ``HermesApi``.
 
-Identité (OPP-181) : si un ``LocalAuthProvider`` est fourni, chaque requête est résolue en
-l'unique utilisateur local (aucun jeton — local-first), puis soumise à un contrôle de
-**propriété** (l'utilisateur n'accède qu'à ses candidats/runs — sinon **404**, on ne révèle pas
-l'existence d'une ressource d'autrui) et, pour la validation humaine et les actions sensibles,
-au **rôle ``reviewer``** (sinon **403**). Le propriétaire est toujours résolu depuis la
-**ressource persistée**, jamais d'un identifiant du corps. Sans fournisseur (``auth=None``),
+Identité (OPP-181) : si un ``LocalAuthProvider`` est fourni, chaque requête est résolue en l'unique
+utilisateur local (aucun jeton, local-first), puis soumise à un contrôle de **propriété**
+(l'utilisateur n'accède qu'à ses candidats/runs, sinon **404** : on ne révèle pas l'existence d'une
+ressource d'autrui). Plus de contrôle de rôle (OPP-241). Le propriétaire est toujours résolu depuis
+la **ressource persistée**, jamais d'un identifiant du corps. Sans fournisseur (``auth=None``),
 l'API reste **ouverte** : mode de **compatibilité/test uniquement**, sans identité applicative.
 """
 
@@ -360,7 +359,7 @@ class HermesApi:
         # Fournisseur d'identité locale. ``None`` = **mode ouvert** (compatibilité/test) :
         # aucune identité. Le serveur réel DOIT en injecter un — ne pas s'appuyer sur ``None``
         # en production. Avec un fournisseur, chaque requête porte l'utilisateur local, puis
-        # subit le contrôle propriété/rôle (404/403).
+        # subit le contrôle de propriété (404).
         self.auth = auth
         # Connexion SQLite partagée de cet espace (OPP-212). Sert à **refermer toute transaction
         # pendante en fin de requête** : sans elle, une requête interrompue entre un ordre SQL et
@@ -445,9 +444,9 @@ class HermesApi:
         if self.searches is not None:
             if _SEARCHES.match(path):
                 if method == "GET":
-                    return self._get_searches(user)
+                    return self._get_searches()
                 if method == "POST":
-                    return self._post_search(body, user)
+                    return self._post_search(body)
                 raise ApiError(405, f"méthode {method} non autorisée sur {path}")
 
             match = _SEARCH.match(path)
@@ -563,9 +562,9 @@ class HermesApi:
             # GET /collect (OPP-208) : état du job **actif** (suivi global, sans job_id) ;
             # POST /collect : démarre une passe.
             if method.upper() == "GET":
-                return self._get_active_collect(user)
+                return self._get_active_collect()
             self._require(method, "POST", path)
-            return self._post_collect(body, user)
+            return self._post_collect(body)
 
         cancel_match = _COLLECT_JOB_CANCEL.match(path)
         if cancel_match:
@@ -605,9 +604,9 @@ class HermesApi:
             if self.adzuna_credentials is None:
                 raise self._not_found(user, "réglages Adzuna non disponibles")
             if method.upper() == "GET":
-                return self._get_adzuna_settings(user)
+                return self._get_adzuna_settings()
             self._require(method, "PUT", path)
-            return self._put_adzuna_settings(body, user)
+            return self._put_adzuna_settings(body)
 
         if _SETTINGS_RSS.match(path):
             # URLs de flux RSS saisies par l'utilisateur (OPP-195). Montée uniquement si le store
@@ -615,18 +614,18 @@ class HermesApi:
             if self.rss_feeds is None:
                 raise self._not_found(user, "réglages RSS non disponibles")
             if method.upper() == "GET":
-                return self._get_rss_settings(user)
+                return self._get_rss_settings()
             self._require(method, "PUT", path)
-            return self._put_rss_settings(body, user)
+            return self._put_rss_settings(body)
 
         if _SETTINGS_FOLLOW_UP.match(path):
             # Délais de relance (OPP-235) : 404 neutre si le store n'est pas câblé.
             if self.follow_up_settings is None:
                 raise self._not_found(user, "réglages de relance non disponibles")
             if method.upper() == "GET":
-                return self._get_follow_up_settings(user)
+                return self._get_follow_up_settings()
             self._require(method, "PUT", path)
-            return self._put_follow_up_settings(body, user)
+            return self._put_follow_up_settings(body)
 
         if _DATA_EXPORT.match(path) or _DATA_IMPORT.match(path):
             # Export / import des données de l'espace (OPP-232) : 404 si non câblé.
@@ -634,8 +633,8 @@ class HermesApi:
                 raise self._not_found(user, "export et import des données non disponibles")
             self._require(method, "POST", path)
             if _DATA_EXPORT.match(path):
-                return self._post_data_export(user)
-            return self._post_data_import(body, user)
+                return self._post_data_export()
+            return self._post_data_import(body)
 
         if _SETTINGS_ATS.match(path):
             # Entreprises ciblées sur un ATS (OPP-226). Montée uniquement si le store est câblé
@@ -643,9 +642,9 @@ class HermesApi:
             if self.ats_companies is None:
                 raise self._not_found(user, "réglages des entreprises ciblées non disponibles")
             if method.upper() == "GET":
-                return self._get_ats_settings(user)
+                return self._get_ats_settings()
             self._require(method, "PUT", path)
-            return self._put_ats_settings(body, user)
+            return self._put_ats_settings(body)
 
         # Actions sensibles : montées uniquement si le service est configuré (sinon 404).
         if self.actions is not None:
@@ -688,22 +687,16 @@ class HermesApi:
 
     @staticmethod
     def _get_me(user: User | None) -> Response:
-        """Identité du porteur du jeton — sonde de validation d'authentification.
-
-        Route protégée sans ressource : un jeton invalide/absent est déjà rejeté en amont
-        (401) par ``_authenticate``. Elle permet à un client de vérifier qu'un jeton est
-        **accepté** (et d'afficher qui il est) sans deviner d'identifiant de ressource. En
-        mode ouvert (``user is None``, tests), il n'existe aucune identité applicative.
+        """Identité locale et son périmètre : le front s'en sert au démarrage pour vérifier que
+        l'API répond (OPP-181). En mode ouvert (``user is None``, tests), il n'existe aucune
+        identité applicative. Plus de rôle dans la réponse (OPP-241).
         """
         if user is None:
-            return Response(
-                200, {"id": None, "role": None, "owned_count": 0, "owned_candidate_ids": []}
-            )
+            return Response(200, {"id": None, "owned_count": 0, "owned_candidate_ids": []})
         return Response(
             200,
             {
                 "id": user.id,
-                "role": user.role,
                 "owned_count": len(user.owned_candidates),
                 # Les candidats du **propriétaire** (son propre périmètre) : permet au front
                 # de lancer un run sans deviner d'identifiant (OPP-143). Trié pour un rendu
@@ -714,12 +707,11 @@ class HermesApi:
 
     # --- Recherches (OPP-184) : CRUD du périmètre, porté par le registre ---
 
-    def _get_searches(self, user: User | None) -> Response:
+    def _get_searches(self) -> Response:
         """Liste les recherches de l'espace (id + libellé) pour le sélecteur (OPP-184).
 
         Lecture du **propre** périmètre (le registre *est* le périmètre du seul utilisateur local) :
-        un jeton valide suffit (401 géré en amont), pas de rôle reviewer — lequel n'est requis que
-        pour *modifier* le périmètre (créer/renommer). Ordre déterministe (par id, cf. registre).
+        aucune garde. Ordre déterministe (par id, cf. registre).
         """
         assert self.searches is not None  # garanti par le dispatch (404 sinon)
         return Response(
@@ -727,13 +719,12 @@ class HermesApi:
             {"items": [{"id": s.id, "label": s.label} for s in self.searches.list()]},
         )
 
-    def _post_search(self, body: dict, user: User | None) -> Response:
+    def _post_search(self, body: dict) -> Response:
         """Crée une recherche nommée (OPP-184) ; renvoie son id technique généré + le libellé.
 
-        Modifier le périmètre → **reviewer** (comme curer offres/profil). Le libellé est requis
+        Le libellé est requis
         (400 si absent/vide/trop long) ; l'id est généré côté registre, opaque et stable.
         """
-        self._guard_reviewer(user)
         assert self.searches is not None  # garanti par le dispatch (404 sinon)
         label = self._parse_label(body.get("label"))
         search = self.searches.create(label)
@@ -742,11 +733,10 @@ class HermesApi:
     def _put_search(self, search_id: str, body: dict, user: User | None) -> Response:
         """Renomme une recherche (OPP-184). 404 neutre si l'id est hors périmètre (anti-énumération).
 
-        Reviewer requis (modification du périmètre). Le libellé suit les mêmes règles qu'à la
+        Le libellé suit les mêmes règles qu'à la
         création. ``rename`` rend ``False`` pour un id inconnu → 404 générique, indistinguable
         d'« existe mais pas à moi ».
         """
-        self._guard_reviewer(user)
         assert self.searches is not None  # garanti par le dispatch (404 sinon)
         label = self._parse_label(body.get("label"))
         if not self.searches.rename(search_id, label):
@@ -765,7 +755,7 @@ class HermesApi:
             raise ApiError(400, f"label dépasse {_SEARCH_LABEL_MAX} caractères")
         return label
 
-    # --- Autorisation (propriété / rôle) : résolue depuis la ressource persistée ---
+    # --- Autorisation (propriété) : résolue depuis la ressource persistée ---
 
     @staticmethod
     def _guard_owner(user: User | None, candidate_id: str) -> None:
@@ -776,12 +766,6 @@ class HermesApi:
         """
         if user is not None and not user.owns(candidate_id):
             raise ApiError(404, _NOT_FOUND)
-
-    @staticmethod
-    def _guard_reviewer(user: User | None) -> None:
-        """Exige le rôle ``reviewer`` (403) — pour une ressource que l'utilisateur possède déjà."""
-        if user is not None and not user.is_reviewer:
-            raise ApiError(403, "rôle reviewer requis")
 
     @staticmethod
     def _not_found(user: User | None, open_message: str) -> ApiError:
@@ -797,8 +781,7 @@ class HermesApi:
     def _post_recommendations(
         self, candidate_id: str, body: dict, user: User | None
     ) -> Response:
-        # Propriété vérifiée sur le ``candidate_id`` **du path** (jamais un id du corps) ;
-        # pas de rôle reviewer requis pour lancer une recommandation.
+        # Propriété vérifiée sur le ``candidate_id`` **du path** (jamais un id du corps).
         self._guard_owner(user, candidate_id)
         limit = body.get("limit", 10)
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
@@ -932,17 +915,15 @@ class HermesApi:
             "after_interview": list(schedule.after_interview),
         }
 
-    def _get_follow_up_settings(self, user: User | None) -> Response:
+    def _get_follow_up_settings(self) -> Response:
         """Délais de relance (OPP-235) : ``{"after_application": [...], "after_interview": [...]}``."""
-        self._guard_reviewer(user)
         return Response(200, self._serialize_schedule(self._follow_up_schedule()))
 
-    def _put_follow_up_settings(self, body: dict, user: User | None) -> Response:
+    def _put_follow_up_settings(self, body: dict) -> Response:
         """Enregistre les délais de relance (OPP-235) ; 400 si une liste est invalide.
 
         Réponse : les délais réellement enregistrés, que l'UI réaffiche.
         """
-        self._guard_reviewer(user)
         assert self.follow_up_settings is not None  # garanti par le dispatch (404 sinon)
         try:
             saved = self.follow_up_settings.save(
@@ -1030,12 +1011,11 @@ class HermesApi:
     def _put_profile(self, candidate_id: str, body: dict, user: User | None) -> Response:
         """Édite les compétences du profil (OPP-158) : remplacement de la liste ``skills``.
 
-        Curation du profil → **reviewer** (comme l'ajout/collecte d'offres), en plus de la
-        propriété. ``skills`` doit être une liste de chaînes (400 sinon) ; le service la
-        normalise et revalide (liste vide → 400). 404 si le candidat n'a pas de profil.
+        Propriété vérifiée sur le candidat. ``skills`` doit être une liste de chaînes (400 sinon) ;
+        le service la normalise et revalide (liste vide → 400). 404 si le candidat n'a pas de
+        profil.
         """
         self._guard_owner(user, candidate_id)
-        self._guard_reviewer(user)
         skills = body.get("skills")
         if not isinstance(skills, list) or not all(isinstance(s, str) for s in skills):
             raise ApiError(400, "skills doit être une liste de chaînes")
@@ -1051,7 +1031,7 @@ class HermesApi:
     def _post_profile_cv(self, candidate_id: str, body: dict, user: User | None) -> Response:
         """Importe un CV PDF pour créer/mettre à jour le profil (OPP-174).
 
-        Curation du profil → **reviewer** + propriété (comme PUT /profile). Le transport étant
+        Propriété vérifiée, comme PUT /profile. Le transport étant
         JSON-only, le PDF arrive encodé base64 dans ``pdf_base64`` : on le décode ici (400 si
         absent/invalide/vide) puis on délègue à l'intake injecté, qui extrait le texte et relance
         l'analyse. ``contract_type`` (obligatoire) et les préférences éventuelles accompagnent le
@@ -1062,7 +1042,6 @@ class HermesApi:
         indisponible → 502. Le texte brut du CV n'est jamais persisté.
         """
         self._guard_owner(user, candidate_id)
-        self._guard_reviewer(user)
         assert self.cv_intake is not None  # garanti par le dispatch (404 sinon)
         pdf_bytes = _decode_pdf_base64(body.get("pdf_base64"))
         contract_type = body.get("contract_type")
@@ -1106,11 +1085,10 @@ class HermesApi:
     ) -> Response:
         """Re-score ciblé d'une offre (OPP-150) : met à jour sa décision, renvoie l'état live.
 
-        Propriété vérifiée sur le ``candidate_id`` du path (comme lancer un run) ; pas de
-        rôle reviewer requis. 404 si le candidat est hors périmètre/inconnu **ou** si l'offre
-        est introuvable/non évaluable (même message générique, anti-énumération). Une décision
-        déjà arbitrée par un humain est préservée par l'orchestrateur (le front ne propose le
-        bouton que sur une offre ``pending``).
+        Propriété vérifiée sur le ``candidate_id`` du path (comme lancer un run). 404 si le candidat
+        est hors périmètre/inconnu **ou** si l'offre est introuvable/non évaluable (même message
+        générique, anti-énumération). Une décision déjà arbitrée par un humain est préservée par
+        l'orchestrateur (le front ne propose le bouton que sur une offre ``pending``).
         """
         self._guard_owner(user, candidate_id)
         try:
@@ -1196,11 +1174,9 @@ class HermesApi:
     def _get_offers(self, query: dict, user: User | None) -> Response:
         """Catalogue **paginé** des offres (plus récentes d'abord, OPP-146).
 
-        Le pool d'offres est **partagé** (aucun propriétaire) : lire le catalogue n'exige
-        qu'un jeton valide (401 géré en amont), pas de rôle reviewer — lequel n'est requis que
-        pour *curer* le pool (POST /offers). ``?candidate_id`` (optionnel) annote chaque offre
-        de son **score de match** pour ce candidat ; il est alors **owner-gated** (404 neutre
-        si hors périmètre, comme ailleurs), de sorte qu'on ne note jamais pour un candidat
+        Le pool d'offres est **partagé** (aucun propriétaire). ``?candidate_id`` (optionnel) annote
+        chaque offre de son **score de match** pour ce candidat ; il est alors **owner-gated** (404
+        neutre si hors périmètre, comme ailleurs), de sorte qu'on ne note jamais pour un candidat
         d'autrui. Conventions de pagination identiques à ``GET /runs``.
         """
         page, page_size = self._paginate(query)
@@ -1309,8 +1285,8 @@ class HermesApi:
     def _post_offers(self, body: dict, user: User | None) -> Response:
         """Ajoute une offre, par **texte collé** (OPP-145) ou par **URL** (OPP-148).
 
-        Curation du **pool partagé** d'offres : réservée au rôle ``reviewer`` (pas de
-        propriétaire à résoudre — l'offre n'est pas liée à un candidat). Fournir **soit**
+        Curation du **pool partagé** d'offres (pas de propriétaire à résoudre : l'offre n'est
+        pas liée à un candidat). Fournir **soit**
         ``text`` (le texte de l'offre), **soit** ``url`` (le back récupère la page et en
         extrait le texte) — ``text`` prime si les deux sont fournis. ``source`` est optionnel
         (défaut « collée » pour le texte, le domaine pour une URL). Les erreurs d'analyse LLM
@@ -1318,7 +1294,6 @@ class HermesApi:
         ou un schéma invalide est un 400, un échec de récupération (injoignable, bloqué, vide)
         un 502. L'id de l'offre dérive du texte (OPP-134) → ni recoller ni refetcher ne duplique.
         """
-        self._guard_reviewer(user)
         text = body.get("text")
         if isinstance(text, str) and text.strip() != "":
             return self._post_offer_text(body, text, user)
@@ -1400,18 +1375,16 @@ class HermesApi:
             "kind": offer.kind,  # emploi | formation (OPP-166)
         }
 
-    def _post_collect(self, body: dict, user: User | None) -> Response:
+    def _post_collect(self, body: dict) -> Response:
         """Démarre une passe de collecte **asynchrone** (Adzuna) et renvoie son ``job_id`` (OPP-170).
 
-        Curation du **pool partagé** d'offres, comme POST /offers : réservée au rôle
-        ``reviewer`` (401 sans jeton géré en amont, 403 si le rôle manque). ``what`` /
+        Curation du **pool partagé** d'offres, comme POST /offers. ``what`` /
         ``where`` ciblent la recherche ; ``what`` est **requis** pour Adzuna (400 sinon) et
         filtre les intitulés pour ATS (facultatif) ; ``max`` plafonne la passe (défaut
         ``_COLLECT_MAX_DEFAULT``, écrêté à ``_COLLECT_MAX_CAP``). Le job tourne en fond : on
         répond **202** aussitôt avec ``job_id``, puis le client sonde GET /collect/{job_id}.
         Si une collecte est déjà en cours (unicité de l'écrivain), on répond **409**.
         """
-        self._guard_reviewer(user)
         source = self._collect_source(body)
         what = self._collect_param(body, "what")
         where = self._collect_param(body, "where")
@@ -1431,25 +1404,23 @@ class HermesApi:
             raise ApiError(409, str(exc)) from exc
         return Response(202, {"job_id": job_id})
 
-    def _get_adzuna_settings(self, user: User | None) -> Response:
+    def _get_adzuna_settings(self) -> Response:
         """État des identifiants Adzuna (OPP-222) : **configuré ou non**, jamais les clés.
 
-        Réservé au ``reviewer`` (saisie de secrets = curation, comme la collecte). On n'expose
+        On n'expose
         que le booléen ``configured`` : les clés sont des secrets, elles ne ressortent jamais de
         l'API (ni en clair, ni masquées).
         """
-        self._guard_reviewer(user)
         assert self.adzuna_credentials is not None  # garanti par le dispatch (404 sinon)
         return Response(200, {"configured": self.adzuna_credentials.is_configured()})
 
-    def _put_adzuna_settings(self, body: dict, user: User | None) -> Response:
+    def _put_adzuna_settings(self, body: dict) -> Response:
         """Enregistre les identifiants Adzuna saisis par l'utilisateur (OPP-222).
 
-        Réservé au ``reviewer``. ``app_id`` et ``app_key`` sont requis (chaînes non vides, 400
+        ``app_id`` et ``app_key`` sont requis (chaînes non vides, 400
         sinon). Les clés sont rangées dans le dossier de données de l'app (secret, hors dépôt) et
         ne sont **jamais** renvoyées ni journalisées. Réponse : l'état ``configured`` (pas les clés).
         """
-        self._guard_reviewer(user)
         assert self.adzuna_credentials is not None  # garanti par le dispatch (404 sinon)
         app_id = body.get("app_id")
         app_key = body.get("app_key")
@@ -1461,26 +1432,24 @@ class HermesApi:
             raise ApiError(400, str(exc)) from exc
         return Response(200, {"configured": True})
 
-    def _get_rss_settings(self, user: User | None) -> Response:
+    def _get_rss_settings(self) -> Response:
         """URLs de flux RSS enregistrées (OPP-195) : ``{"feeds": [...]}``.
 
-        Réservé au ``reviewer`` (curation du pool, comme la collecte). Les URLs ne sont **pas**
+        Les URLs ne sont **pas**
         des secrets : on les renvoie telles quelles pour que l'UI puisse les réafficher et les
         éditer (différence avec Adzuna, qui ne rend jamais que l'état « configuré »).
         """
-        self._guard_reviewer(user)
         assert self.rss_feeds is not None  # garanti par le dispatch (404 sinon)
         return Response(200, {"feeds": self.rss_feeds.load()})
 
-    def _put_rss_settings(self, body: dict, user: User | None) -> Response:
+    def _put_rss_settings(self, body: dict) -> Response:
         """Enregistre la liste des URLs de flux RSS saisies par l'utilisateur (OPP-195).
 
-        Réservé au ``reviewer``. ``feeds`` doit être une liste (400 sinon) ; le store ne retient
+        ``feeds`` doit être une liste (400 sinon) ; le store ne retient
         que les URLs ``http(s)`` exploitables. Une liste vide supprime tous les flux (OPP-225) ;
         une saisie non vide sans aucune URL exploitable est refusée (400).
         Réponse : la liste **réellement enregistrée** (après nettoyage), que l'UI réaffiche.
         """
-        self._guard_reviewer(user)
         assert self.rss_feeds is not None  # garanti par le dispatch (404 sinon)
         feeds = body.get("feeds")
         if not isinstance(feeds, list):
@@ -1504,27 +1473,25 @@ class HermesApi:
             "offers_in_france": offers_in_france,
         }
 
-    def _get_ats_settings(self, user: User | None) -> Response:
+    def _get_ats_settings(self) -> Response:
         """Entreprises ciblées enregistrées (OPP-226) : ``{"companies": [...]}``.
 
-        Réservé au ``reviewer`` (curation du pool, comme la collecte). Pas des secrets (RG-9) :
+        Pas des secrets (RG-9) :
         on rend l'URL canonique de chaque page carrière pour que l'UI la réaffiche. Le nombre
         d'offres n'est connu qu'à l'enregistrement (``null`` ici : aucune requête aux ATS).
         """
-        self._guard_reviewer(user)
         assert self.ats_companies is not None  # garanti par le dispatch (404 sinon)
         companies = self.ats_companies.load()
         return Response(200, {"companies": [self._serialize_ats_company(c) for c in companies]})
 
-    def _post_data_export(self, user: User | None) -> Response:
+    def _post_data_export(self) -> Response:
         """Rend l'archive d'export des données de l'espace (OPP-232).
 
-        Réservé au ``reviewer``. Réponse : l'archive encodée en base64 (transport JSON-only) et le
+        Réponse : l'archive encodée en base64 (transport JSON-only) et le
         nom de fichier proposé ; le front l'enregistre à l'endroit choisi par l'utilisateur.
         """
         from app.data_transfer_service import ExportTooLarge
 
-        self._guard_reviewer(user)
         assert self.data_transfer is not None  # garanti par le dispatch (404 sinon)
         try:
             result = self.data_transfer.export()
@@ -1540,17 +1507,16 @@ class HermesApi:
             },
         )
 
-    def _post_data_import(self, body: dict, user: User | None) -> Response:
+    def _post_data_import(self, body: dict) -> Response:
         """Remplace les données de l'espace par une archive d'export (OPP-232).
 
-        Réservé au ``reviewer``. L'archive voyage encodée en base64 dans ``archive_base64``
+        L'archive voyage encodée en base64 dans ``archive_base64``
         (transport JSON-only, comme le CV). Base64 invalide, archive refusée (pas un export,
         endommagée, version plus récente) → 400, rien n'est modifié. Collecte en cours → 409.
         Échec d'écriture ou de la base → 500 lisible (l'état d'avant est remis en place).
         """
         from app.data_transfer_service import DataTransferBusy
 
-        self._guard_reviewer(user)
         assert self.data_transfer is not None  # garanti par le dispatch (404 sinon)
         raw = body.get("archive_base64")
         if not isinstance(raw, str) or not raw:
@@ -1569,10 +1535,10 @@ class HermesApi:
             raise _transfer_error("import", exc) from exc
         return Response(200, {"status": "imported"})
 
-    def _put_ats_settings(self, body: dict, user: User | None) -> Response:
+    def _put_ats_settings(self, body: dict) -> Response:
         """Enregistre les entreprises ciblées à partir des URLs de pages carrière (OPP-226).
 
-        Réservé au ``reviewer``. ``companies`` doit être une liste (400 sinon). Liste sans saisie →
+        ``companies`` doit être une liste (400 sinon). Liste sans saisie →
         tout supprimer. URL non reconnue, entreprise introuvable sur son ATS ou plafond dépassé →
         400 (rien n'est enregistré). ATS injoignable pendant la vérification → 502. Erreur
         d'écriture du fichier → 500 lisible. Réponse : les entreprises retenues, avec le nombre
@@ -1585,7 +1551,6 @@ class HermesApi:
             update_companies,
         )
 
-        self._guard_reviewer(user)
         assert self.ats_companies is not None  # garanti par le dispatch (404 sinon)
         lines = body.get("companies")
         if not isinstance(lines, list):
@@ -1613,26 +1578,24 @@ class HermesApi:
     def _post_collect_cancel(self, job_id: str, user: User | None) -> Response:
         """Demande l'arrêt **coopératif** d'une collecte en cours (OPP-209).
 
-        Réservé au ``reviewer`` (cohérent avec démarrage/sondage). Pose le drapeau d'annulation ;
+        Pose le drapeau d'annulation ;
         l'arrêt est effectif au prochain point de contrôle du runner (l'intake en cours n'est pas
         interrompu), d'où un **202** « acceptée ». 404 neutre si le job est inconnu ou déjà
         terminé (rien à annuler, anti-énumération comme les autres ressources).
         """
-        self._guard_reviewer(user)
         assert self.collections is not None  # garanti par le dispatch (404 sinon)
         if not self.collections.cancel(job_id):
             raise self._not_found(user, "collecte introuvable ou déjà terminée")
         return Response(202, {"status": "cancelling"})
 
-    def _get_active_collect(self, user: User | None) -> Response:
+    def _get_active_collect(self) -> Response:
         """Job de collecte **actif** (OPP-208), pour un suivi global indépendant du ``job_id``.
 
-        Réservé au ``reviewer`` (cohérent avec le démarrage et le sondage). Rend
+        Rend
         ``{"job": <job>}`` avec le job en cours sérialisé (même forme que GET /collect/{id}),
         ou ``{"job": null}`` si aucune collecte ne tourne — le front en dérive un indicateur
         global persistant, qui survit au changement de page (OPP-208).
         """
-        self._guard_reviewer(user)
         assert self.collections is not None  # garanti par le dispatch (404 sinon)
         job = self.collections.active_job()
         return Response(200, {"job": self._serialize_job(job) if job is not None else None})
@@ -1640,12 +1603,11 @@ class HermesApi:
     def _get_collect_job(self, job_id: str, user: User | None) -> Response:
         """État d'un job de collecte (OPP-170) : statut, progression, bilan final ou erreur.
 
-        Réservé au ``reviewer`` (cohérent avec le démarrage). 404 neutre si le job est inconnu
+        404 neutre si le job est inconnu
         (anti-énumération, comme les autres ressources). Tant que le job tourne, ``report`` est
         ``null`` et ``progress`` reflète l'avancement ; à ``done`` le bilan est présent, à
         ``failed`` le champ ``error`` porte le message.
         """
-        self._guard_reviewer(user)
         assert self.collections is not None  # garanti par le dispatch (404 sinon)
         job = self.collections.get(job_id)
         if job is None:
@@ -1738,7 +1700,7 @@ class HermesApi:
         }
 
     def _delete_run(self, run_id: str, user: User | None) -> Response:
-        """Supprime un run (OPP-144) : existence → propriété → rôle reviewer, puis suppression.
+        """Supprime un run (OPP-144) : existence → propriété, puis suppression.
 
         Ordre des gardes identique aux actions sensibles (on ne révèle rien à un appelant non
         autorisé). Idempotent : re-supprimer un run déjà retiré renvoie 404 neutre.
@@ -1747,7 +1709,6 @@ class HermesApi:
         if run is None:
             raise self._not_found(user, f"run inconnu : {run_id}")
         self._guard_owner(user, run.candidate_id)
-        self._guard_reviewer(user)
         self.orchestrator.delete_run(run_id)
         return Response(200, {"deleted": run_id})
 
@@ -1837,14 +1798,13 @@ class HermesApi:
         return Response(200, self._serialize_decision(decision))
 
     def _post_decision(self, recommendation_id: str, body: dict, user: User | None) -> Response:
-        # Validation humaine = action réservée : existence → propriété → rôle reviewer,
-        # dans cet ordre (on ne révèle une ressource d'autrui ni son état).
+        # Validation humaine : existence → propriété, dans cet ordre (on ne révèle une ressource
+        # d'autrui ni son état).
         if user is not None:
             decision = self.orchestrator.get_recommendation(recommendation_id)
             if decision is None:
                 raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
             self._guard_owner(user, decision.candidate_id)
-            self._guard_reviewer(user)
         verb = body.get("decision")
         # ``verb`` vient du JSON client : un tableau/objet n'est pas hashable et ferait
         # lever ``dict.get`` — on écarte tout ce qui n'est pas une chaîne connue.
@@ -1867,19 +1827,16 @@ class HermesApi:
     # --- Lettre de motivation (OPP-147) : GET / POST / PUT / DELETE -----------------
 
     def _guard_letter_target(self, user: User | None, recommendation_id: str) -> None:
-        """Gardes communes aux routes lettre : existence (reco) → propriété → rôle ``reviewer``.
+        """Gardes communes aux routes lettre : existence (reco) → propriété.
 
         La lettre est une ressource sensible rattachée à une recommandation persistée : on
         résout son propriétaire depuis la décision (jamais depuis le corps), 404 neutre si la
-        reco est absente/hors périmètre (anti-énumération), 403 si le rôle manque. Toutes les
-        opérations lettre (y compris la lecture) exigent ``reviewer`` — c'est du contenu de
-        candidature, pas une donnée de catalogue partagée.
+        reco est absente/hors périmètre (anti-énumération).
         """
         decision = self.orchestrator.get_recommendation(recommendation_id)
         if decision is None:
             raise self._not_found(user, f"recommandation inconnue : {recommendation_id}")
         self._guard_owner(user, decision.candidate_id)
-        self._guard_reviewer(user)
 
     def _get_letter(self, recommendation_id: str, user: User | None) -> Response:
         """Renvoie la lettre de la reco, ou 404 neutre si aucune n'est encore générée."""
@@ -1963,7 +1920,7 @@ class HermesApi:
         """Confirme (explicitement) l'intention de candidater à une recommandation.
 
         Action sensible : quand l'auth est active, on vérifie **successivement** existence de
-        la cible → propriété → rôle ``reviewer`` (404/404/403) **avant** la garde
+        la cible → propriété (404/404) **avant** la garde
         ``{"confirm": true}`` (400), pour ne rien révéler à un appelant non autorisé. Exige
         ensuite une décision humaine ``approved`` (sinon 409). Idempotent.
         """
@@ -1981,7 +1938,7 @@ class HermesApi:
         """Déclare qu'on a **réellement candidaté** à une recommandation (suivi, OPP-xxx).
 
         Pointage déclaratif, pas un envoi : **aucune** garde ``{"confirm": true}`` (contrairement
-        à l'intention), mais les mêmes gardes d'accès (existence → propriété → rôle ``reviewer``).
+        à l'intention), mais les mêmes gardes d'accès (existence → propriété).
         ``applied_at`` (optionnel) permet de dater une candidature **passée** ; absent = aujourd'hui.
         Exige une intention préalablement notée (sinon 409). Idempotent. Renvoie l'état courant.
         """
@@ -2036,8 +1993,8 @@ class HermesApi:
     ) -> Response:
         """Historique de suivi post-candidature d'une recommandation (OPP-223).
 
-        Mêmes gardes d'accès que les autres routes de candidature (existence → propriété →
-        rôle ``reviewer``). Lecture pure : renvoie la liste des événements dans l'ordre
+        Mêmes gardes d'accès que les autres routes de candidature (existence → propriété).
+        Lecture pure : renvoie la liste des événements dans l'ordre
         chronologique (vide si rien n'a encore été noté).
         """
         self._guard_sensitive_target(user, recommendation_id)
@@ -2108,7 +2065,7 @@ class HermesApi:
     ) -> Response:
         """Confirme (explicitement) l'intention d'envoyer un message à une cible.
 
-        Mêmes gardes d'action sensible que la candidature (existence → propriété → rôle,
+        Mêmes gardes d'action sensible que la candidature (existence → propriété,
         puis ``{"confirm": true}``). Cible inconnue → 404. Idempotent par ``contact_id``.
         """
         self._guard_sensitive_target(user, contact_id)
@@ -2120,7 +2077,7 @@ class HermesApi:
         return Response(200, self._serialize_action(action, already))
 
     def _guard_sensitive_target(self, user: User | None, target_id: str) -> None:
-        """Gardes d'une action sensible : existence → propriété → rôle ``reviewer``.
+        """Gardes d'une action sensible : existence → propriété.
 
         La cible d'une action (candidature/message) est une recommandation persistée
         (``target_id`` = son id) : on résout son propriétaire depuis la décision, jamais
@@ -2134,7 +2091,6 @@ class HermesApi:
             # Authentifié : même 404 que le refus de propriété (anti-énumération).
             raise self._not_found(user, "cible inconnue")
         self._guard_owner(user, decision.candidate_id)
-        self._guard_reviewer(user)
 
     @staticmethod
     def _require_confirm(body: dict) -> None:

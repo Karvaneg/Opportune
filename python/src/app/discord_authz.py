@@ -3,12 +3,11 @@
 Le **vrai contrôle de sécurité** du récepteur de clics : décider *qui* a le droit de
 valider un dossier, indépendamment de la voie de réception (gateway ou endpoint signé).
 
-La garantie d'authenticité du canal (signature en voie A, token du bot en voie B) prouve
-seulement que l'interaction *vient de Discord* — pas qu'elle vient d'une **personne
-autorisée**. Ce module ajoute ce second contrôle : il extrait l'identité Discord du
-cliqueur du payload d'interaction, puis la confronte à une **allowlist** configurable. Un
-id présent dans l'allowlist vaut le rôle ``reviewer`` de l'API (OPP-097) pour la décision ;
-tout autre clic est refusé, sans qu'aucune décision ne soit enregistrée.
+La garantie d'authenticité du canal (signature en voie A, token du bot en voie B) prouve seulement
+que l'interaction *vient de Discord*, pas qu'elle vient d'une **personne autorisée**. Ce module
+ajoute ce second contrôle : il extrait l'identité Discord du cliqueur du payload d'interaction, puis
+la confronte à une **allowlist** configurable. Seul un id présent dans l'allowlist peut enregistrer
+une décision ; tout autre clic est refusé, sans qu'aucune décision ne soit enregistrée.
 
 Pur et testable sans réseau : à partir d'un payload d'interaction simulé, on décide
 autorisé/refusé sans toucher à Discord.
@@ -53,7 +52,7 @@ def _user_id(user: object) -> str | None:
 
 @dataclass(frozen=True)
 class ReviewerAllowlist:
-    """Ensemble des IDs Discord autorisés à valider (mapping identité → rôle ``reviewer``).
+    """Ensemble des IDs Discord autorisés à valider une décision.
 
     **Fail-closed** : une allowlist vide n'autorise personne. C'est le comportement sûr par
     défaut — une mauvaise configuration (variable absente ou vide) refuse tout le monde

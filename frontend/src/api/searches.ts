@@ -25,9 +25,9 @@ export function useSearches() {
 }
 
 /**
- * Crée une recherche nommée : `POST /searches` (OPP-184). Reviewer uniquement (modifier le
- * périmètre, comme la curation d'offres). Le back génère l'id technique ; au succès on invalide
- * la liste (la nouvelle recherche apparaît) — l'appelant bascule dessus via l'id renvoyé.
+ * Crée une recherche nommée : `POST /searches` (OPP-184). Le back génère l'id technique ; au succès
+ * on invalide la liste (la nouvelle recherche apparaît) et l'appelant bascule dessus via l'id
+ * renvoyé.
  */
 export function useCreateSearch() {
   return useApiMutation<Search, string>({
@@ -42,7 +42,7 @@ export interface RenameSearchVariables {
 }
 
 /**
- * Renomme une recherche : `PUT /searches/{id}` (OPP-184). Reviewer uniquement. 404 neutre si l'id
+ * Renomme une recherche : `PUT /searches/{id}` (OPP-184). 404 neutre si l'id
  * est hors périmètre (anti-énumération, remonté comme `ApiHttpError`). Invalide la liste au succès.
  */
 export function useRenameSearch() {
