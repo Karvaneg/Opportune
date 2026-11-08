@@ -274,3 +274,24 @@ def test_migration_never_demotes_a_formation():
 
 def store_get(conn, offer_id):
     return conn.execute("SELECT 1 FROM offers WHERE id = ?", (offer_id,)).fetchone()
+
+
+def test_get_many_keeps_the_requested_order_and_skips_missing(store):
+    store.save(_offer(id="a", url="http://a"))
+    store.save(_offer(id="b", url="http://b"))
+
+    offers = store.get_many(["b", "absente", "a"])
+
+    assert [offer.id for offer in offers] == ["b", "a"]
+
+
+def test_get_many_reads_more_ids_than_one_chunk(store):
+    from app.offer_store import _GET_MANY_CHUNK
+
+    ids = [f"o{i}" for i in range(_GET_MANY_CHUNK + 5)]
+    for offer_id in ids:
+        store.save(_offer(id=offer_id, url=f"http://{offer_id}"))
+
+    offers = store.get_many(ids)
+
+    assert [offer.id for offer in offers] == ids

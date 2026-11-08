@@ -3,8 +3,8 @@
 Orchestre les briques d'analyse V2 pour, d'un **candidat**, produire les **meilleures
 offres** du stock, classées et justifiées :
 
-    profil (ProfileStore) → offres (OfferStore) → matching → scoring
-        → filtrage (min_score) → tri (date décroissante, OPP-152) → top N
+    profil (ProfileStore) → offres de la recherche (OfferStore + liens, OPP-186) → matching
+        → scoring → filtrage (min_score) → tri (date décroissante, OPP-152) → top N
 
 Distinct du pipeline d'ingestion (OPP-0392) : celui-ci n'analyse rien, il exploite les
 offres déjà stockées. Le score est **relatif au candidat**, donc recalculé à chaque
@@ -13,9 +13,10 @@ appel. Déterministe, sans LLM ni réseau ; les dépôts sont injectés (protoco
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
+from app.candidate_offer_store import CandidateOfferRepository
 from app.candidate_profile import CandidateProfile
 from app.offer import Offer
 from app.offer_kind import FORMATION
@@ -41,6 +42,8 @@ class OfferSource(Protocol):
     def count(self) -> int: ...
 
     def get(self, offer_id: str) -> Offer | None: ...
+
+    def get_many(self, offer_ids: list[str]) -> list[Offer]: ...
 
 
 class UnknownCandidateError(Exception):
@@ -162,27 +165,50 @@ def _evaluate_offer(
 
 
 class RecommendationService:
-    """Recommande les meilleures offres du stock pour un candidat donné."""
+    """Recommande les meilleures offres du stock pour un candidat donné.
 
-    def __init__(self, profiles: ProfileSource, offers: OfferSource) -> None:
+    ``memberships`` (OPP-186) limite chaque recherche **à ses propres offres** (table de liens
+    ``candidate_offers``). Les offres d'une recherche portent alors, dans ``created_at``, leur
+    date d'**entrée dans la recherche** (date du lien) : c'est elle qui ordonne le catalogue, le
+    classement et le journal d'activité de la recherche. Sans lui, toutes les offres du dépôt sont visibles de toutes les
+    recherches : c'est le comportement des outils en ligne de commande et des tests unitaires
+    qui n'ont qu'un candidat. L'API, elle, le câble toujours (cf. ``api.server``).
+    """
+
+    def __init__(
+        self,
+        profiles: ProfileSource,
+        offers: OfferSource,
+        memberships: CandidateOfferRepository | None = None,
+    ) -> None:
         self.profiles = profiles
         self.offers = offers
+        self.memberships = memberships
 
-    def pool_size(self) -> int:
-        """Nombre total d'offres du pool partagé (toutes offres, formations comprises).
+    def offers_for(self, candidate_id: str) -> list[Offer]:
+        """Offres visibles de la recherche, plus récentes d'abord (toutes sans ``memberships``)."""
+        if self.memberships is None:
+            return self.offers.list_all()
+        return self._linked_offers(self.memberships.links(candidate_id))
 
-        Sert au ``offres_total`` des agrégats du cockpit (OPP-163) — à distinguer du nombre
-        d'offres *scorées* (``recommend`` exclut formations et offres non évaluables).
+    def _linked_offers(self, links: list[tuple[str, str]]) -> list[Offer]:
+        """Offres des liens ``(offer_id, date d'entrée)``, dans leur ordre, datées de leur entrée.
+
+        Lecture groupée (``get_many``) : une requête pour toute la liste, pas une par offre.
         """
-        return self.offers.count()
+        entered_at = dict(links)
+        offers = self.offers.get_many([offer_id for offer_id, _ in links])
+        return [replace(offer, created_at=entered_at[offer.id]) for offer in offers]
 
-    def offer_ids(self) -> list[str]:
-        """Identifiants de **toutes** les offres du pool partagé (ordre du dépôt).
+    def offer_ids(self, candidate_id: str) -> list[str]:
+        """Identifiants des offres de la recherche, plus récentes d'abord.
 
-        Sert à l'entonnoir du cockpit (OPP-163/164), qui classe chaque offre du pool selon la
-        décision/candidature du candidat — indépendamment du score de l'algo.
+        Sert à l'entonnoir du cockpit (OPP-163/164), qui classe chaque offre de la recherche
+        selon la décision/candidature du candidat — indépendamment du score de l'algo.
         """
-        return [offer.id for offer in self.offers.list_all()]
+        if self.memberships is None:
+            return [offer.id for offer in self.offers.list_all()]
+        return self.memberships.offer_ids(candidate_id)
 
     def recommend(
         self,
@@ -225,7 +251,7 @@ class RecommendationService:
         skills = (filters or {}).get("skills") or []
 
         recommendations: list[OfferRecommendation] = []
-        for offer in self.offers.list_all():
+        for offer in self.offers_for(candidate_id):
             if exclude_offer_ids and offer.id in exclude_offer_ids:
                 continue
             if not _matches_filters(offer, contract_type, skills):
@@ -259,14 +285,16 @@ class RecommendationService:
     ) -> OfferRecommendation | None:
         """Recommande **une** offre précise pour un candidat (re-score ciblé, OPP-150).
 
-        Retourne ``None`` si l'offre est introuvable **ou** non évaluable (score ``None``).
-        Lève ``UnknownCandidateError`` si le candidat est introuvable et ``ValueError`` si
+        Retourne ``None`` si l'offre est introuvable, hors de la recherche (OPP-186) **ou** non
+        évaluable (score ``None``). Lève ``UnknownCandidateError`` si le candidat est introuvable et ``ValueError`` si
         les seuils sont incohérents — même contrat que ``recommend``.
         """
         validate_thresholds(high, medium)
         profile = self.profiles.get(candidate_id)
         if profile is None:
             raise UnknownCandidateError(f"Candidat introuvable : {candidate_id!r}")
+        if self.memberships is not None and not self.memberships.is_linked(candidate_id, offer_id):
+            return None
         offer = self.offers.get(offer_id)
         if offer is None:
             return None
@@ -287,6 +315,8 @@ class RecommendationService:
         filtrage ni reclassement par score, et on **annote** chacune de son score pour
         ``candidate_id`` (ou ``None`` si non évaluable, ou si aucun candidat n'est demandé).
         Retourne ``(entrées, total)`` — ``total`` est le cardinal **avant** découpe en page.
+        Avec ``candidate_id`` et ``memberships``, seules les offres de la recherche sont listées
+        (OPP-186) ; sans ``candidate_id``, le catalogue entier.
 
         Lève ``ValueError`` si ``limit``/``offset`` sont négatifs ou les seuils incohérents.
         N'exige **pas** de profil : un ``candidate_id`` sans profil (« nouveau profil ») donne
@@ -297,11 +327,16 @@ class RecommendationService:
         validate_thresholds(high, medium)
 
         profile = self._resolve_profile(candidate_id)
-        entries = [
-            self._catalog_entry(offer, profile, high=high, medium=medium)
-            for offer in self.offers.list(limit=limit, offset=offset)
-        ]
-        return entries, self.offers.count()
+        if candidate_id is not None and self.memberships is not None:
+            page = self._linked_offers(
+                self.memberships.links(candidate_id, limit=limit, offset=offset)
+            )
+            total = self.memberships.count(candidate_id)
+        else:
+            page = self.offers.list(limit=limit, offset=offset)
+            total = self.offers.count()
+        entries = [self._catalog_entry(offer, profile, high=high, medium=medium) for offer in page]
+        return entries, total
 
     def catalog_entries_for(
         self,
@@ -322,13 +357,15 @@ class RecommendationService:
         """
         validate_thresholds(high, medium)
         profile = self._resolve_profile(candidate_id)
-        entries: list[OfferCatalogEntry] = []
-        for offer_id in offer_ids:
-            offer = self.offers.get(offer_id)
-            if offer is None:
-                continue
-            entries.append(self._catalog_entry(offer, profile, high=high, medium=medium))
-        return entries
+        if candidate_id is not None and self.memberships is not None:
+            # Offres datées de leur entrée dans la recherche, comme ``list_catalog``.
+            entered_at = dict(self.memberships.links(candidate_id))
+            offers = self._linked_offers(
+                [(offer_id, entered_at[offer_id]) for offer_id in offer_ids if offer_id in entered_at]
+            )
+        else:
+            offers = [o for o in (self.offers.get(offer_id) for offer_id in offer_ids) if o]
+        return [self._catalog_entry(offer, profile, high=high, medium=medium) for offer in offers]
 
     def _resolve_profile(self, candidate_id: str | None):
         """Profil à utiliser pour **annoter** le catalogue, ou ``None`` → scores non annotés.

@@ -148,3 +148,17 @@ def test_reset_demo_vide_tout(conn):
     seed_demo_candidate(conn)
     assert OfferStore(conn).count() == 5
     assert CandidateRegistry(conn).list_ids() == [DEMO_CANDIDATE_ID]
+
+
+def test_seed_links_every_demo_offer_to_the_demo_search(conn):
+    # OPP-186 : les offres de la vitrine sont celles de la recherche démo, y compris après un
+    # « Restaurer l'exemple » (vidage puis re-seed, la table de liens existant déjà).
+    from app.candidate_offer_store import CandidateOfferStore
+
+    _seed(conn)
+    reset_demo(conn)
+    _seed(conn)
+
+    linked = CandidateOfferStore(conn).offer_ids(DEMO_CANDIDATE_ID)
+
+    assert sorted(linked) == sorted(offer.id for offer in _DEMO_OFFERS.values())

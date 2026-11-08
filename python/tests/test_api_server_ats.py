@@ -21,9 +21,11 @@ def _wait_for_job(api, job_id, timeout=5.0):
 
 def test_collect_without_target_companies_reports_a_clear_source_error(tmp_path):
     conn = connect(str(tmp_path / "opportune.db"))
-    api = assemble_api(conn, build_local_auth(lambda: []), settings_dir=tmp_path / "settings")
+    api = assemble_api(
+        conn, build_local_auth(lambda: ["cand-1"]), settings_dir=tmp_path / "settings"
+    )
 
-    started = api.dispatch("POST", "/collect", {"source": "ats"})
+    started = api.dispatch("POST", "/collect", {"source": "ats", "candidate_id": "cand-1"})
     finished_job = _wait_for_job(api, started.body["job_id"])
 
     assert finished_job["status"] == "done"
@@ -58,10 +60,14 @@ def test_collect_passes_the_job_title_to_the_ats_title_filter(tmp_path, monkeypa
 
     monkeypatch.setattr(ats_source, "build_ats_source", fake_build_ats_source)
     conn = connect(str(tmp_path / "opportune.db"))
-    api = assemble_api(conn, build_local_auth(lambda: []), settings_dir=tmp_path / "settings")
+    api = assemble_api(
+        conn, build_local_auth(lambda: ["cand-1"]), settings_dir=tmp_path / "settings"
+    )
     api.ats_companies.save([AtsCompany(LEVER, "swile")])
 
-    started = api.dispatch("POST", "/collect", {"source": "ats", "what": " data analyst "})
+    started = api.dispatch(
+        "POST", "/collect", {"source": "ats", "what": " data analyst ", "candidate_id": "cand-1"}
+    )
     finished_job = _wait_for_job(api, started.body["job_id"])
 
     assert finished_job["status"] == "done"

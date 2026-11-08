@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from app.candidate_offer_store import CandidateOfferRepository
 from app.llm_client import LLMClient
 from app.offer_collection import (
     CollectionProgress,
@@ -29,6 +30,8 @@ def run_collection(
     on_progress: Callable[[CollectionProgress], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     max_new: int | None = None,
+    candidate_id: str | None = None,
+    memberships: CandidateOfferRepository | None = None,
 ) -> CollectionReport:
     """Lance une passe de collecte sur une source assemblée ; retourne le bilan.
 
@@ -37,6 +40,7 @@ def run_collection(
     (OPP-170) est transmis tel quel pour la publication d'avancement d'un job de fond ;
     ``should_cancel`` (OPP-209) permet l'arrêt coopératif d'une passe de fond. ``max_new``
     plafonne la passe en offres neuves (doublons non comptés, cf. ``collect_offers``).
+    ``candidate_id`` + ``memberships`` (OPP-186) rattachent les offres à la recherche cible.
     """
     return collect_offers(
         source,
@@ -45,6 +49,8 @@ def run_collection(
         on_progress=on_progress,
         should_cancel=should_cancel,
         max_new=max_new,
+        candidate_id=candidate_id,
+        memberships=memberships,
     )
 
 

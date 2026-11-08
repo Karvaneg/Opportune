@@ -30,6 +30,7 @@ from app.html_extract import extract_offer_text
 from app.llm_client import LLMClient, LLMError
 from app.offer import compute_offer_id
 from app.offer_analysis import OfferAnalysisError
+from app.candidate_offer_store import CandidateOfferRepository
 from app.offer_intake_service import intake_offer_enriched
 from app.offer_source import RawOffer, SourceOffres
 from app.offer_store import OfferRepository
@@ -129,8 +130,17 @@ def collect_offers(
     on_progress: Callable[[CollectionProgress], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     max_new: int | None = None,
+    candidate_id: str | None = None,
+    memberships: CandidateOfferRepository | None = None,
 ) -> CollectionReport:
     """Collecte, dédoublonne, analyse et persiste les offres d'une ``source``.
+
+    **Recherche cible (OPP-186).** Avec ``candidate_id`` et ``memberships``, chaque offre
+    persistée est rattachée à cette recherche. Une offre déjà en base mais pas encore liée à la
+    recherche est liée **sans appel au LLM** et comptée dans ``stored`` : elle est nouvelle pour
+    cette recherche. ``duplicates`` ne compte alors que les offres déjà liées à la recherche (ou
+    vues deux fois dans la passe). Sans eux, comportement d'origine : toute offre déjà en base
+    est un doublon.
 
     **Plafond en offres neuves.** Si ``max_new`` est fourni, la passe s'arrête dès que
     ``max_new`` offres **neuves** ont été traitées (persistées ou en échec). Les doublons ne
@@ -160,6 +170,8 @@ def collect_offers(
     (l'appel LLM, étape longue) n'est jamais interrompue en plein vol, et tout ce qui est
     déjà persisté le reste — c'est un arrêt **entre** offres, pas un `kill`.
     """
+    if (candidate_id is None) != (memberships is None):
+        raise ValueError("candidate_id et memberships vont ensemble")
     collected = 0
     stored = 0
     duplicates = 0
@@ -213,11 +225,20 @@ def collect_offers(
         collected += 1
         offer_id = compute_offer_id(raw.source, raw.url, raw.raw_text)
         # Déjà vue dans cette passe, ou déjà persistée : on évite l'appel LLM.
-        if offer_id in seen or store.get(offer_id) is not None:
+        if offer_id in seen:
             duplicates += 1
             _emit()
             continue
         seen.add(offer_id)
+        if store.get(offer_id) is not None:
+            if memberships is not None and not memberships.is_linked(candidate_id, offer_id):
+                # Déjà en base (collectée par une autre recherche) : on la lie, sans LLM.
+                memberships.link(candidate_id, offer_id)
+                stored += 1
+            else:
+                duplicates += 1
+            _emit()
+            continue
         try:
             result = intake_offer_enriched(
                 raw.raw_text,
@@ -232,6 +253,8 @@ def collect_offers(
             failures.append(CollectionFailure(raw=raw, error=str(exc)))
             _emit()
             continue
+        if memberships is not None:
+            memberships.link(candidate_id, result.offer.id)
         stored += 1
         if result.enrichment_attempted:
             enriched += 1

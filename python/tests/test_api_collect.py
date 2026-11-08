@@ -50,13 +50,20 @@ def _api(runner, *, auth=None, spawn=_sync_spawn) -> HermesApi:
     return HermesApi(orchestrator, auth=auth, collections=registry)
 
 
+# Recherche cible d'une collecte (OPP-186), requise dans le corps.
+CANDIDATE = "cand-1"
+
 # Corps minimal d'une collecte Adzuna valide : le poste (``what``) y est requis (OPP-226).
-ADZUNA_BODY = {"what": "python"}
+ADZUNA_BODY = {"what": "python", "candidate_id": CANDIDATE}
 
 
 def _start(api, body=None, headers=None):
-    """POST /collect → renvoie (réponse, job_id) ; le spawn synchrone laisse le job terminé."""
-    resp = api.dispatch("POST", "/collect", ADZUNA_BODY if body is None else body, headers)
+    """POST /collect → renvoie (réponse, job_id) ; le spawn synchrone laisse le job terminé.
+
+    La recherche cible est ajoutée au corps quand le test ne la précise pas.
+    """
+    body = ADZUNA_BODY if body is None else {"candidate_id": CANDIDATE, **body}
+    resp = api.dispatch("POST", "/collect", body, headers)
     return resp, resp.body.get("job_id")
 
 
@@ -67,7 +74,7 @@ def test_post_collect_returns_202_with_job_id():
 
 
 def test_poll_done_job_serializes_report():
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return _report(collected=5, stored=3, duplicates=2)
 
     api = _api(runner)
@@ -92,7 +99,7 @@ def test_poll_done_job_serializes_report():
 
 def test_poll_reports_progress_snapshot():
     # L'avancement publié par le runner via ``on_progress`` est lisible dans l'état du job.
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         on_progress(
             CollectionProgress(
                 collected=4, stored=1, duplicates=2, failures=1, enriched=0, enriched_recovered=0
@@ -115,7 +122,7 @@ def test_poll_reports_progress_snapshot():
 
 def test_poll_serializes_enrichment_counts():
     # OPP-169 : les compteurs d'enrichissement non nuls remontent dans le bilan du job.
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return _report(collected=4, stored=4, duplicates=0, enriched=2, enriched_recovered=1)
 
     api = _api(runner)
@@ -128,7 +135,7 @@ def test_poll_serializes_enrichment_counts():
 def test_start_passes_criteria_and_default_max():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured.update(what=what, where=where, max_offers=max_offers)
         return _report()
 
@@ -139,7 +146,7 @@ def test_start_passes_criteria_and_default_max():
 def test_start_defaults_source_to_adzuna():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured["source"] = source
         return _report()
 
@@ -151,7 +158,7 @@ def test_start_defaults_source_to_adzuna():
 def test_start_forwards_rss_source():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured["source"] = source
         return _report()
 
@@ -162,7 +169,7 @@ def test_start_forwards_rss_source():
 def test_start_forwards_ats_source():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured["source"] = source
         return _report()
 
@@ -172,7 +179,7 @@ def test_start_forwards_ats_source():
 
 
 def test_poll_done_job_serializes_excluded_and_warnings():
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return replace(_report(), excluded=4, warnings=("entreprise introuvable sur Lever : x",))
 
     api = _api(runner)
@@ -203,7 +210,7 @@ def test_start_accepts_rss_and_ats_without_job_title(source):
 
 
 def test_poll_done_job_serializes_off_target():
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return replace(_report(), off_target=12)
 
     api = _api(runner)
@@ -222,7 +229,7 @@ def test_start_rejects_unknown_source():
 def test_start_defaults_empty_criteria():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured.update(what=what, where=where)
         return _report()
 
@@ -234,7 +241,7 @@ def test_start_defaults_empty_criteria():
 def test_start_strips_criteria():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured.update(what=what, where=where)
         return _report()
 
@@ -245,7 +252,7 @@ def test_start_strips_criteria():
 def test_start_clamps_max_to_cap():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured["max_offers"] = max_offers
         return _report()
 
@@ -256,7 +263,7 @@ def test_start_clamps_max_to_cap():
 def test_start_honours_explicit_max_below_cap():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured["max_offers"] = max_offers
         return _report()
 
@@ -280,7 +287,7 @@ def test_source_error_surfaces_in_done_report_not_status():
     # Panne de la source (identifiants Adzuna manquants, quota…) : le runner rend un bilan
     # porteur de ``source_error`` — le job est ``done`` (pas ``failed``) et le détail est dans
     # le bilan. Une panne de source n'est pas un échec de job.
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return _report(collected=0, stored=0, duplicates=0, source_error="AdzunaAuthError: …")
 
     api = _api(runner)
@@ -291,7 +298,7 @@ def test_source_error_surfaces_in_done_report_not_status():
 
 
 def test_runner_exception_marks_job_failed():
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         raise RuntimeError("boom")
 
     api = _api(runner)
@@ -308,7 +315,7 @@ def test_done_report_counts_failures():
         CollectionFailure(raw=RawOffer(source="adzuna", raw_text="y", url="u2"), error="bam"),
     )
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return _report(collected=4, stored=1, duplicates=1, failures=failures)
 
     api = _api(runner)
@@ -322,7 +329,7 @@ def test_second_collect_while_running_returns_409():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         started.set()
         release.wait(timeout=5)
         return _report()
@@ -355,7 +362,7 @@ def test_cancel_running_job_returns_202_then_job_cancelled():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         started.set()
         while not should_cancel():
             if release.wait(0.01):
@@ -423,7 +430,7 @@ def test_get_active_collect_reflects_running_job():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         started.set()
         release.wait(timeout=5)
         return _report()
@@ -449,3 +456,41 @@ def test_get_active_collect_reflects_running_job():
         pytest.fail("le job est resté « actif » après sa fin")
 
 
+
+
+# --- Recherche cible (OPP-186) ------------------------------------------------------------
+
+
+def test_start_forwards_candidate_id_to_runner():
+    captured = {}
+
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
+        captured["candidate_id"] = candidate_id
+        return _report()
+
+    _start(_api(runner), {"what": "python", "candidate_id": "cand-2"})
+
+    assert captured == {"candidate_id": "cand-2"}
+
+
+@pytest.mark.parametrize("candidate_id", [None, "", "   ", 42])
+def test_start_without_candidate_id_is_400(candidate_id):
+    api = _api(lambda **k: _report())
+    body = {"what": "python"}
+    if candidate_id is not None:
+        body["candidate_id"] = candidate_id
+
+    resp = api.dispatch("POST", "/collect", body, None)
+
+    assert resp.status == 400
+
+
+def test_start_for_unknown_search_is_404_and_runs_nothing():
+    calls = []
+    auth = LocalAuthProvider(User(id="moi", owned_candidates=frozenset({CANDIDATE})))
+    api = _api(lambda **k: calls.append(k) or _report(), auth=auth)
+
+    resp = api.dispatch("POST", "/collect", {"what": "python", "candidate_id": "autre"}, None)
+
+    assert resp.status == 404
+    assert calls == []

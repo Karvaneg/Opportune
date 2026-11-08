@@ -256,3 +256,70 @@ def test_list_catalog_candidate_without_profile_lists_without_score(env):
     entries, total = service.list_catalog(candidate_id="nope")
     assert total == 3
     assert all(entry.score is None and entry.action is None for entry in entries)
+
+
+# --- Offres propres à chaque recherche (OPP-186) -------------------------------------------
+
+
+@pytest.fixture
+def scoped():
+    """Service câblé avec la table de liens : chaque recherche ne voit que ses offres."""
+    from app.candidate_offer_store import CandidateOfferStore
+
+    conn = connect(":memory:")
+    profiles = ProfileStore(conn)
+    offers = OfferStore(conn)
+    links = CandidateOfferStore(conn)
+    for candidate_id in ("cand-a", "cand-b"):
+        profiles.save(
+            create_profile(
+                id=candidate_id, name="Marie", skills=["Python", "SQL"], contract_type="CDI",
+                location="Paris", total_experience_years=6,
+            )
+        )
+    _seed_three(offers)
+    links.link("cand-a", "a")
+    links.link("cand-a", "c")
+    links.link("cand-b", "b")
+    yield RecommendationService(profiles, offers, links)
+    conn.close()
+
+
+def test_recommend_scores_only_the_offers_of_the_search(scoped):
+    recos_a = scoped.recommend("cand-a")
+    recos_b = scoped.recommend("cand-b")
+
+    assert [r.offer.id for r in recos_a] == ["c", "a"]
+    assert [r.offer.id for r in recos_b] == ["b"]
+
+
+def test_recommend_one_outside_the_search_is_none(scoped):
+    assert scoped.recommend_one("cand-b", "a") is None
+    assert scoped.recommend_one("cand-a", "a") is not None
+
+
+def test_offer_ids_are_those_of_the_search(scoped):
+    assert scoped.offer_ids("cand-a") == ["c", "a"]
+    assert scoped.offer_ids("cand-b") == ["b"]
+
+
+def test_catalog_lists_and_counts_only_the_offers_of_the_search(scoped):
+    entries, total = scoped.list_catalog(limit=1, offset=1, candidate_id="cand-a")
+
+    assert [e.offer.id for e in entries] == ["a"]
+    assert total == 2
+
+
+def test_catalog_without_search_lists_every_offer(scoped):
+    entries, total = scoped.list_catalog(limit=10)
+
+    assert [e.offer.id for e in entries] == ["c", "b", "a"]
+    assert total == 3
+
+
+def test_new_search_has_no_offer(scoped):
+    entries, total = scoped.list_catalog(candidate_id="cand-neuve")
+
+    assert entries == []
+    assert total == 0
+    assert scoped.offer_ids("cand-neuve") == []

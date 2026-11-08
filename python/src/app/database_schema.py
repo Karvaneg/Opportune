@@ -13,6 +13,7 @@ import sqlite3
 
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
 from app.application_tracking_store import ApplicationTrackingStore
+from app.candidate_offer_store import CandidateOfferStore
 from app.candidate_registry import CandidateRegistry
 from app.decision_store import DecisionStore
 from app.letter_store import LetterStore
@@ -32,6 +33,9 @@ _STORES = (
     ApplicationTrackingStore,
     CandidateRegistry,
     RunStore,
+    # Après ``OfferStore`` et ``CandidateRegistry`` : sur une archive antérieure à OPP-186, la
+    # création de la table de liens rattache les offres importées aux recherches importées.
+    CandidateOfferStore,
 )
 
 

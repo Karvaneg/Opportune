@@ -36,11 +36,11 @@ def _sync_spawn(target):
 
 
 def test_start_runs_job_and_marks_done_with_report():
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return _report(collected=3, stored=3)
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
-    job_id = registry.start(what="dev", where="", max_offers=5)
+    job_id = registry.start(candidate_id="cand", what="dev", where="", max_offers=5)
 
     job = registry.get(job_id)
     assert job is not None
@@ -52,29 +52,37 @@ def test_start_runs_job_and_marks_done_with_report():
 def test_start_forwards_criteria_to_runner():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
-        captured.update(what=what, where=where, max_offers=max_offers)
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
+        captured.update(
+            what=what, where=where, max_offers=max_offers, candidate_id=candidate_id
+        )
         return _report()
 
     CollectionJobRegistry(runner, spawn=_sync_spawn).start(
-        what="python", where="Lyon", max_offers=7
+        what="python", where="Lyon", max_offers=7, candidate_id="cand-1"
     )
-    assert captured == {"what": "python", "where": "Lyon", "max_offers": 7}
+
+    assert captured == {
+        "what": "python",
+        "where": "Lyon",
+        "max_offers": 7,
+        "candidate_id": "cand-1",
+    }
 
 
 def test_start_forwards_source_to_runner():
     captured = {}
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         captured["source"] = source
         return _report()
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
 
-    registry.start(what="", where="", max_offers=1)
+    registry.start(candidate_id="cand", what="", where="", max_offers=1)
     assert captured["source"] == "adzuna"
 
-    registry.start(what="", where="", max_offers=1, source="rss")
+    registry.start(candidate_id="cand", what="", where="", max_offers=1, source="rss")
     assert captured["source"] == "rss"
 
 
@@ -83,21 +91,21 @@ def test_progress_callback_updates_job_snapshot():
         collected=4, stored=2, duplicates=1, failures=1, enriched=1, enriched_recovered=1
     )
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         on_progress(progress)
         return _report()
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
-    job_id = registry.start(what="", where="", max_offers=5)
+    job_id = registry.start(candidate_id="cand", what="", where="", max_offers=5)
     assert registry.get(job_id).progress == progress
 
 
 def test_runner_exception_marks_job_failed():
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         raise RuntimeError("kaboom")
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
-    job_id = registry.start(what="", where="", max_offers=5)
+    job_id = registry.start(candidate_id="cand", what="", where="", max_offers=5)
 
     job = registry.get(job_id)
     assert job.status == FAILED
@@ -107,11 +115,11 @@ def test_runner_exception_marks_job_failed():
 
 def test_source_error_report_keeps_job_done():
     # Une panne de source est rendue DANS le bilan ; le job reste ``done`` (pas ``failed``).
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         return _report(collected=0, stored=0, source_error="AdzunaAuthError: nope")
 
     registry = CollectionJobRegistry(runner, spawn=_sync_spawn)
-    job_id = registry.start(what="", where="", max_offers=5)
+    job_id = registry.start(candidate_id="cand", what="", where="", max_offers=5)
 
     job = registry.get(job_id)
     assert job.status == DONE
@@ -124,7 +132,7 @@ def test_cancel_marks_job_cancelled_and_sets_flag():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         started.set()
         while not should_cancel():
             if release.wait(0.01):  # garde-fou anti-blocage du test
@@ -135,7 +143,7 @@ def test_cancel_marks_job_cancelled_and_sets_flag():
     registry = CollectionJobRegistry(
         runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start()
     )
-    job_id = registry.start(what="", where="", max_offers=5)
+    job_id = registry.start(candidate_id="cand", what="", where="", max_offers=5)
     try:
         assert started.wait(timeout=5)
         assert registry.cancel(job_id) is True
@@ -159,7 +167,7 @@ def test_late_cancel_keeps_job_done_when_pass_completed():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         started.set()
         release.wait(timeout=5)  # bloque jusqu'à ce que le test ait posé le cancel
         return _report(collected=2, stored=2)  # passe menée à terme : cancelled implicitement faux
@@ -167,7 +175,7 @@ def test_late_cancel_keeps_job_done_when_pass_completed():
     registry = CollectionJobRegistry(
         runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start()
     )
-    job_id = registry.start(what="", where="", max_offers=5)
+    job_id = registry.start(candidate_id="cand", what="", where="", max_offers=5)
     assert started.wait(timeout=5)
     assert registry.cancel(job_id) is True  # accepté : le job est encore running
     release.set()
@@ -186,7 +194,8 @@ def test_late_cancel_keeps_job_done_when_pass_completed():
 def test_cancel_unknown_or_terminated_returns_false():
     registry = CollectionJobRegistry(lambda **k: _report(), spawn=_sync_spawn)
     assert registry.cancel("inconnu") is False
-    job_id = registry.start(what="", where="", max_offers=1)  # spawn synchrone → déjà terminé
+    # spawn synchrone → déjà terminé
+    job_id = registry.start(candidate_id="cand", what="", where="", max_offers=1)
     assert registry.get(job_id).status == DONE
     assert registry.cancel(job_id) is False  # rien à annuler sur un job terminé
 
@@ -200,7 +209,10 @@ def test_registry_evicts_oldest_terminated_jobs_beyond_cap():
     # Avec un spawn synchrone chaque job se termine dans ``start`` : on en enchaîne plus que la
     # capacité et on vérifie que seuls les ``_MAX_RETAINED_JOBS`` plus récents restent consultables.
     registry = CollectionJobRegistry(lambda **k: _report(), spawn=_sync_spawn)
-    ids = [registry.start(what="", where="", max_offers=1) for _ in range(_MAX_RETAINED_JOBS + 3)]
+    ids = [
+        registry.start(candidate_id="cand", what="", where="", max_offers=1)
+        for _ in range(_MAX_RETAINED_JOBS + 3)
+    ]
 
     evicted, retained = ids[:3], ids[3:]
     assert all(registry.get(job_id) is None for job_id in evicted)  # les 3 plus anciens évincés
@@ -229,7 +241,7 @@ def test_second_start_while_running_raises_then_slot_frees():
     release = threading.Event()
     started = threading.Event()
 
-    def runner(*, source, what, where, max_offers, on_progress, should_cancel):
+    def runner(*, source, what, where, max_offers, on_progress, should_cancel, candidate_id):
         started.set()
         release.wait(timeout=5)
         return _report()
@@ -237,12 +249,12 @@ def test_second_start_while_running_raises_then_slot_frees():
     registry = CollectionJobRegistry(
         runner, spawn=lambda t: threading.Thread(target=t, daemon=True).start()
     )
-    first_id = registry.start(what="", where="", max_offers=5)
+    first_id = registry.start(candidate_id="cand", what="", where="", max_offers=5)
     assert started.wait(timeout=5)
     assert registry.get(first_id).status == RUNNING
 
     with pytest.raises(CollectionAlreadyRunning):
-        registry.start(what="", where="", max_offers=5)
+        registry.start(candidate_id="cand", what="", where="", max_offers=5)
 
     release.set()
     for _ in range(200):
@@ -253,5 +265,5 @@ def test_second_start_while_running_raises_then_slot_frees():
         pytest.fail("le premier job ne s'est jamais terminé")
 
     # Créneau libéré : un nouveau job démarre.
-    second_id = registry.start(what="", where="", max_offers=5)
+    second_id = registry.start(candidate_id="cand", what="", where="", max_offers=5)
     assert second_id != first_id

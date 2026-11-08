@@ -113,10 +113,13 @@ class OfferIntake(Protocol):
     """Analyse + persiste une offre brute, et retourne l'``Offer`` créée (OPP-145).
 
     Encapsule ``intake_offer`` lié à un ``LLMClient`` et un dépôt d'offres : l'API reste
-    transport-only et testable (on injecte un faux intake, sans réseau ni Ollama).
+    transport-only et testable (on injecte un faux intake, sans réseau ni Ollama). L'offre est
+    rattachée à la recherche ``candidate_id`` (OPP-186).
     """
 
-    def __call__(self, raw_text: str, *, source: str, url: str = "") -> Offer: ...
+    def __call__(
+        self, raw_text: str, *, source: str, candidate_id: str, url: str = ""
+    ) -> Offer: ...
 
 
 class OfferUrlIntake(Protocol):
@@ -124,9 +127,10 @@ class OfferUrlIntake(Protocol):
 
     Encapsule ``intake_offer_from_url`` lié à un ``LLMClient`` et un dépôt : l'API reste
     transport-only et testable (on injecte un faux intake par URL, sans réseau ni Ollama).
+    L'offre est rattachée à la recherche ``candidate_id`` (OPP-186).
     """
 
-    def __call__(self, url: str, *, source: str) -> Offer: ...
+    def __call__(self, url: str, *, source: str, candidate_id: str) -> Offer: ...
 
 
 class CvIntake(Protocol):
@@ -546,7 +550,8 @@ class HermesApi:
             return self._get_recommendation(unquote(match["rid"]), user)
 
         if _OFFERS.match(path):
-            # GET : catalogue des offres (toujours disponible, lecture du pool partagé).
+            # GET : catalogue des offres (toujours disponible ; ``?candidate_id`` = offres de
+            # la recherche, OPP-186).
             if method == "GET":
                 return self._get_offers(query, user)
             # POST : intake par texte collé (OPP-145) ou par URL (OPP-148) ; la disponibilité
@@ -564,7 +569,7 @@ class HermesApi:
             if method.upper() == "GET":
                 return self._get_active_collect()
             self._require(method, "POST", path)
-            return self._post_collect(body)
+            return self._post_collect(body, user)
 
         cancel_match = _COLLECT_JOB_CANCEL.match(path)
         if cancel_match:
@@ -1174,10 +1179,10 @@ class HermesApi:
     def _get_offers(self, query: dict, user: User | None) -> Response:
         """Catalogue **paginé** des offres (plus récentes d'abord, OPP-146).
 
-        Le pool d'offres est **partagé** (aucun propriétaire). ``?candidate_id`` (optionnel) annote
-        chaque offre de son **score de match** pour ce candidat ; il est alors **owner-gated** (404
-        neutre si hors périmètre, comme ailleurs), de sorte qu'on ne note jamais pour un candidat
-        d'autrui. Conventions de pagination identiques à ``GET /runs``.
+        ``?candidate_id`` (optionnel) limite la liste **aux offres de cette recherche** (OPP-186) et
+        annote chacune de son **score de match** ; il est alors vérifié (404 neutre si la recherche
+        est inconnue). Sans lui, le catalogue entier, sans score. Conventions de pagination
+        identiques à ``GET /runs``.
         """
         page, page_size = self._paginate(query)
 
@@ -1285,8 +1290,8 @@ class HermesApi:
     def _post_offers(self, body: dict, user: User | None) -> Response:
         """Ajoute une offre, par **texte collé** (OPP-145) ou par **URL** (OPP-148).
 
-        Curation du **pool partagé** d'offres (pas de propriétaire à résoudre : l'offre n'est
-        pas liée à un candidat). Fournir **soit**
+        ``candidate_id`` est **requis** (OPP-186) : l'offre est rattachée à cette recherche (400 s'il
+        manque, 404 si la recherche est inconnue). Fournir **soit**
         ``text`` (le texte de l'offre), **soit** ``url`` (le back récupère la page et en
         extrait le texte) — ``text`` prime si les deux sont fournis. ``source`` est optionnel
         (défaut « collée » pour le texte, le domaine pour une URL). Les erreurs d'analyse LLM
@@ -1295,27 +1300,46 @@ class HermesApi:
         un 502. L'id de l'offre dérive du texte (OPP-134) → ni recoller ni refetcher ne duplique.
         """
         text = body.get("text")
-        if isinstance(text, str) and text.strip() != "":
-            return self._post_offer_text(body, text, user)
-
+        has_text = isinstance(text, str) and text.strip() != ""
         url = body.get("url")
-        if isinstance(url, str) and url.strip() != "":
-            return self._post_offer_url(body, url.strip(), user)
-
-        raise ApiError(400, "text ou url est requis (le texte de l'offre, ou son URL)")
-
-    def _post_offer_text(self, body: dict, text: str, user: User | None) -> Response:
-        """Voie texte collé (OPP-145). ``url`` facultatif, purement informatif ici."""
-        if self.offer_intake is None:
-            # Voie non câblée : 404 neutre (comme une route non montée), cohérent avec /letter.
+        has_url = isinstance(url, str) and url.strip() != ""
+        if not (has_text or has_url):
+            raise ApiError(400, "text ou url est requis (le texte de l'offre, ou son URL)")
+        # Voie non câblée : 404 neutre (comme une route non montée, cohérent avec /letter), avant
+        # de vérifier la recherche cible.
+        if has_text and self.offer_intake is None:
             raise self._not_found(user, "intake d'offre par texte non disponible")
+        if not has_text and self.offer_url_intake is None:
+            raise self._not_found(user, "intake d'offre par URL non disponible")
+        candidate_id = self._body_candidate_id(body, user)
+        if has_text:
+            return self._post_offer_text(body, text, candidate_id, user)
+        return self._post_offer_url(body, url.strip(), candidate_id, user)
+
+    def _body_candidate_id(self, body: dict, user: User | None) -> str:
+        """Recherche cible d'une écriture d'offres (OPP-186) : ``candidate_id`` du corps, vérifié.
+
+        400 si absent ou non-chaîne vide ; 404 neutre si la recherche est inconnue (même garde
+        que les routes ``/candidates/{id}/…``).
+        """
+        candidate_id = body.get("candidate_id")
+        if not isinstance(candidate_id, str) or candidate_id.strip() == "":
+            raise ApiError(400, "candidate_id (la recherche cible) est requis")
+        candidate_id = candidate_id.strip()
+        self._guard_owner(user, candidate_id)
+        return candidate_id
+
+    def _post_offer_text(
+        self, body: dict, text: str, candidate_id: str, user: User | None
+    ) -> Response:
+        """Voie texte collé (OPP-145). ``url`` facultatif, purement informatif ici."""
         source = body.get("source")
         source = source.strip() if isinstance(source, str) and source.strip() else "collée"
         url = body.get("url", "")
         if not isinstance(url, str):
             raise ApiError(400, "url doit être une chaîne")
         try:
-            offer = self.offer_intake(text, source=source, url=url)
+            offer = self.offer_intake(text, source=source, url=url, candidate_id=candidate_id)
         except ValueError as exc:
             raise ApiError(400, str(exc))
         except OfferAnalysisError as exc:
@@ -1324,7 +1348,9 @@ class HermesApi:
             raise ApiError(502, f"service d'analyse indisponible : {exc}")
         return Response(201, self._serialize_offer(offer))
 
-    def _post_offer_url(self, body: dict, url: str, user: User | None) -> Response:
+    def _post_offer_url(
+        self, body: dict, url: str, candidate_id: str, user: User | None
+    ) -> Response:
         """Voie URL (OPP-148) : fetch + extraction + intake.
 
         ``UnsupportedUrlError`` (schéma non http(s), cible interne/SSRF) → 400 (faute de
@@ -1332,9 +1358,6 @@ class HermesApi:
         ``EmptyContentError``) → 502 (la page n'a pu être exploitée). Erreurs d'analyse LLM :
         502 comme la voie texte. Source par défaut = domaine de l'URL (utile au catalogue).
         """
-        if self.offer_url_intake is None:
-            # Voie non câblée : 404 neutre (comme une route non montée), cohérent avec /letter.
-            raise self._not_found(user, "intake d'offre par URL non disponible")
         source = body.get("source")
         if not (isinstance(source, str) and source.strip()):
             from urllib.parse import urlsplit
@@ -1343,7 +1366,7 @@ class HermesApi:
         else:
             source = source.strip()
         try:
-            offer = self.offer_url_intake(url, source=source)
+            offer = self.offer_url_intake(url, source=source, candidate_id=candidate_id)
         except UnsupportedUrlError as exc:
             raise ApiError(400, f"URL refusée : {exc}")
         except UrlFetchError as exc:
@@ -1375,10 +1398,11 @@ class HermesApi:
             "kind": offer.kind,  # emploi | formation (OPP-166)
         }
 
-    def _post_collect(self, body: dict) -> Response:
+    def _post_collect(self, body: dict, user: User | None) -> Response:
         """Démarre une passe de collecte **asynchrone** (Adzuna) et renvoie son ``job_id`` (OPP-170).
 
-        Curation du **pool partagé** d'offres, comme POST /offers. ``what`` /
+        ``candidate_id`` est **requis** (OPP-186) : les offres collectées sont rattachées à cette
+        recherche, comme POST /offers (400 s'il manque, 404 si inconnue). ``what`` /
         ``where`` ciblent la recherche ; ``what`` est **requis** pour Adzuna (400 sinon) et
         filtre les intitulés pour ATS (facultatif) ; ``max`` plafonne la passe (défaut
         ``_COLLECT_MAX_DEFAULT``, écrêté à ``_COLLECT_MAX_CAP``). Le job tourne en fond : on
@@ -1395,10 +1419,15 @@ class HermesApi:
         if source == "adzuna" and not what:
             raise ApiError(400, "what (poste recherché) est requis pour une collecte Adzuna")
         max_offers = self._collect_max(body)
+        candidate_id = self._body_candidate_id(body, user)
         assert self.collections is not None  # garanti par le dispatch (404 sinon)
         try:
             job_id = self.collections.start(
-                source=source, what=what, where=where, max_offers=max_offers
+                source=source,
+                what=what,
+                where=where,
+                max_offers=max_offers,
+                candidate_id=candidate_id,
             )
         except CollectionAlreadyRunning as exc:
             raise ApiError(409, str(exc)) from exc
@@ -1680,12 +1709,14 @@ class HermesApi:
         ``status`` ∈ {running, done, failed}. ``progress`` donne les compteurs courants (mêmes
         clés que le bilan, ``failures`` en cardinal) pour un affichage d'avancement pendant la
         passe. ``report`` est le bilan complet (``_serialize_report``) une fois ``done``, sinon
-        ``null`` ; ``error`` porte le message en cas de ``failed``, sinon ``null``.
+        ``null`` ; ``error`` porte le message en cas de ``failed``, sinon ``null``. ``candidate_id``
+        est la recherche qui reçoit les offres de la passe (OPP-186).
         """
         progress = job.progress
         return {
             "job_id": job.id,
             "status": job.status,
+            "candidate_id": job.candidate_id,
             "progress": {
                 "collected": progress.collected,
                 "stored": progress.stored,
