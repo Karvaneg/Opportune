@@ -30,7 +30,8 @@ import type {
   TrackingEventKind,
 } from "../api/types";
 import { ErrorNotice, Loading } from "../components/States";
-import { openExternal } from "../lib/openExternal";
+import { ExternalLink } from "../components/ExternalLink";
+import { Modal } from "../components/Modal";
 import { LlmRequiredNotice } from "../components/LlmRequiredNotice";
 import { StatusBadge } from "../components/StatusBadge";
 
@@ -114,18 +115,14 @@ function RecommendationDetailView({ reco }: { reco: RecommendationDetail }) {
             <p className="text-sm text-ink-muted">{reco.company || "—"}</p>
             {/* Lien vers l'annonce d'origine (OPP-112), si l'offre en porte une. */}
             {reco.url && (
-              <a
+              <ExternalLink
                 href={reco.url}
-                onClick={(e) => {
-                  e.preventDefault();
-                  void openExternal(reco.url!);
-                }}
-                rel="noreferrer"
                 className="mt-1 inline-block text-sm text-ink-muted hover:text-ink hover:underline"
                 title="Voir l'offre sur le site"
+                arrow
               >
-                voir sur le site ↗
-              </a>
+                voir sur le site
+              </ExternalLink>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -223,17 +220,12 @@ function OfferSkills({ skills, url }: { skills: string[]; url: string | null }) 
         <p className="mt-2 text-sm text-ink-muted">
           Aucune compétence détectée dans l'annonce.{" "}
           {url ? (
-            <a
+            <ExternalLink
               href={url}
-              onClick={(e) => {
-                e.preventDefault();
-                void openExternal(url);
-              }}
-              rel="noreferrer"
               className="font-medium text-brand underline hover:text-brand-strong"
             >
               Voir l'offre
-            </a>
+            </ExternalLink>
           ) : (
             "Consulte l'annonce d'origine pour le détail."
           )}
@@ -566,12 +558,8 @@ function ApplicationConfirm({
       )}
 
       {open && (
-        <div
-          role="dialog"
-          aria-label="Confirmer l'intention de candidater"
-          className="fixed inset-0 z-10 flex items-center justify-center bg-ink/30 p-4"
-        >
-          <div className="w-full max-w-sm rounded-lg bg-surface-raised p-5 shadow-lg">
+        <Modal label="Confirmer l'intention de candidater" onClose={() => setOpen(false)}>
+          <div>
             <p className="text-sm text-ink">
               Noter que tu as l'intention de candidater à cette offre ? Rien n'est envoyé —
               c'est un suivi. L'action requiert une décision préalablement approuvée.
@@ -596,7 +584,7 @@ function ApplicationConfirm({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -927,12 +915,8 @@ function ConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <div
-      role="dialog"
-      aria-label={label}
-      className="fixed inset-0 z-10 flex items-center justify-center bg-ink/30 p-4"
-    >
-      <div className="w-full max-w-sm rounded-lg bg-surface-raised p-5 shadow-lg">
+    <Modal label={label} onClose={onCancel}>
+      <div>
         <p className="text-sm text-ink">{message}</p>
         <div className="mt-4 flex justify-end gap-2">
           <button
@@ -951,7 +935,7 @@ function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

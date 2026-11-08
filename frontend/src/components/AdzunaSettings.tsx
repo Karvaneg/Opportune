@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAdzunaSettings, useSaveAdzunaSettings } from "../api/settings";
 import { ErrorNotice, Loading } from "./States";
-import { openExternal } from "../lib/openExternal";
+import { ExternalLink } from "./ExternalLink";
 
 /**
  * Réglage des identifiants Adzuna (OPP-222) : l'utilisateur saisit ses propres `app_id` + `app_key`
@@ -62,32 +62,22 @@ export function AdzunaSettings() {
         <ol className="list-decimal space-y-1 pl-5">
           <li>
             Crée un compte gratuit sur{" "}
-            <a
+            <ExternalLink
               href="https://developer.adzuna.com/signup"
-              onClick={(e) => {
-                e.preventDefault();
-                void openExternal("https://developer.adzuna.com/signup");
-              }}
-              rel="noreferrer"
               className="font-medium text-brand hover:underline"
             >
               developer.adzuna.com
-            </a>
+            </ExternalLink>
             .
           </li>
           <li>
             Une fois connecté, ouvre{" "}
-            <a
+            <ExternalLink
               href="https://developer.adzuna.com/admin/access_details"
-              onClick={(e) => {
-                e.preventDefault();
-                void openExternal("https://developer.adzuna.com/admin/access_details");
-              }}
-              rel="noreferrer"
               className="font-medium text-brand hover:underline"
             >
               Access details
-            </a>{" "}
+            </ExternalLink>{" "}
             : ton <code className="rounded bg-ink/5 px-1 py-0.5">app_id</code> et ta{" "}
             <code className="rounded bg-ink/5 px-1 py-0.5">app_key</code> y sont affichés.
           </li>

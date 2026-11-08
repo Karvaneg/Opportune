@@ -2,6 +2,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { version } from "./package.json";
+
+// Version affichée dans l'app (« À propos » et écran d'accueil, OPP-246) : lue dans package.json
+// et injectée comme constante `__APP_VERSION__` (déclarée dans `src/vite-env.d.ts`).
 
 // Proxy dev : les appels front sont préfixés par `/api` et transmis **tels quels** à l'API
 // Python (127.0.0.1:8000), qui retire elle-même le préfixe avant dispatch (cf.
@@ -11,6 +15,9 @@ import tailwindcss from "@tailwindcss/vite";
 // les routes client React Router (ex. `/runs/:runId` est une route de page, pas un appel API).
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   server: {
     // Port fixe (OPP-233) : l'API n'accepte les écritures du front de dev que depuis :5173.
     // Si le port est pris, Vite s'arrête avec une erreur au lieu de basculer sur 5174, où

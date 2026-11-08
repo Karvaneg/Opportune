@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Briefcase, History, Home, Settings, User, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Briefcase, History, Home, Settings, User, type LucideIcon } from "lucide-react";
 import { createQueryClient } from "./api/queryClient";
 import { ApiStatusProvider, useApiStatus } from "./api/ApiStatusContext";
 import { TargetCandidateProvider } from "./api/useTargetCandidate";
@@ -13,6 +13,7 @@ import { LlmBanner } from "./components/LlmBanner";
 import { SearchBar } from "./components/SearchBar";
 import { Logo } from "./components/Logo";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { AboutButton } from "./components/AboutDialog";
 import { CockpitPage } from "./pages/CockpitPage";
 import { OffersPage } from "./pages/OffersPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -150,7 +151,7 @@ function AuthenticatedApp() {
         <BrowserRouter>
           <div className="min-h-screen bg-surface text-ink">
             <header className="sticky top-0 z-10 border-b border-border bg-surface-raised/80 backdrop-blur">
-              <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+              <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6">
                 <div className="flex items-center gap-8">
                   <Link to="/" aria-label="Opportune, accueil" className="flex items-center">
                     <Logo height={32} />
@@ -171,24 +172,30 @@ function AuthenticatedApp() {
                     ))}
                   </nav>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-ink-muted sm:gap-3">
+                <div className="flex items-center gap-1 text-sm text-ink-muted sm:gap-3">
                   {/* Espace actif (OPP-182) : pastille ambre en démo, neutre pour « Mon espace »,
                       + bouton pour revenir à l'accueil et changer d'espace. */}
                   <span
                     className={
                       space === "demo"
-                        ? "rounded-full bg-warning/15 px-3 py-1 text-xs font-medium text-warning-text"
+                        ? "rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-warning-text sm:px-3"
                         : "hidden rounded-full bg-ink/5 px-3 py-1 text-xs font-medium text-ink-muted sm:inline"
                     }
                   >
                     {space === "demo" ? "Démo" : "Mon espace"}
                   </span>
+                  {/* Sur mobile, une icône seule : avec le bouton « ? » (OPP-246), le texte faisait
+                      déborder l'en-tête à 320 px. Le nom accessible reste « Changer d'espace ». */}
                   <button
                     onClick={resetSpace}
+                    aria-label="Changer d'espace"
+                    title="Changer d'espace"
                     className="rounded-md px-2 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-ink/5 hover:text-ink"
                   >
-                    Changer d'espace
+                    <ArrowLeftRight className="h-4 w-4 sm:hidden" aria-hidden />
+                    <span className="hidden sm:inline">Changer d'espace</span>
                   </button>
+                  <AboutButton />
                   <ThemeToggle />
                 </div>
               </div>

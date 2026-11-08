@@ -1,6 +1,7 @@
 import { FlaskConical, FolderOpen } from "lucide-react";
 import type { Space } from "./SpaceContext";
 import { Logo } from "../components/Logo";
+import { APP_INFO } from "../lib/appInfo";
 
 /**
  * Écran d'accueil (OPP-182) : à l'ouverture, choisir **« Mon espace »** (vraies données) ou
@@ -10,10 +11,10 @@ import { Logo } from "../components/Logo";
  */
 export function WelcomeScreen({ onChoose }: { onChoose: (space: Space) => void }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-surface px-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-center gap-8 bg-surface px-4 pb-16">
       <div className="text-center">
         {/* Lockup signature + baseline : le bloc est centré dans la page, mais la baseline s'aligne
-            sous le DÉBUT du mot (bord gauche), comme la couverture de la charte — pas centrée sous
+            sous le DÉBUT du mot (bord gauche), comme la couverture de la charte, pas centrée sous
             la signature. `inline-flex` prend la largeur du logo ; `items-start` cale la baseline à
             gauche. `ml-0.5` reprend le léger retrait de la charte (margin-left 4px, ~proportionnel).
             Le `<h1>` reste le titre de page (« Opportune » en sr-only), le logo étant décoratif. */}
@@ -53,6 +54,11 @@ export function WelcomeScreen({ onChoose }: { onChoose: (space: Space) => void }
           </div>
         </button>
       </div>
+
+      {/* Version et autrice (OPP-246), discrètes en bas de page. */}
+      <footer className="absolute inset-x-0 bottom-4 text-center text-xs text-ink-muted">
+        {APP_INFO.name} v{APP_INFO.version} · © {APP_INFO.year} {APP_INFO.author}
+      </footer>
     </div>
   );
 }

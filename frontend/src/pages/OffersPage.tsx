@@ -14,7 +14,7 @@ import { LaunchRun } from "../components/LaunchRun";
 import { Pager } from "../components/Pager";
 import { ProfileRequiredNotice } from "../components/ProfileRequiredNotice";
 import { ErrorNotice, Loading } from "../components/States";
-import { openExternal } from "../lib/openExternal";
+import { ExternalLink } from "../components/ExternalLink";
 
 /**
  * Catalogue des offres (GET /offers, OPP-146) : toutes les offres du pool, plus récentes
@@ -228,18 +228,14 @@ function OfferRow({ offer, candidateId }: { offer: CatalogOffer; candidateId: st
       <div className="flex shrink-0 items-center justify-between gap-3 text-sm sm:justify-end">
         <div className="flex items-center gap-3">
           {offer.url && (
-            <a
+            <ExternalLink
               href={offer.url}
-              onClick={(e) => {
-                e.preventDefault();
-                void openExternal(offer.url!);
-              }}
-              rel="noreferrer"
               className="text-ink-muted hover:text-ink hover:underline"
               title="Voir l'offre sur le site"
+              arrow
             >
-              voir sur le site ↗
-            </a>
+              voir sur le site
+            </ExternalLink>
           )}
           <span className="text-ink-muted">{offer.source}</span>
         </div>
