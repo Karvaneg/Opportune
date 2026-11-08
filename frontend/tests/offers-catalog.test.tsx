@@ -95,6 +95,16 @@ describe("OffersPage", () => {
     );
   });
 
+  it("titre la liste « Bibliothèque d'offres », au-dessus des offres (OPP-242)", async () => {
+    stubFetch(CATALOG);
+
+    renderOffers();
+
+    const title = await screen.findByRole("heading", { name: "Bibliothèque d'offres" });
+    const firstOffer = await screen.findByRole("button", { name: "Lead Java" });
+    expect(title.compareDocumentPosition(firstOffer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("cliquer une offre l'évalue (rescore) et ouvre sa fiche de recommandation", async () => {
     const calls = stubFetch(CATALOG);
     renderOffers();
