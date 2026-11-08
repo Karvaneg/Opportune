@@ -670,7 +670,7 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
     from app.db import connect
     from api.app import Response
     from app.candidate_registry import CandidateRegistry
-    from app.demo_candidate import reset_demo, seed_demo_candidate
+    from app.demo_candidate import migrate_demo_search_label, reset_demo, seed_demo_candidate
     from app.demo_settings import (
         ensure_demo_settings_seeded,
         mark_demo_settings_seeded,
@@ -716,10 +716,13 @@ def main() -> None:  # pragma: no cover - point d'entrée réseau, non testé
             if demo_db != ":memory:":
                 Path(demo_db).unlink(missing_ok=True)
             raise
+    else:
+        # Base démo déjà en place : son libellé date peut-être d'avant OPP-245 (« Alex Démo »).
+        migrate_demo_search_label(demo_conn)
     # Périmètre démo : son candidat vitrine est posé par le **seed** (premier lancement et
     # « Restaurer l'exemple »). On ne force **plus** le slot au boot (OPP-195) : après un
     # « repartir de zéro », le périmètre doit rester vide, y compris au redémarrage — le
-    # sélecteur invite alors à créer une nouvelle recherche, plutôt que de ressusciter « Alex Demo ».
+    # sélecteur invite alors à créer une nouvelle recherche, plutôt que de ressusciter la démo.
     demo_registry = CandidateRegistry(demo_conn)
     # Réglages de la démo **isolés** dans un sous-dossier dédié (OPP-195) : les clés Adzuna et les
     # flux RSS saisis dans « Mon espace » ne doivent ni être partagés, ni fuiter vers la démo.
