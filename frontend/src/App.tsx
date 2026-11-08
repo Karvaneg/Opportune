@@ -3,8 +3,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Briefcase, History, Home, Settings, User, type LucideIcon } from "lucide-react";
 import { createQueryClient } from "./api/queryClient";
-import { AuthProvider, useAuth } from "./auth/AuthContext";
-import { TargetCandidateProvider } from "./auth/useTargetCandidate";
+import { ApiStatusProvider, useApiStatus } from "./api/ApiStatusContext";
+import { TargetCandidateProvider } from "./api/useTargetCandidate";
 import { useSpace } from "./space/SpaceContext";
 import { WelcomeScreen } from "./space/WelcomeScreen";
 import { DemoBanner } from "./space/DemoBanner";
@@ -89,18 +89,18 @@ export function App() {
     return <WelcomeScreen onChoose={chooseSpace} />;
   }
 
-  // `AuthProvider` **keyé par l'espace** : au changement d'espace il se remonte, donc `GET /me`
-  // est resondé avec le bon en-tête `X-Opportune-Space` (identité/périmètre propres à l'espace)
-  // et le cache React Query repart à zéro — aucune fuite de données d'un espace à l'autre.
+  // `ApiStatusProvider` **keyé par l'espace** : au changement d'espace il se remonte, donc `GET
+  // /me` est resondé avec le bon en-tête `X-Opportune-Space` et le cache React Query repart à zéro,
+  // sans fuite de données d'un espace à l'autre.
   return (
-    <AuthProvider key={space}>
+    <ApiStatusProvider key={space}>
       <BootGate />
-    </AuthProvider>
+    </ApiStatusProvider>
   );
 }
 
 function BootGate() {
-  const { status, retry } = useAuth();
+  const { status, retry } = useApiStatus();
 
   // Amorçage local (OPP-181) : on interroge `GET /me` au démarrage. Tant que l'API n'a pas
   // répondu, plein-écran neutre — plus de barrière de jeton.

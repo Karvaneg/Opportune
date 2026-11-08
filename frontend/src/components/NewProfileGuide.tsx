@@ -6,8 +6,7 @@ import { useProfile } from "../api/profile";
 import { useRuns } from "../api/runs";
 import { useAdzunaSettings, useAtsSettings, useRssSettings } from "../api/settings";
 import { useLlmStatus } from "../api/system";
-import { useIsReviewer } from "../auth/roles";
-import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import { ImportDataPicker } from "./ImportDataPicker";
 import type { CandidateStats } from "../api/types";
 
@@ -47,9 +46,6 @@ type Step = {
  * elle qui marque un démarrage « terminé ». L'état du LLM et des clés enrichit l'affichage mais
  * ne le pilote pas — une fois l'utilisateur lancé, le bandeau LLM suffit à signaler un modèle
  * manquant, et l'invite Adzuna vit sur la page Offres.
- *
- * Réservé au **reviewer** : les étapes (importer un CV, curer le pool d'offres, lancer une
- * analyse, saisir des secrets) sont des actions de curation qu'un simple lecteur ne peut mener.
  */
 export function NewProfileGuide({
   candidateId,
@@ -58,7 +54,6 @@ export function NewProfileGuide({
   candidateId: string;
   stats: CandidateStats | undefined;
 }) {
-  const isReviewer = useIsReviewer();
   const profileQuery = useProfile(candidateId);
   // Runs **de ce candidat** uniquement : un périmètre multi-candidats ne doit pas cocher l'étape
   // « analyse » parce qu'un autre candidat a déjà tourné (OPP-177).
@@ -83,7 +78,7 @@ export function NewProfileGuide({
   // On attend que chaque signal **de la boucle métier** soit résolu (succès ou erreur) avant de
   // décider : sinon l'encart apparaîtrait puis disparaîtrait (flash) au fil des réponses réseau.
   // Le statut LLM et les clés, fail-open / optionnels, ne bloquent pas cette décision.
-  if (!isReviewer || profileQuery.isPending || !stats || runs.isPending) return null;
+  if (profileQuery.isPending || !stats || runs.isPending) return null;
 
   // Un profil absent (404 : candidat sans CV encore) est l'état « nouveau profil » par
   // excellence — on le traite comme un profil vide et on affiche le guide, au lieu de le masquer.

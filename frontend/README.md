@@ -9,9 +9,9 @@ Vitest + Testing Library.
 
 ## Périmètre
 
-- **Amorçage local** (`AuthContext`, OPP-181) : app locale **sans login ni jeton** ; au
-  démarrage un `GET /me` identifie l'unique utilisateur local, ou affiche « API injoignable »
-  (+ « Réessayer ») si le serveur n'est pas lancé.
+- **Amorçage local** (`ApiStatusContext`, OPP-181, OPP-241) : app locale **sans login, jeton
+  ni rôle** ; au démarrage un `GET /me` vérifie que l'API répond, ou affiche « API injoignable » (+
+  « Réessayer ») si le serveur n'est pas lancé.
 - **Écran d'accueil « Démo / Mon espace »** (`src/space/`, OPP-182) : avant d'entrer, on
   choisit un **espace** — « Mon espace » (vraies données) ou « Démo » (exemple isolé). Le back
   sert deux bases SQLite distinctes selon l'en-tête `X-Opportune-Space` ; en démo, un bandeau
@@ -27,7 +27,7 @@ Vitest + Testing Library.
 - **Historique** (`/historique`) : liste paginée des runs, et détail d'un run
   (`/runs/:runId`) — métadonnées, évaluations, erreurs, recommandations paginées.
 - **Recommandation** (`/recommendations/:id`) : détail, **panneau lettre** de motivation
-  (générer / éditer / supprimer), **décision** humaine (réservée au rôle `reviewer`) et
+  (générer / éditer / supprimer), **décision** humaine et
   **suivi post-candidature** : « j'ai candidaté », puis historique d'événements (entretien
   daté, rejet, offre reçue, OPP-223).
 - **Réglages** (`/reglages`, OPP-195/222/226) : saisie des **clés Adzuna** (`AdzunaSettings`),

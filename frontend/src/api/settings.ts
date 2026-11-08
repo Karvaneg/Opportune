@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch, apiPut } from "./client";
 import { useApiMutation } from "./mutations";
-import { useIsReviewer } from "../auth/roles";
 
 // Réglages de l'app (OPP-222). Pour l'instant : les identifiants Adzuna saisis par l'utilisateur.
 // Contrat miroir de `api.app` (route /settings/adzuna). Les clés sont des **secrets** : l'API ne
@@ -39,16 +38,11 @@ export const settingsKeys = {
 
 /**
  * État des identifiants Adzuna : `GET /settings/adzuna` → `{ configured }` (jamais les clés).
- *
- * Réservé au reviewer côté back (403 sinon) : on conditionne donc la requête au rôle (`enabled`)
- * pour ne pas déclencher d'appel voué au 403 (et ses retries) chez un simple viewer.
  */
 export function useAdzunaSettings() {
-  const isReviewer = useIsReviewer();
   return useQuery({
     queryKey: settingsKeys.adzuna,
     queryFn: () => apiFetch<AdzunaSettings>("/settings/adzuna"),
-    enabled: isReviewer,
   });
 }
 
@@ -58,9 +52,9 @@ export interface SaveAdzunaVariables {
 }
 
 /**
- * Enregistre les identifiants Adzuna : `PUT /settings/adzuna` (OPP-222). Reviewer uniquement
- * (saisie de secrets = curation). Au succès, invalide l'état `configured` pour le relire. Les
- * clés voyagent dans le corps mais ne sont jamais relues depuis l'API ensuite.
+ * Enregistre les identifiants Adzuna : `PUT /settings/adzuna` (OPP-222). Au succès, invalide l'état
+ * `configured` pour le relire. Les clés voyagent dans le corps mais ne sont jamais relues depuis
+ * l'API ensuite.
  */
 export function useSaveAdzunaSettings() {
   return useApiMutation<AdzunaSettings, SaveAdzunaVariables>({
@@ -71,15 +65,12 @@ export function useSaveAdzunaSettings() {
 }
 
 /**
- * URLs des flux RSS enregistrées : `GET /settings/rss` → `{ feeds }`. Réservé au reviewer côté
- * back (403 sinon) : on conditionne donc la requête au rôle (`enabled`), comme pour Adzuna.
+ * URLs des flux RSS enregistrées : `GET /settings/rss` → `{ feeds }`.
  */
 export function useRssSettings() {
-  const isReviewer = useIsReviewer();
   return useQuery({
     queryKey: settingsKeys.rss,
     queryFn: () => apiFetch<RssSettings>("/settings/rss"),
-    enabled: isReviewer,
   });
 }
 
@@ -88,15 +79,12 @@ export interface SaveRssVariables {
 }
 
 /**
- * Entreprises ciblées enregistrées : `GET /settings/ats` → `{ companies }` (OPP-226). Réservé au
- * reviewer côté back : requête conditionnée au rôle, comme pour les flux RSS.
+ * Entreprises ciblées enregistrées : `GET /settings/ats` → `{ companies }` (OPP-226).
  */
 export function useAtsSettings() {
-  const isReviewer = useIsReviewer();
   return useQuery({
     queryKey: settingsKeys.ats,
     queryFn: () => apiFetch<AtsSettings>("/settings/ats"),
-    enabled: isReviewer,
   });
 }
 
@@ -118,7 +106,7 @@ export function useSaveAtsSettings() {
 }
 
 /**
- * Enregistre les URLs de flux RSS : `PUT /settings/rss` (OPP-195). Reviewer uniquement. Le back
+ * Enregistre les URLs de flux RSS : `PUT /settings/rss` (OPP-195). Le back
  * ne retient que les URLs `http(s)` exploitables et renvoie la liste réellement enregistrée. Au
  * succès, invalide l'état pour le relire.
  */

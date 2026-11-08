@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { followUpOrigin, followUpRank, type FollowUpStep } from "../src/api/followUps";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 import { FollowUpSettings, parseDays } from "../src/components/FollowUpSettings";
 
 const FOLLOW_UP: FollowUpStep = {
@@ -18,11 +18,11 @@ const FOLLOW_UP: FollowUpStep = {
 const ok = (body: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
 
-/** fetch factice : `/me` reviewer, puis la réponse donnée pour tout le reste. */
+/** fetch factice : `/me`, puis la réponse donnée pour tout le reste. */
 function stubFetch(body: unknown) {
   const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
     if (String(url).includes("/me"))
-      return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+      return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
     return ok(body);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -32,11 +32,11 @@ function stubFetch(body: unknown) {
 function renderWithProviders(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter>{ui}</MemoryRouter>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecommendationPage } from "../src/pages/RecommendationPage";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 const DETAIL = {
   recommendation_id: "cand-1:off-app",
@@ -33,9 +33,8 @@ const AI_LETTER = {
 type LetterState = typeof AI_LETTER | null;
 type Call = { method: string; body: { regenerate?: boolean; body?: string } | null };
 
-/** fetch factice à état : /me (rôle), GET détail reco, et CRUD lettre sur `/letter`. */
+/** fetch factice à état : /me, GET détail reco, et CRUD lettre sur `/letter`. */
 function stubLetterFlow({
-  role = "reviewer",
   initial = null as LetterState,
   llm = { model_present: true, ollama_reachable: true },
 } = {}) {
@@ -53,7 +52,7 @@ function stubLetterFlow({
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
       const method = init?.method ?? "GET";
-      if (s.includes("/me")) return ok({ id: "u", role, owned_count: 1 });
+      if (s.includes("/me")) return ok({ id: "u", owned_count: 1 });
       if (s.includes("/system/llm/status")) return ok(llm);
       if (s.includes("/letter")) {
         const body = init?.body ? JSON.parse(String(init.body)) : null;
@@ -81,7 +80,7 @@ function stubLetterFlow({
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/recommendations/cand-1:off-app"]}>
           <Routes>
@@ -89,7 +88,7 @@ function renderPage() {
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -186,11 +185,4 @@ describe("LetterPanel (OPP-147)", () => {
     expect(screen.getByRole("button", { name: "Éditer" })).toBeEnabled();
   });
 
-  it("un non-reviewer ne voit pas le panneau lettre (garde UI)", async () => {
-    stubLetterFlow({ role: "candidate", initial: { ...AI_LETTER } });
-    renderPage();
-
-    await screen.findByText("Développeur Full-Stack"); // détail chargé
-    expect(screen.queryByText("Lettre de motivation")).toBeNull();
-  });
 });

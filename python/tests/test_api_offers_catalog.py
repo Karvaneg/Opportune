@@ -11,7 +11,7 @@ from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
 from app.application_tracking_service import ApplicationTrackingService
 from app.application_tracking_store import ApplicationTrackingStore
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision import decision_id
@@ -233,7 +233,7 @@ def test_get_offers_unknown_or_candidateless_stage_is_ignored():
 
 
 def test_get_offers_candidate_owner_gated():
-    auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"})))
+    auth = LocalAuthProvider(User("moi", frozenset({"cand-1"})))
     api, offers = _build(auth=auth)
     _seed_three(offers)
     # Candidat possédé : OK + scores.

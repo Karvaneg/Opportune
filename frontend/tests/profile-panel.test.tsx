@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProfilePanel } from "../src/components/ProfilePanel";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 const PROFILE = {
   id: "cand-1", name: "Marie", skills: ["React", "Node.js"], contract_type: "CDI",
@@ -32,13 +32,13 @@ const EMPTY_PROFILE = {
 
 /** fetch factice renvoyant un profil **figé** (lecture seule), paramétrable — pour les cas
  * d'affichage (parcours, état vide) qui n'exercent ni édition ni upload. */
-function stubProfile(profile: Record<string, unknown>, role = "reviewer") {
+function stubProfile(profile: Record<string, unknown>) {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
       const s = String(url);
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       return ok(profile);
     }),
   );
@@ -46,7 +46,7 @@ function stubProfile(profile: Record<string, unknown>, role = "reviewer") {
 
 /** fetch factice **stateful** : le PUT /profile persiste les skills que le GET renverra ensuite
  * (comme le vrai back, pour que le refetch post-édition reflète la mise à jour). */
-function stubFetch(role = "reviewer") {
+function stubFetch() {
   const puts: Array<{ skills: string[] }> = [];
   let current = { ...PROFILE };
   vi.stubGlobal(
@@ -54,7 +54,7 @@ function stubFetch(role = "reviewer") {
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/profile")) {
         if (init?.method === "PUT") {
           const body = JSON.parse(String(init?.body ?? "{}"));
@@ -72,7 +72,7 @@ function stubFetch(role = "reviewer") {
 
 /** Variante du stub gérant aussi l'import de CV (`POST /profile/cv`) : enregistre les corps
  * postés et simule un profil reconstitué par l'analyse du CV. */
-function stubFetchWithCv(role = "reviewer") {
+function stubFetchWithCv() {
   const posts: Array<Record<string, unknown>> = [];
   let current = { ...PROFILE };
   vi.stubGlobal(
@@ -80,7 +80,7 @@ function stubFetchWithCv(role = "reviewer") {
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/profile/cv")) {
         posts.push(JSON.parse(String(init?.body ?? "{}")));
         current = { ...current, name: "Marie (depuis CV)", skills: ["Python", "SQL"] };
@@ -96,7 +96,7 @@ function stubFetchWithCv(role = "reviewer") {
 /** fetch factice pour un **profil encore inexistant** (OPP-218/195) : `GET /profile` renvoie un
  * profil **vide en 200** tant qu'aucun CV n'a été importé ; le premier `POST /profile/cv` crée le
  * profil, que les GET suivants renvoient alors rempli. Enregistre les corps postés. */
-function stubNewProfileWithCv(role = "reviewer") {
+function stubNewProfileWithCv() {
   const posts: Array<Record<string, unknown>> = [];
   let profile: Record<string, unknown> = EMPTY_PROFILE; // profil vierge au départ
   vi.stubGlobal(
@@ -104,7 +104,7 @@ function stubNewProfileWithCv(role = "reviewer") {
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("/me"))
-        return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/profile/cv")) {
         posts.push(JSON.parse(String(init?.body ?? "{}")));
         profile = { ...PROFILE, name: "Marie (depuis CV)", skills: ["Python", "SQL"] };
@@ -119,11 +119,11 @@ function stubNewProfileWithCv(role = "reviewer") {
 function renderPanel() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <ProfilePanel candidateId="cand-1" />
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -138,7 +138,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("ajoute une compétence et l'enregistre (PUT avec la liste complète)", async () => {
-    const puts = stubFetch("reviewer");
+    const puts = stubFetch();
     renderPanel();
     await screen.findByText("React");
 
@@ -154,7 +154,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("retire une compétence avant d'enregistrer", async () => {
-    const puts = stubFetch("reviewer");
+    const puts = stubFetch();
     renderPanel();
     await screen.findByText("React");
 
@@ -168,7 +168,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("n'ajoute pas un doublon (insensible à la casse)", async () => {
-    stubFetch("reviewer");
+    stubFetch();
     renderPanel();
     await screen.findByText("React");
 
@@ -184,22 +184,8 @@ describe("ProfilePanel (OPP-158)", () => {
     ).toBeDisabled();
   });
 
-  it("lecture seule pour un non-reviewer (pas de contrôle d'édition)", async () => {
-    stubFetch("viewer");
-    renderPanel();
-    await screen.findByText("React");
-
-    expect(screen.queryByLabelText("Ajouter une compétence")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Enregistrer les compétences/ }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Retirer React" })).not.toBeInTheDocument();
-    // L'import de CV est aussi une curation → absent pour un non-reviewer (OPP-174).
-    expect(screen.queryByLabelText("Importer un CV PDF")).not.toBeInTheDocument();
-  });
-
   it("importe un CV PDF : POST base64 + contract_type, puis profil rafraîchi (OPP-174)", async () => {
-    const posts = stubFetchWithCv("reviewer");
+    const posts = stubFetchWithCv();
     renderPanel();
     await screen.findByText("React");
 
@@ -218,7 +204,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("refuse un CV trop volumineux sans l'envoyer (OPP-174)", async () => {
-    const posts = stubFetchWithCv("reviewer");
+    const posts = stubFetchWithCv();
     renderPanel();
     await screen.findByText("React");
 
@@ -234,7 +220,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("affiche le parcours extrait du CV (OPP-176)", async () => {
-    stubProfile({ ...PROFILE, experiences: [EXPERIENCE] }, "viewer");
+    stubProfile({ ...PROFILE, experiences: [EXPERIENCE] });
     renderPanel();
 
     // En-tête de section + contenu d'une carte d'expérience.
@@ -247,7 +233,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("oriente vers l'import quand le profil est vide (OPP-176)", async () => {
-    stubProfile({ ...PROFILE, skills: [], experiences: [] }, "reviewer");
+    stubProfile({ ...PROFILE, skills: [], experiences: [] });
     renderPanel();
 
     expect(await screen.findByText(/Ton profil est encore vide/)).toBeInTheDocument();
@@ -256,7 +242,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("accueille un profil vierge (200 vide) par l'import, sans message d'erreur (OPP-218/195)", async () => {
-    stubNewProfileWithCv("reviewer");
+    stubNewProfileWithCv();
     renderPanel();
 
     // L'orientation et les contrôles d'import, pas le message « Ressource introuvable ».
@@ -267,7 +253,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("profil vierge (200 vide) : l'éditeur de compétences reste masqué tant qu'aucun CV ne l'a créé (OPP-195)", async () => {
-    stubProfile(EMPTY_PROFILE, "reviewer");
+    stubProfile(EMPTY_PROFILE);
 
     renderPanel();
 
@@ -279,7 +265,7 @@ describe("ProfilePanel (OPP-158)", () => {
   });
 
   it("importe un premier CV avec le type de contrat choisi, puis affiche le profil (OPP-218)", async () => {
-    const posts = stubNewProfileWithCv("reviewer");
+    const posts = stubNewProfileWithCv();
     renderPanel();
     await screen.findByLabelText("Importer un CV PDF");
 
@@ -307,7 +293,7 @@ describe("ProfilePanel (OPP-158)", () => {
       vi.fn((url: string, init?: RequestInit) => {
         const s = String(url);
         if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/profile/cv") && init?.method === "POST")
           return new Promise((r) => { release = r; });
         return ok(PROFILE);

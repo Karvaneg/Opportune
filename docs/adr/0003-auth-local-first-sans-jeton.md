@@ -27,7 +27,7 @@ l'expiration côté client.
   login.
 - Plus de jeton porteur, plus de `localStorage` d'auth, plus de flux de connexion :
   `frontend/src/auth/authStorage.ts` est supprimé ; `AuthContext` ne gère plus qu'un état
-  d'amorçage (`checking` / `ready` / `error`).
+  d'amorçage (`checking` / `ready` / `error`). Il est renommé `ApiStatusContext` en OPP-241.
 
 ## Alternatives écartées
 
@@ -45,12 +45,12 @@ l'expiration côté client.
 - **Négatives / risques** : l'API **ne doit jamais** être exposée au-delà de `localhost` en
   l'état (aucun contrôle d'accès). Le jour où une exposition réseau ou un multi-utilisateur
   redeviendrait nécessaire, il faudrait **rouvrir l'OPP-102** (session robuste) et réviser cet
-  ADR. Le rôle (`reviewer`) renvoyé par `GET /me` subsiste pour piloter l'UI des actions
-  sensibles, mais n'est plus un contrôle d'authentification.
+  ADR. Le rôle (`reviewer`) a été retiré de `GET /me` et de toutes les gardes (OPP-241) :
+  l'utilisateur local a accès à tout son périmètre.
 
 ## Références
 
 - OPP-181 — Retirer le token (auth locale sans jeton)
 - [`ADR 0002`](0002-auth-frontend-localstorage-me.md) — décision d'origine (remplacée)
-- `frontend/src/auth/AuthContext.tsx` — état d'amorçage local
+- `frontend/src/api/ApiStatusContext.tsx` : état d'amorçage local (ex-`AuthContext`, OPP-241)
 - `docs/vision.md` — direction local-first

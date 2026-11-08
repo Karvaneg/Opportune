@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewProfileGuide } from "../src/components/NewProfileGuide";
-import { AuthProvider } from "../src/auth/AuthContext";
-import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
+import { TargetCandidateProvider } from "../src/api/useTargetCandidate";
 import { SpaceProvider } from "../src/space/SpaceContext";
 import type { CandidateStats } from "../src/api/types";
 
@@ -45,7 +45,6 @@ const WITH_OFFERS: CandidateStats = { ...NO_STATS, offres_total: 12 };
 function stubFetch({
   profile,
   runsTotal,
-  role = "reviewer",
   llmModelPresent = true,
   adzunaConfigured = true,
   searchIds = ["cand-1"],
@@ -54,7 +53,6 @@ function stubFetch({
 }: {
   profile: unknown;
   runsTotal: number;
-  role?: string;
   llmModelPresent?: boolean;
   adzunaConfigured?: boolean;
   searchIds?: string[];
@@ -64,7 +62,7 @@ function stubFetch({
   const fetchMock = vi.fn((url: string) => {
     const s = String(url);
     if (s.includes("/me"))
-      return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+      return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
     if (s.includes("/searches"))
       return ok({ items: searchIds.map((id) => ({ id, label: id })) });
     if (s.includes("/runs")) return ok(runsPage(runsTotal));
@@ -85,7 +83,7 @@ function renderGuide(stats: CandidateStats) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <SpaceProvider>
-      <AuthProvider>
+      <ApiStatusProvider>
         <QueryClientProvider client={qc}>
           <TargetCandidateProvider>
             <MemoryRouter initialEntries={["/"]}>
@@ -96,7 +94,7 @@ function renderGuide(stats: CandidateStats) {
             </MemoryRouter>
           </TargetCandidateProvider>
         </QueryClientProvider>
-      </AuthProvider>
+      </ApiStatusProvider>
     </SpaceProvider>,
   );
 }
@@ -173,17 +171,6 @@ describe("NewProfileGuide (OPP-177)", () => {
       .map((c) => String(c[0]))
       .find((u) => u.includes("/runs"));
     expect(runsUrl).toContain("candidate_id=cand-1");
-  });
-
-  it("non-reviewer : le guide ne s'affiche pas (actions de curation inaccessibles)", async () => {
-    const fetchMock = stubFetch({ profile: EMPTY_PROFILE, runsTotal: 0, role: "viewer" });
-    renderGuide(NO_STATS);
-
-    // On attend que l'identité (/me) soit résolue, puis on vérifie l'absence du guide.
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/me"))).toBe(true);
-    });
-    expect(screen.queryByText("Nouveau profil")).toBeNull();
   });
 
   it("assistant local non prêt : l'étape « Préparer l'assistant local » s'affiche (OPP-195)", async () => {

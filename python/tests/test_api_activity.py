@@ -14,7 +14,7 @@ from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
 from app.application_tracking_service import ApplicationTrackingService
 from app.application_tracking_store import ApplicationTrackingStore
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision import decision_id
@@ -71,9 +71,9 @@ def env():
     letters = LetterService(
         letters=letters_store, decisions=decisions, profiles=profiles, offers=offers, redacteur=None
     )
-    # Identité locale : propriétaire reviewer de cand-1 (et cand-2, sans profil, pour le cas
+    # Identité locale : propriétaire de cand-1 (et cand-2, sans profil, pour le cas
     # « candidat inconnu »).
-    auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1", "cand-2"})))
+    auth = LocalAuthProvider(User("moi", frozenset({"cand-1", "cand-2"})))
     api = HermesApi(orchestrator, actions, auth, letters=letters, tracking=tracking)
     return api, letters_store
 

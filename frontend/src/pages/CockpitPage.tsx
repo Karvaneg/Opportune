@@ -3,7 +3,7 @@ import { useCandidateActivity } from "../api/activity";
 import { useCandidateStats } from "../api/stats";
 import type { CatalogStage } from "../api/funnel";
 import type { ActivityEvent } from "../api/types";
-import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import { NewProfileGuide } from "../components/NewProfileGuide";
 import { ProfileSummaryCard } from "../components/ProfileSummaryCard";
 import { ScoringQualityCard } from "../components/ScoringQualityCard";

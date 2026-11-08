@@ -1,4 +1,4 @@
-import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import { ProfilePanel } from "../components/ProfilePanel";
 
 /**

@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { useRssSettings, useSaveRssSettings, type RssSettings as RssData } from "../api/settings";
-import { useIsReviewer } from "../auth/roles";
-import { ErrorNotice, Hint, Loading } from "./States";
+import { ErrorNotice, Loading } from "./States";
 
 /**
  * Réglage des flux RSS (OPP-195) : l'utilisateur colle les URLs des flux d'offres qu'il veut
  * suivre, une par ligne. La collecte RSS n'embarque aucun flux par défaut — faute de flux
- * d'offres FR gratuit et fiable — c'est donc la seule source de ces URLs. Reviewer uniquement
- * (curation du pool partagé, comme la collecte).
+ * d'offres FR gratuit et fiable, c'est donc la seule source de ces URLs.
  *
  * Contrairement aux clés Adzuna, ces URLs ne sont **pas des secrets** : on les relit depuis l'API
  * et on les réaffiche telles quelles pour les éditer. Le back nettoie la liste (garde les
@@ -15,12 +13,7 @@ import { ErrorNotice, Hint, Loading } from "./States";
  * champ avec cette liste, pour que l'utilisateur voie exactement ce qui est enregistré.
  */
 export function RssSettings() {
-  const isReviewer = useIsReviewer();
   const { data, isPending, isError, error } = useRssSettings();
-
-  if (!isReviewer) {
-    return <Hint>Un reviewer peut renseigner les flux RSS.</Hint>;
-  }
 
   if (isPending) return <Loading label="Chargement des réglages…" />;
   if (isError) return <ErrorNotice error={error} />;

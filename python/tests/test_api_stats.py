@@ -14,7 +14,7 @@ from app.action_service import ActionService
 from app.action_store import ApplicationActionStore, OutboundMessageActionStore
 from app.application_tracking_service import ApplicationTrackingService
 from app.application_tracking_store import ApplicationTrackingStore
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.db import connect
 from app.decision import decision_id
@@ -67,9 +67,9 @@ def env():
     tracking = ApplicationTrackingService(
         applications, ApplicationTrackingStore(conn), now=lambda: "2026-09-07T00:00:00+00:00"
     )
-    # Identité locale : propriétaire reviewer de cand-1 (et cand-2, laissé sans profil pour le
+    # Identité locale : propriétaire de cand-1 (et cand-2, laissé sans profil pour le
     # cas « candidat inconnu »).
-    auth = LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1", "cand-2"})))
+    auth = LocalAuthProvider(User("moi", frozenset({"cand-1", "cand-2"})))
     api = HermesApi(orchestrator, actions, auth, tracking=tracking)
     yield api
     conn.close()

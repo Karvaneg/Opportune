@@ -83,11 +83,10 @@ export const collectJobKeys = {
 export const activeCollectKey = ["collect-active"] as const;
 
 /**
- * Démarre une passe de collecte réelle (Adzuna) : `POST /collect` → `202 { job_id }` (OPP-170).
- * Reviewer uniquement (curation du pool partagé, comme `useAddOffer`). La collecte est
- * **asynchrone** : cette mutation rend la main aussitôt avec un `job_id` ; l'avancement et le
- * bilan se suivent ensuite via `useCollectJob`. Un `409` (via `ApiHttpError`) signale qu'une
- * collecte est déjà en cours — un seul job à la fois côté serveur.
+ * Démarre une passe de collecte réelle (Adzuna) : `POST /collect` → `202 { job_id }` (OPP-170). La
+ * collecte est **asynchrone** : cette mutation rend la main aussitôt avec un `job_id` ;
+ * l'avancement et le bilan se suivent ensuite via `useCollectJob`. Un `409` (via `ApiHttpError`)
+ * signale qu'une collecte est déjà en cours, un seul job à la fois côté serveur.
  */
 export function useStartCollect() {
   return useApiMutation<CollectionJobStart, CollectOffersVariables>({
@@ -131,9 +130,9 @@ export function useActiveCollectJob() {
 
 /**
  * Demande l'arrêt coopératif d'une collecte en cours : `POST /collect/{job_id}/cancel` → 202
- * (OPP-209). Reviewer uniquement. L'arrêt est effectif au prochain point de contrôle du runner
- * (l'intake en cours n'est pas interrompu) ; on invalide le suivi global pour refléter l'état
- * « arrêt en cours » sans attendre le prochain sondage.
+ * (OPP-209). L'arrêt est effectif au prochain point de contrôle du runner (l'intake en cours n'est
+ * pas interrompu) ; on invalide le suivi global pour refléter l'état « arrêt en cours » sans
+ * attendre le prochain sondage.
  */
 export function useCancelCollect() {
   return useApiMutation<{ status: string }, string>({

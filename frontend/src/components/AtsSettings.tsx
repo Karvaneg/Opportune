@@ -5,14 +5,13 @@ import {
   type AtsCompany,
   type AtsSettings as AtsData,
 } from "../api/settings";
-import { useIsReviewer } from "../auth/roles";
-import { ErrorNotice, Hint, Loading } from "./States";
+import { ErrorNotice, Loading } from "./States";
 
 /**
  * Réglage des entreprises ciblées (OPP-226) : l'utilisateur colle l'URL de la page carrière de
  * chaque entreprise qu'il vise, une par ligne. Opportune en déduit l'ATS (Greenhouse ou Lever) et
- * l'identifiant de l'entreprise, puis la collecte « entreprises ciblées » lit leurs offres
- * publiées en France. Reviewer uniquement (curation du pool partagé, comme la collecte).
+ * l'identifiant de l'entreprise, puis la collecte « entreprises ciblées » lit leurs offres publiées
+ * en France.
  *
  * Le back vérifie chaque nouvelle entreprise auprès de son ATS : une URL non reconnue ou une
  * entreprise introuvable refuse tout l'enregistrement, avec un message qui cite la ligne. Après
@@ -20,12 +19,7 @@ import { ErrorNotice, Hint, Loading } from "./States";
  * le nombre d'offres en France des entreprises qu'on vient d'ajouter est affiché.
  */
 export function AtsSettings() {
-  const isReviewer = useIsReviewer();
   const { data, isPending, isError, error } = useAtsSettings();
-
-  if (!isReviewer) {
-    return <Hint>Un reviewer peut renseigner les entreprises ciblées.</Hint>;
-  }
 
   if (isPending) return <Loading label="Chargement des réglages…" />;
   if (isError) return <ErrorNotice error={error} />;

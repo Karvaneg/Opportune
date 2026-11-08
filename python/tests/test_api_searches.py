@@ -1,16 +1,16 @@
 """Tests des routes CRUD « recherche » de l'API Hermes (OPP-184, tranche 1 back).
 
 ``/searches`` expose le périmètre de l'espace (le registre des candidats) : lister, créer une
-recherche nommée, la renommer. On vérifie le contrat, les gardes (reviewer pour modifier, lecture
-pour tous), l'anti-énumération (404 neutre sur un id inconnu) et surtout que **créer une recherche
-l'inscrit aussitôt dans le périmètre** (``owned_candidate_ids`` de ``/me``) — c'est le même registre
-qui alimente l'auth. Les routes ne sont montées que si le registre est câblé (sinon 404 neutre).
+recherche nommée, la renommer. On vérifie le contrat, l'anti-énumération (404 neutre sur un id
+inconnu) et surtout que **créer une recherche l'inscrit aussitôt dans le périmètre**
+(``owned_candidate_ids`` de ``/me``) : c'est le même registre qui alimente l'auth. Les routes ne
+sont montées que si le registre est câblé (sinon 404 neutre).
 """
 
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_registry import CandidateRegistry
 from app.db import connect
 from app.decision_service import DecisionService
@@ -21,8 +21,7 @@ from app.recommendation_service import RecommendationService
 from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
-OWNER = User("moi", REVIEWER, frozenset())
-VIEWER = User("moi", "viewer", frozenset())
+OWNER = User("moi", frozenset())
 
 
 @pytest.fixture
@@ -83,10 +82,6 @@ def test_create_search_rejects_too_long_label(env):
     assert env(OWNER).dispatch("POST", "/searches", {"label": "x" * 200}).status == 400
 
 
-def test_create_search_requires_reviewer(env):
-    assert env(VIEWER).dispatch("POST", "/searches", {"label": "Essai"}).status == 403
-
-
 def test_rename_search(env):
     api = env(OWNER)
     new_id = api.dispatch("POST", "/searches", {"label": "Ancien"}).body["id"]
@@ -99,12 +94,6 @@ def test_rename_search(env):
 
 def test_rename_unknown_search_is_404(env):
     assert env(OWNER).dispatch("PUT", "/searches/search-absent", {"label": "x"}).status == 404
-
-
-def test_rename_requires_reviewer(env):
-    api = env(OWNER)
-    new_id = api.dispatch("POST", "/searches", {"label": "Ancien"}).body["id"]
-    assert env(VIEWER).dispatch("PUT", f"/searches/{new_id}", {"label": "x"}).status == 403
 
 
 def test_rename_rejects_bad_label(env):

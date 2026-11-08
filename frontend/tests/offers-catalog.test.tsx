@@ -5,8 +5,8 @@ import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OffersPage } from "../src/pages/OffersPage";
 import { funnelStage } from "../src/api/funnel";
-import { AuthProvider } from "../src/auth/AuthContext";
-import { TargetCandidateProvider } from "../src/auth/useTargetCandidate";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
+import { TargetCandidateProvider } from "../src/api/useTargetCandidate";
 import type { DecisionStatus } from "../src/api/types";
 
 const CATALOG = {
@@ -38,7 +38,7 @@ function stubFetch(catalogBody: unknown) {
       const body = s.includes("/searches")
         ? { items: [{ id: "cand-1", label: "Marie" }] }
         : s.includes("/me")
-        ? { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] }
+        ? { id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] }
         : s.includes("/rescore")
           ? (calls.push(s), { recommendation_id: "cand-1:b", candidate_id: "cand-1", offer_id: "b" })
           : catalogBody;
@@ -51,7 +51,7 @@ function stubFetch(catalogBody: unknown) {
 function renderOffers(initialPath = "/") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <TargetCandidateProvider>
           <MemoryRouter initialEntries={[initialPath]}>
@@ -62,7 +62,7 @@ function renderOffers(initialPath = "/") {
           </MemoryRouter>
         </TargetCandidateProvider>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
@@ -165,7 +165,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         urls.push(s);
         const stage = new URL(s, "http://x").searchParams.get("stage");
         const items = stage
@@ -201,7 +201,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/rescore"))
           return ok({ recommendation_id: "cand-1:b", candidate_id: "cand-1", offer_id: "b" });
         urls.push(s);
@@ -216,7 +216,7 @@ describe("OffersPage", () => {
     }
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <AuthProvider>
+      <ApiStatusProvider>
         <QueryClientProvider client={qc}>
           <TargetCandidateProvider>
             <MemoryRouter initialEntries={["/offres?stage=a_postuler"]}>
@@ -227,7 +227,7 @@ describe("OffersPage", () => {
             </MemoryRouter>
           </TargetCandidateProvider>
         </QueryClientProvider>
-      </AuthProvider>,
+      </ApiStatusProvider>,
     );
 
     await screen.findByText("Page 1 / 3 · 45 au total");
@@ -255,7 +255,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         const page = Number(new URL(s, "http://x").searchParams.get("page"));
         return ok({ ...CATALOG, page, total: 45, total_pages: 3 });
       }),
@@ -269,7 +269,7 @@ describe("OffersPage", () => {
   // --- Actions « Nouvelle analyse » et « Ajouter une offre » (déplacées de l'Accueil, OPP-238) ---
 
   /** fetch factice des actions : profil renseigné ou vierge (404), POST /offers journalisé. */
-  function stubActionsFetch({ role = "reviewer", profileFilled = true } = {}) {
+  function stubActionsFetch({ profileFilled = true } = {}) {
     const posts: { url: string; body: unknown }[] = [];
     const ok = (b: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -279,7 +279,7 @@ describe("OffersPage", () => {
         const s = String(url);
         if (s.includes("/searches")) return ok({ items: [{ id: "cand-1", label: "Marie" }] });
         if (s.includes("/me"))
-          return ok({ id: "u", role, owned_count: 1, owned_candidate_ids: ["cand-1"] });
+          return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
         if (s.includes("/profile"))
           return profileFilled
             ? ok({ id: "cand-1", name: "Marie", skills: ["React"], contract_type: "CDI",
@@ -297,7 +297,7 @@ describe("OffersPage", () => {
     return posts;
   }
 
-  it("propose « Nouvelle analyse » et « Ajouter une offre » au reviewer (OPP-238)", async () => {
+  it("propose « Nouvelle analyse » et « Ajouter une offre » (OPP-238)", async () => {
     stubActionsFetch();
 
     renderOffers();
@@ -348,21 +348,12 @@ describe("OffersPage", () => {
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
   });
 
-  it("cache « Ajouter une offre » à un non-reviewer (OPP-238)", async () => {
-    stubActionsFetch({ role: "candidate" });
-
-    renderOffers();
-
-    await screen.findByText("Lead Java");
-    expect(screen.queryByLabelText("Texte de l'offre")).toBeNull();
-  });
-
   // --- Bouton « Récupérer de nouvelles offres » (collecte asynchrone, OPP-170) ---
 
   // Réponse factice avec statut explicite (202 au démarrage, 200 au sondage).
   const res = (status: number, b: unknown) =>
     Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(b) } as Response);
-  const ME = { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] };
+  const ME = { id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] };
   // Profil renseigné : débloque le bouton de collecte (OPP-219). Les scénarios de collecte
   // supposent un profil déjà constitué.
   const READY_PROFILE = {

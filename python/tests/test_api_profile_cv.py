@@ -1,7 +1,7 @@
 """Tests de la route d'import de CV PDF (POST /candidates/{id}/profile/cv, OPP-174).
 
 Intake injecté (faux) : on vérifie le contrat HTTP — décodage base64, délégation,
-sérialisation du profil, gardes propriété/reviewer, mapping des erreurs, route optionnelle.
+sérialisation du profil, garde de propriété, mapping des erreurs, route optionnelle.
 Aucun PDF réel, aucun LLM.
 """
 
@@ -10,7 +10,7 @@ import base64
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_profile import ProfileValidationError, create_profile
 from app.db import connect
 from app.decision_service import DecisionService
@@ -130,24 +130,18 @@ def test_oversized_pdf_is_400_without_calling_intake():
 
 # --- Auth --------------------------------------------------------------------
 
-def test_cv_intake_owner_and_reviewer_gated():
+def test_cv_intake_owner_gated():
     body = {"pdf_base64": PDF_B64, "contract_type": "CDI"}
     # Propriétaire d'un AUTRE candidat → 404 neutre (anti-énumération).
     foreign = _api(
         FakeCvIntake(result=_profile()),
-        auth=LocalAuthProvider(User("autre", REVIEWER, frozenset({"cand-2"}))),
+        auth=LocalAuthProvider(User("autre", frozenset({"cand-2"}))),
     )
     assert _post(foreign, body).status == 404
-    # Propriétaire mais non reviewer → 403.
-    viewer = _api(
-        FakeCvIntake(result=_profile()),
-        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
-    )
-    assert _post(viewer, body).status == 403
-    # Propriétaire reviewer → 200.
+    # Propriétaire → 200.
     owner = _api(
         FakeCvIntake(result=_profile()),
-        auth=LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"}))),
+        auth=LocalAuthProvider(User("moi", frozenset({"cand-1"}))),
     )
     assert _post(owner, body).status == 200
 

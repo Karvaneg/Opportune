@@ -11,7 +11,7 @@ import itertools
 import pytest
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_profile import create_profile
 from app.cover_letter import CoverLetter, CoverLetterError
 from app.db import connect
@@ -59,8 +59,8 @@ def _offer(**overrides) -> Offer:
 
 
 def _auth() -> LocalAuthProvider:
-    # Identité locale par défaut des tests : propriétaire reviewer de cand-1.
-    return LocalAuthProvider(User(id="moi", role=REVIEWER, owned_candidates=frozenset({"cand-1"})))
+    # Identité locale par défaut des tests : propriétaire de cand-1.
+    return LocalAuthProvider(User(id="moi", owned_candidates=frozenset({"cand-1"})))
 
 
 @pytest.fixture
@@ -209,23 +209,12 @@ def test_post_maps_cover_letter_error_to_502(env):
 
 # --- Gardes d'authentification ----------------------------------------------
 
-def test_non_reviewer_forbidden_403(env):
-    api, _ = env
-    # Même données, identité propriétaire mais non reviewer → 403.
-    viewer = HermesApi(
-        api.orchestrator,
-        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
-        letters=api.letters,
-    )
-    assert viewer.dispatch("POST", f"/recommendations/{RID}/letter", {}).status == 403
-
-
 def test_other_owner_gets_neutral_404(env):
     api, _ = env
-    # Reviewer d'un autre périmètre : 404 neutre (ne révèle pas l'existence de la reco).
+    # Propriétaire d'un autre périmètre : 404 neutre (ne révèle pas l'existence de la reco).
     foreign = HermesApi(
         api.orchestrator,
-        auth=LocalAuthProvider(User("autre", REVIEWER, frozenset({"cand-2"}))),
+        auth=LocalAuthProvider(User("autre", frozenset({"cand-2"}))),
         letters=api.letters,
     )
     assert foreign.dispatch("POST", f"/recommendations/{RID}/letter", {}).status == 404

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useLaunchRun } from "../api/runs";
 import { useProfileReady } from "../api/profile";
-import { useTargetCandidate } from "../auth/useTargetCandidate";
+import { useTargetCandidate } from "../api/useTargetCandidate";
 import { ProfileRequiredNotice } from "./ProfileRequiredNotice";
 import { ErrorNotice } from "./States";
 

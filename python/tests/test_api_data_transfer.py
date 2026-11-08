@@ -4,7 +4,7 @@ import base64
 import sqlite3
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.data_transfer_service import DataTransferBusy, ExportTooLarge
 from app.db import connect
 from app.decision_service import DecisionService
@@ -15,8 +15,7 @@ from app.recommendation_service import RecommendationService
 from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
-REVIEWER_USER = User("moi", REVIEWER, frozenset({"cand-1"}))
-VIEWER_USER = User("moi", "viewer", frozenset({"cand-1"}))
+LOCAL_USER = User("moi", frozenset({"cand-1"}))
 
 
 class FakeExport:
@@ -41,7 +40,7 @@ class FakeDataTransfer:
         self.imported.append(data)
 
 
-def _api(data_transfer, *, user=REVIEWER_USER) -> HermesApi:
+def _api(data_transfer, *, user=LOCAL_USER) -> HermesApi:
     conn = connect(":memory:")
     orchestrator = HermesOrchestrator(
         RecommendationService(ProfileStore(conn), OfferStore(conn)),
@@ -93,14 +92,6 @@ def test_import_errors_map_to_400_409_500_503(tmp_path):
     assert database.dispatch("POST", "/data/import", body).status == 500
     assert locked.dispatch("POST", "/data/import", body).status == 503
     assert bad_base64.dispatch("POST", "/data/import", {"archive_base64": "%%%"}).status == 400
-
-
-def test_routes_require_the_reviewer_role(tmp_path):
-    api = _api(FakeDataTransfer(tmp_path), user=VIEWER_USER)
-
-    response = api.dispatch("POST", "/data/export", {})
-
-    assert response.status == 403
 
 
 def test_routes_are_absent_without_data_transfer(tmp_path):

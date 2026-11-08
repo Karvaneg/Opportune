@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 import { DataTransferSettings } from "../src/components/DataTransferSettings";
 import { importConfirmation } from "../src/components/ImportDataPicker";
 import { saveZipFile } from "../src/lib/saveFile";
@@ -24,7 +24,7 @@ function stubApi(importResponse = { status: 200, body: { status: "imported" } as
     vi.fn((url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("/me"))
-        return respond(200, { id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["c"] });
+        return respond(200, { id: "u", owned_count: 1, owned_candidate_ids: ["c"] });
       if (s.includes("/data/")) {
         posts.push({ path: s, body: JSON.parse(String(init?.body ?? "{}")) });
         if (s.includes("/data/export"))
@@ -45,11 +45,11 @@ function renderSettings(space: "mine" | "demo") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <SpaceProvider>
-      <AuthProvider>
+      <ApiStatusProvider>
         <QueryClientProvider client={queryClient}>
           <DataTransferSettings />
         </QueryClientProvider>
-      </AuthProvider>
+      </ApiStatusProvider>
     </SpaceProvider>,
   );
 }

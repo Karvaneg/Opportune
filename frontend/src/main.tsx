@@ -8,7 +8,7 @@ const root = document.getElementById("root");
 if (!root) throw new Error("élément #root introuvable");
 
 // `SpaceProvider` est la porte d'entrée (OPP-182) : il porte le choix d'espace et pose l'en-tête
-// `X-Opportune-Space`. L'`AuthProvider` vit **sous** ce choix (dans `App`, keyé par l'espace),
+// `X-Opportune-Space`. L'`ApiStatusProvider` vit **sous** ce choix (dans `App`, keyé par l'espace),
 // pour que `GET /me` soit toujours sondé dans le contexte de l'espace sélectionné.
 createRoot(root).render(
   <StrictMode>

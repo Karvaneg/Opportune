@@ -59,10 +59,10 @@ export interface UpdateProfileSkillsVariables {
 }
 
 /**
- * Met à jour les compétences du profil : `PUT /candidates/{id}/profile` (OPP-158). Reviewer
- * uniquement (curation, comme l'ajout d'offre). Le back normalise + revalide (liste vide → 400).
- * Au succès, invalide le profil **et** le catalogue (préfixe `["offers"]`) : combler les
- * compétences manquantes change les scores de match, qui doivent se rafraîchir sans rechargement.
+ * Met à jour les compétences du profil : `PUT /candidates/{id}/profile` (OPP-158). Le back
+ * normalise + revalide (liste vide → 400). Au succès, invalide le profil **et** le catalogue
+ * (préfixe `["offers"]`) : combler les compétences manquantes change les scores de match, qui
+ * doivent se rafraîchir sans rechargement.
  */
 export function useUpdateProfileSkills() {
   return useApiMutation<CandidateProfile, UpdateProfileSkillsVariables>({
@@ -85,9 +85,9 @@ export interface UploadCvVariables {
 
 /**
  * Importe un CV PDF pour (re)constituer le profil : `POST /candidates/{id}/profile/cv` (OPP-174).
- * Reviewer uniquement (curation du profil). Le back décode le base64, extrait le texte (pypdf) et
- * relance l'analyse LLM ; les faits corrigés à la main (verrouillés, OPP-138) sont préservés. Au
- * succès, invalide le profil **et** le catalogue : le nouveau profil change les scores de match.
+ * Le back décode le base64, extrait le texte (pypdf) et relance l'analyse LLM ; les faits corrigés
+ * à la main (verrouillés, OPP-138) sont préservés. Au succès, invalide le profil **et** le
+ * catalogue : le nouveau profil change les scores de match.
  */
 export function useUploadCv() {
   return useApiMutation<CandidateProfile, UploadCvVariables>({

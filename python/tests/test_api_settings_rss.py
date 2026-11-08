@@ -2,11 +2,11 @@
 
 Le store est réel mais pointé sur un fichier temporaire (aucun réseau). On vérifie le contrat
 HTTP : lecture des URLs (non secrètes, relues telles quelles), enregistrement avec nettoyage,
-validation, réservation au reviewer, et 404 quand le store n'est pas câblé.
+validation, et 404 quand le store n'est pas câblé.
 """
 
 from api.app import HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.db import connect
 from app.decision_service import DecisionService
 from app.decision_store import DecisionStore
@@ -17,11 +17,10 @@ from app.rss_feeds_store import RssFeedsStore
 from hermes.orchestrator import HermesOrchestrator
 from hermes.run_store import RunStore
 
-REVIEWER_USER = User("moi", REVIEWER, frozenset({"cand-1"}))
-VIEWER_USER = User("moi", "viewer", frozenset({"cand-1"}))
+LOCAL_USER = User("moi", frozenset({"cand-1"}))
 
 
-def _api(store, *, user=REVIEWER_USER) -> HermesApi:
+def _api(store, *, user=LOCAL_USER) -> HermesApi:
     conn = connect(":memory:")
     orchestrator = HermesOrchestrator(
         RecommendationService(ProfileStore(conn), OfferStore(conn)),
@@ -93,15 +92,6 @@ def test_put_reports_file_system_error_with_message(tmp_path):
 
     assert response.status == 500
     assert "fichier verrouillé" in response.body["error"]
-
-
-def test_requires_reviewer_role(tmp_path):
-    viewer = _api(RssFeedsStore(tmp_path / "rss.json"), user=VIEWER_USER)
-
-    assert viewer.dispatch("GET", "/settings/rss", None, None).status == 403
-    assert (
-        viewer.dispatch("PUT", "/settings/rss", {"feeds": ["https://a.example/f"]}).status == 403
-    )
 
 
 def test_route_absent_without_store():

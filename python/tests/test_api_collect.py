@@ -3,7 +3,7 @@
 Le registre de jobs est réel mais son **runner** est injecté (faux) et son **spawn** est
 synchrone par défaut : aucun réseau, aucun Adzuna, aucun Ollama, et le job se termine dans
 l'appel à ``start`` — on vérifie le contrat HTTP (202 + ``job_id`` au démarrage, sondage du
-statut/bilan, plafond de ``max``, validation des critères, garde reviewer, route optionnelle,
+statut/bilan, plafond de ``max``, validation des critères, route optionnelle,
 unicité 409, et issue ``failed``). L'unicité utilise un vrai thread piloté par un ``Event``.
 """
 
@@ -14,7 +14,7 @@ from dataclasses import replace
 import pytest
 
 from api.app import _COLLECT_MAX_CAP, _COLLECT_MAX_DEFAULT, HermesApi
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.collection_jobs import CollectionJobRegistry
 from app.db import connect
 from app.decision_service import DecisionService
@@ -48,8 +48,6 @@ def _api(runner, *, auth=None, spawn=_sync_spawn) -> HermesApi:
     )
     registry = CollectionJobRegistry(runner, spawn=spawn)
     return HermesApi(orchestrator, auth=auth, collections=registry)
-
-
 
 
 # Corps minimal d'une collecte Adzuna valide : le poste (``what``) y est requis (OPP-226).
@@ -451,22 +449,3 @@ def test_get_active_collect_reflects_running_job():
         pytest.fail("le job est resté « actif » après sa fin")
 
 
-def test_collect_requires_reviewer_role():
-    # Sans le rôle reviewer : POST et sondage refusés (403), avant toute création/lecture de job.
-    viewer = _api(
-        lambda **k: _report(),
-        auth=LocalAuthProvider(User("moi", "viewer", frozenset({"cand-1"}))),
-    )
-    assert viewer.dispatch("POST", "/collect", {}).status == 403
-    assert viewer.dispatch("GET", "/collect/n-importe", None).status == 403
-    assert viewer.dispatch("GET", "/collect", None).status == 403  # suivi global aussi réservé
-    assert viewer.dispatch("POST", "/collect/x/cancel", {}).status == 403  # annulation réservée
-    # Avec le rôle : la passe démarre (202) et le sondage répond (200).
-    reviewer = _api(
-        lambda **k: _report(),
-        auth=LocalAuthProvider(User("moi", REVIEWER, frozenset({"cand-1"}))),
-    )
-    resp = reviewer.dispatch("POST", "/collect", ADZUNA_BODY)
-    assert resp.status == 202
-    job_id = resp.body["job_id"]
-    assert reviewer.dispatch("GET", f"/collect/{job_id}", None).status == 200

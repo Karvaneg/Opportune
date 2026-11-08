@@ -6,7 +6,7 @@ base (``CandidateRegistry``) et recalculé à chaque requête par ``LocalAuthPro
 
 import pytest
 
-from app.auth import REVIEWER, LocalAuthProvider, User
+from app.auth import LocalAuthProvider, User
 from app.candidate_registry import CandidateRegistry, Search
 from app.db import connect
 
@@ -88,7 +88,7 @@ def test_auth_derive_le_perimetre_du_registre_a_chaque_requete(conn):
     # après le boot entre dans le périmètre sans redémarrage (contrairement au frozenset figé).
     registry = CandidateRegistry(conn)
     registry.add("cand-1")
-    base = User(id="moi", role=REVIEWER, owned_candidates=frozenset())
+    base = User(id="moi", owned_candidates=frozenset())
     provider = LocalAuthProvider(base, owned_provider=registry.list_ids)
 
     user = provider.authenticate({})
@@ -115,5 +115,5 @@ def test_registry_migre_une_base_sans_colonne_label(conn):
 
 def test_auth_sans_provider_sert_l_utilisateur_statique(conn):
     # Rétrocompat : sans provider, le périmètre reste celui du User fourni (utilisé par les tests).
-    user = User(id="moi", role=REVIEWER, owned_candidates=frozenset({"cand-1"}))
+    user = User(id="moi", owned_candidates=frozenset({"cand-1"}))
     assert LocalAuthProvider(user).authenticate({}) is user

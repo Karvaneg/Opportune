@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunDetailPage } from "../src/pages/RunDetailPage";
-import { AuthProvider } from "../src/auth/AuthContext";
+import { ApiStatusProvider } from "../src/api/ApiStatusContext";
 
 function item(id: string) {
   return {
@@ -19,7 +19,7 @@ function item(id: string) {
   };
 }
 
-/** fetch factice : /me reviewer, détail du run, recommandations paginées (live). */
+/** fetch factice : /me, détail du run, recommandations paginées (live). */
 function stub() {
   const ok = (b: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
@@ -28,7 +28,7 @@ function stub() {
     vi.fn((url: string) => {
       const s = String(url);
       if (s.includes("/me"))
-        return ok({ id: "u", role: "reviewer", owned_count: 1, owned_candidate_ids: ["cand-1"] });
+        return ok({ id: "u", owned_count: 1, owned_candidate_ids: ["cand-1"] });
       if (s.includes("/recommendations"))
         return ok({
           run_id: "run-1",
@@ -52,7 +52,7 @@ function stub() {
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
+    <ApiStatusProvider>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/runs/run-1"]}>
           <Routes>
@@ -60,7 +60,7 @@ function renderPage() {
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
-    </AuthProvider>,
+    </ApiStatusProvider>,
   );
 }
 
