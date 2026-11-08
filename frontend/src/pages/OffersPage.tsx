@@ -130,45 +130,52 @@ export function OffersPage() {
         <AddOffer />
       </div>
 
-      {stageFilter && (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="rounded-full bg-ink/5 px-3 py-1 text-ink">
-            Filtré : {CATALOG_STAGE_LABELS[stageFilter]}
-          </span>
-          <button type="button" onClick={clearFilter} className="text-ink-muted hover:underline">
-            effacer le filtre
-          </button>
-        </div>
-      )}
-
-      {isPending && <Loading label="Chargement des offres…" />}
-      {isError && <ErrorNotice error={error} />}
-
-      {!isError &&
-        data &&
-        (data.total === 0 ? (
-          <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
-            {stageFilter
-              ? `Aucune offre « ${CATALOG_STAGE_LABELS[stageFilter]} » pour cette recherche.`
-              : "Aucune offre dans le catalogue. Récupère-en de nouvelles ou ajoute-en une ci-dessus."}
-          </p>
-        ) : (
-          <div className="space-y-3">
-            <ul className="space-y-2">
-              {items.map((offer) => (
-                <OfferRow key={offer.id} offer={offer} candidateId={target} />
-              ))}
-            </ul>
-            <Pager
-              page={data.page}
-              totalPages={data.total_pages}
-              total={data.total}
-              onPrev={() => setPage(Math.max(1, page - 1))}
-              onNext={() => setPage(page + 1)}
-              busy={isFetching}
-            />
+      {/* La liste a son titre, comme « Dernières activités » sur l'Accueil (OPP-242). Le filtre
+          actif et la liste restent groupés dessous, avec un espacement serré. */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">
+          Bibliothèque d'offres
+        </h3>
+        {stageFilter && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="rounded-full bg-ink/5 px-3 py-1 text-ink">
+              Filtré : {CATALOG_STAGE_LABELS[stageFilter]}
+            </span>
+            <button type="button" onClick={clearFilter} className="text-ink-muted hover:underline">
+              effacer le filtre
+            </button>
           </div>
-        ))}
+        )}
+
+        {isPending && <Loading label="Chargement des offres…" />}
+        {isError && <ErrorNotice error={error} />}
+
+        {!isError &&
+          data &&
+          (data.total === 0 ? (
+            <p className="rounded-lg border border-dashed border-border bg-surface-raised p-6 text-center text-sm text-ink-muted">
+              {stageFilter
+                ? `Aucune offre « ${CATALOG_STAGE_LABELS[stageFilter]} » pour cette recherche.`
+                : "Aucune offre dans le catalogue. Récupère-en de nouvelles ou ajoute-en une ci-dessus."}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <ul className="space-y-2">
+                {items.map((offer) => (
+                  <OfferRow key={offer.id} offer={offer} candidateId={target} />
+                ))}
+              </ul>
+              <Pager
+                page={data.page}
+                totalPages={data.total_pages}
+                total={data.total}
+                onPrev={() => setPage(Math.max(1, page - 1))}
+                onNext={() => setPage(page + 1)}
+                busy={isFetching}
+              />
+            </div>
+          ))}
+      </div>
     </section>
   );
 }
