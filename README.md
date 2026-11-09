@@ -4,7 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <p align="center">
-  <img src="docs/images/Opportune.png" width="320" alt="Opportune — Saisir l'occasion au vol." />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/Opportune-dark.png" />
+    <img src="docs/images/Opportune.png" width="320" alt="Opportune, saisir l'occasion au vol." />
+  </picture>
 </p>
 
 <p align="center">
@@ -143,17 +146,26 @@ pilotées par des **jetons sémantiques**. Design system complet :
 | `warning` | alerte                                   | `#d97706` | `#fbbf24` |
 | `danger`  | erreur                                   | `#dc2626` | `#f87171` |
 
+### Démo vidéo
+
+_Parcours d'une minute dans l'espace Démo : profil, offres scorées, décision commentée, lettre de
+motivation, réglages._
+
+https://github.com/user-attachments/assets/7d139d1a-21ff-489c-b8c7-859b7608d463
+
 ### Captures d'écran
 
-_Captures prises dans l'espace Démo (aucune donnée personnelle)._
+_Captures prises dans l'espace Démo (aucune donnée personnelle), fenêtre 1440×900, thème clair._
 
-|                       Écran d'accueil — Démo / Mon espace                       |                             Cockpit — guide de démarrage                              |
+|                       Écran d'accueil : Démo / Mon espace                       |                             Cockpit : guide de démarrage                              |
 | :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
-|       ![Écran d'accueil Démo / Mon espace](docs/images/WelcomeScreen.png)       |    ![Cockpit avec le guide « Nouveau profil » en 3 étapes](docs/images/guide.png)     |
-|                             **Cockpit — synthèse**                              |                             **Profil — CV & compétences**                             |
+|       ![Écran d'accueil Démo / Mon espace](docs/images/WelcomeScreen.png)       |    ![Cockpit avec le guide « Nouveau profil »](docs/images/guide.png)     |
+|                             **Cockpit : synthèse**                              |                             **Profil : CV & compétences**                             |
 | ![Cockpit de synthèse : compteurs et activité récente](docs/images/accueil.png) |       ![Profil : import de CV, compétences et parcours](docs/images/profil.png)       |
 |                               **Offres scorées**                                |                              **Recommandation + lettre**                              |
 |              ![Catalogue d'offres scorées](docs/images/offres.png)              | ![Fiche recommandation : score, lettre et validation](docs/images/recommandation.png) |
+|                                 **Réglages**                                    |                                                                                       |
+| ![Réglages : clés Adzuna, flux RSS, entreprises ciblées](docs/images/reglages.png) |                                                                                       |
 
 ## Feuille de route
 
