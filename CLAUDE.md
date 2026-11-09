@@ -24,13 +24,13 @@ l'utilisateur, API sur `localhost`, sans login ni jeton — cf. `docs/adr/0003`)
   Query. Détail : [`frontend/README.md`](frontend/README.md).
 - **App de bureau** (`frontend/src-tauri/`, épic E13) : coquille Tauri qui lance l'API
   (binaire PyInstaller, `python/packaging/`) et un Ollama embarqué. Détail :
-  [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md). Les tickets E13 partent de
-  `epic/E13-opportune-1.0` et s'y re-mergent.
+  [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md). E13 est mergé dans `main`
+  (PR #198) : les tickets partent de `main`.
 - **Prototype Node.js** (archivé sous `legacy/`) : MVP CLI historique, conservé pour
   référence — plus la cible produit.
 
 **Tests** — back : `cd python && .venv/bin/pytest -q` (Docker existe encore mais seulement si Marie le demande) ; front : `cd frontend && npm test` (Vitest), `npm run lint`
-(typecheck `tsc`), `npm run build`.
+(typecheck `tsc`), `npm run build`, `npm run test:e2e` (Playwright sur l'espace Démo).
 
 **Conventions** : voir [`docs/definition-of-done.md`](docs/definition-of-done.md) — une
 responsabilité par fichier, logique métier pure et testable sans LLM/réseau, commentaires en
