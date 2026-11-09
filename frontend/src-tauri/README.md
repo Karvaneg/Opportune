@@ -59,22 +59,38 @@ sidecars en place (`sync-sidecar.sh` + `sync-ollama.sh`).
 
 ## Construire les installeurs Windows
 
-À lancer **sur l'hôte Windows**, pas dans WSL : PyInstaller et Tauri ne font pas de
-cross-compilation. Prérequis : Rust (`rustup`, cible MSVC), Node/npm, et un Python avec les
-extras embarqués (`py -m venv python\.venv` puis
-`python\.venv\Scripts\python.exe -m pip install -e "python\[build,scrape,pdf]"`).
+À lancer **sur l'hôte Windows** (PowerShell), pas dans WSL : PyInstaller et Tauri ne font pas
+de cross-compilation. Partir d'un clone à jour (`git checkout main; git pull`).
+
+Prérequis (une seule fois, ou après un changement de dépendances) : Rust (`rustup`, cible
+MSVC) dans le PATH, Node/npm, et un Python avec les extras embarqués :
 
 ```powershell
-cd frontend
-npm install
-pwsh -File src-tauri\sync-sidecar.ps1   # build front + binaire API, place le sidecar .exe
+py -m venv python\.venv
+python\.venv\Scripts\python.exe -m pip install -e "python\[build,scrape,pdf]"
+```
+
+Puis, depuis `frontend\` :
+
+```powershell
+npm install                             # sinon « Cannot find module '@tauri-apps/…' »
+pwsh -File src-tauri\sync-sidecar.ps1   # build du front + binaire API (PyInstaller)
 pwsh -File src-tauri\sync-ollama.ps1    # embarque Ollama CPU (version figée, GPU retiré)
 npm run tauri build                     # .msi (WiX) + .exe (NSIS)
 ```
 
-Les artefacts atterrissent sous `src-tauri/target/release/bundle/{msi,nsis}/`. Les
-installeurs ne sont **pas signés** : Windows SmartScreen affiche un avertissement au premier
-lancement (signature : OPP-217).
+`sync-ollama.ps1` n'est à relancer que si `src-tauri\binaries\ollama` est absent ou pour
+changer de version d'Ollama. `sync-sidecar.ps1` est à relancer à chaque build : il recompile
+le front et le binaire API.
+
+Les artefacts atterrissent sous `src-tauri/target/release/bundle/{msi,nsis}/` (`targets: "all"`
+dans `tauri.conf.json` produit les deux). Les installeurs ne sont **pas signés** : Windows
+SmartScreen affiche un avertissement au premier lancement (signature : OPP-217).
+
+**Sans installeur**, pour voir la dernière version du front servie par l'API lancée à la main :
+l'API sert `frontend\dist`. Si l'interface paraît ancienne (un onglet absent, par exemple),
+`dist` est périmé : lancer `npm run build` dans `frontend\`, puis relancer l'API depuis
+`python\` avec le Python du venv : `.venv\Scripts\python.exe -m api.server`.
 
 Le dépôt force les fins de ligne **LF** (`.gitattributes`) : un checkout Windows ne casse
 donc pas les scripts bash partagés avec WSL.
