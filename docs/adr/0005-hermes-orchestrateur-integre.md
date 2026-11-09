@@ -41,6 +41,8 @@ Les questions laissées ouvertes par 0001 sont tranchées **par le code** :
 - **Déclenchement** — **à la demande**, jamais de cron ni de file : via l'API HTTP pilotée par le
   front (`POST /candidates/{id}/recommendations`, runs), et via les adaptateurs minces
   `hermes.push_runner` (boucle push) et `hermes.discord_gateway` (clics de revue).
+  > **Note (OPP-243, 2026-11) :** ces deux adaptateurs Discord ont été supprimés. Hermes n'est
+  > plus déclenché que par l'API HTTP pilotée par le front.
 - **Permissions** — Hermes n'a **aucun privilège propre** : il hérite du cadre local-first
   mono-utilisateur (cf. [`ADR 0003`](0003-auth-local-first-sans-jeton.md)).
 - **Reprise sur erreur** — chaque erreur **par offre** est capturée dans le run et **n'interrompt

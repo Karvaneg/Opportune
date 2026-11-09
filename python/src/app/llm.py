@@ -73,7 +73,7 @@ def resolve_llm_timeout(env: Mapping[str, str]) -> int:
     Absent/vide → défaut généreux. Toute valeur non entière ou non strictement positive →
     ``ValueError`` explicite : on refuse de démarrer sur un timeout ambigu plutôt que de
     recâbler silencieusement le défaut 60 s trop court. Home partagé par tous les appels LLM
-    (runner push, intake de profil, intake d'offre) — câblé via ``OllamaLLMClient(timeout=…)``.
+    (intake de profil, intake d'offre, lettre), câblé via ``OllamaLLMClient(timeout=…)``.
     """
     raw = env.get("OPPORTUNE_LLM_TIMEOUT")
     if raw is None or raw == "":

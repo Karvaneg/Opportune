@@ -4,7 +4,7 @@ Les connecteurs (France Travail, Adzuna — et d'autres à venir) partagent la m
 d'adaptation, indépendante de l'API source : borner une taille de page / un plafond de
 collecte dans des limites, et recomposer un ``raw_text`` lisible à partir de champs
 structurés (titre, entreprise, lieu, contrat, description). Ces deux utilitaires sont donc
-factorisés ici — à l'image de ``collection_runner`` pour les runners — pour que chaque source
+factorisés ici pour que chaque source
 concrète ne garde que l'extraction de ses propres champs.
 """
 

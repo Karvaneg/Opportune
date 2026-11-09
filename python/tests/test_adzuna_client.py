@@ -17,7 +17,6 @@ from app.adzuna_client import (
     AdzunaError,
     AdzunaQuotaError,
     HttpResponse,
-    credentials_from_env,
 )
 
 
@@ -43,28 +42,6 @@ def _client(responses, **kwargs):
 
 def _page(results, count):
     return HttpResponse(200, json.dumps({"count": count, "results": results}))
-
-
-# --- credentials_from_env ---------------------------------------------------------------
-
-
-def test_credentials_from_env_reads_both_values():
-    creds = credentials_from_env({"ADZUNA_APP_ID": "abc", "ADZUNA_APP_KEY": "xyz"})
-    assert creds == AdzunaCredentials(app_id="abc", app_key="xyz")
-
-
-@pytest.mark.parametrize(
-    "env",
-    [
-        {},
-        {"ADZUNA_APP_ID": "abc"},
-        {"ADZUNA_APP_KEY": "xyz"},
-        {"ADZUNA_APP_ID": " ", "ADZUNA_APP_KEY": "xyz"},
-    ],
-)
-def test_credentials_from_env_raises_when_incomplete(env):
-    with pytest.raises(AdzunaAuthError):
-        credentials_from_env(env)
 
 
 # --- search -----------------------------------------------------------------------------

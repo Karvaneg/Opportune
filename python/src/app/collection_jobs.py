@@ -13,7 +13,7 @@ registre déporte une passe dans un **thread de fond** et expose son avancement 
 (``CollectionAlreadyRunning``) tant qu'un job tourne. Les jobs terminés restent consultables
 (le front sonde jusqu'au bilan) ; leur nombre est borné par cette unicité côté usage dogfood.
 
-Le **runner** (le travail bloquant : assembler la source, ``run_collection`` sur une
+Le **runner** (le travail bloquant : assembler la source, ``collect_offers`` sur une
 connexion dédiée) est injecté — le registre ne connaît ni Adzuna, ni le LLM, ni la base. Le
 **spawn** du thread est injectable aussi, pour des tests déterministes.
 """

@@ -69,23 +69,6 @@ class AdzunaCredentials:
     app_key: str
 
 
-def credentials_from_env(env: Mapping[str, str]) -> AdzunaCredentials:
-    """Lit les identifiants depuis l'environnement ; lève si l'un manque.
-
-    Attend ``ADZUNA_APP_ID`` et ``ADZUNA_APP_KEY`` (inscription gratuite sur
-    developer.adzuna.com). Absents ou vides → ``AdzunaAuthError`` explicite : on refuse de
-    construire un client qui ne pourra pas s'authentifier.
-    """
-    app_id = (env.get("ADZUNA_APP_ID") or "").strip()
-    app_key = (env.get("ADZUNA_APP_KEY") or "").strip()
-    if not app_id or not app_key:
-        raise AdzunaAuthError(
-            "ADZUNA_APP_ID / ADZUNA_APP_KEY manquants : inscrivez-vous sur "
-            "developer.adzuna.com et renseignez-les dans l'environnement."
-        )
-    return AdzunaCredentials(app_id=app_id, app_key=app_key)
-
-
 @dataclass(frozen=True)
 class SearchPage:
     """Une page de résultats : les offres brutes et le total réel annoncé (``count``)."""

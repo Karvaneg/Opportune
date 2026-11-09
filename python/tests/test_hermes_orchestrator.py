@@ -274,12 +274,21 @@ def test_run_without_new_offers_is_empty(env):
     assert again.evaluations == ()
 
 
-def test_run_without_only_new_reevaluates_whole_pool(env):
-    # Régression : sans only_new (ex. push Discord), le run re-déroule tout le pool.
+def test_run_defaults_to_only_new(env):
     orchestrator, offers, _ = env
     _seed_three(offers)
     orchestrator.run_and_evaluate_for_candidate("cand-1")
+
     again = orchestrator.run_and_evaluate_for_candidate("cand-1")
+
+    assert again.evaluations == ()
+
+
+def test_run_with_only_new_false_reevaluates_whole_pool(env):
+    orchestrator, offers, _ = env
+    _seed_three(offers)
+    orchestrator.run_and_evaluate_for_candidate("cand-1", only_new=False)
+    again = orchestrator.run_and_evaluate_for_candidate("cand-1", only_new=False)
     assert {e.offer_id for e in again.evaluations} == {"a", "b", "c"}
 
 

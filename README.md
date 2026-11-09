@@ -302,7 +302,7 @@ gitignoré et ne doit jamais être commité.
 - [`docs/definition-of-done.md`](docs/definition-of-done.md) — definition of done
 - [`docs/adr/`](docs/adr/) — décisions d'architecture (ADR)
 - [`frontend/src-tauri/README.md`](frontend/src-tauri/README.md) — app de bureau et installeurs
-- [`python/docs/`](python/docs/) — collecte d'offres, revue Discord (historique)
+- [`python/docs/`](python/docs/) — collecte d'offres
 
 ## Historique : du prototype Node.js à Opportune
 

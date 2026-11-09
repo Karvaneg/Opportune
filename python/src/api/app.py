@@ -1040,7 +1040,7 @@ class HermesApi:
         JSON-only, le PDF arrive encodé base64 dans ``pdf_base64`` : on le décode ici (400 si
         absent/invalide/vide) puis on délègue à l'intake injecté, qui extrait le texte et relance
         l'analyse. ``contract_type`` (obligatoire) et les préférences éventuelles accompagnent le
-        CV — un CV ne les porte pas. Upsert sur l'``id`` du candidat (comme l'intake CLI).
+        CV, qui ne les porte pas. Upsert sur l'``id`` du candidat.
 
         Erreurs rendues comme pour l'intake d'offre : saisie fautive (base64, PDF illisible, CV
         sans compétence, contrat invalide) → 400 ; analyse LLM non exploitable ou service

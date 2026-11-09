@@ -24,8 +24,8 @@ from app.offer_score import score_match
 DEFAULT_HIGH = RECOMMENDATION_HIGH
 DEFAULT_MEDIUM = RECOMMENDATION_MEDIUM
 
-# Codes d'action stables (exploitables) + libellés affichables. Public : partagé avec les
-# adaptateurs d'affichage (cf. discord_review._ACTION_STYLE) pour une seule source de vérité.
+# Codes d'action stables (exploitables) + libellés affichables. Public : une seule source de
+# vérité pour tout affichage des actions.
 ACTION_LABELS = {
     "postuler": "Candidater",
     "a_etudier": "À étudier",

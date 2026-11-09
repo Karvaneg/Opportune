@@ -19,7 +19,6 @@ from app.decision_store import DecisionStore
 from app.letter_store import LetterStore
 from app.offer_store import OfferStore
 from app.profile_store import ProfileStore
-from app.submission_store import SubmissionStore
 from hermes.run_store import RunStore
 
 _STORES = (
@@ -29,7 +28,6 @@ _STORES = (
     LetterStore,
     ApplicationActionStore,
     OutboundMessageActionStore,
-    SubmissionStore,
     ApplicationTrackingStore,
     CandidateRegistry,
     RunStore,
@@ -39,7 +37,20 @@ _STORES = (
 )
 
 
+# Tables d'anciennes versions que plus aucun dépôt ne lit : ``submissions`` suivait les cartes
+# de revue postées sur Discord (OPP-131), chemin supprimé en OPP-243.
+_OBSOLETE_TABLES = ("submissions",)
+
+
+def drop_obsolete_tables(conn: sqlite3.Connection) -> None:
+    """Supprime les tables obsolètes (idempotent : sans effet si elles sont absentes)."""
+    for table in _OBSOLETE_TABLES:
+        conn.execute(f"DROP TABLE IF EXISTS {table}")
+    conn.commit()
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Crée les tables manquantes et ajoute les colonnes manquantes de tous les dépôts."""
+    """Met le schéma à niveau : tables et colonnes manquantes créées, tables obsolètes supprimées."""
     for store in _STORES:
         store(conn)
+    drop_obsolete_tables(conn)

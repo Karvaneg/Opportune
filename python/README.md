@@ -8,8 +8,8 @@ stack cible du projet (le prototype Node.js, archivé sous [`../legacy/`](../leg
 **Zéro dépendance de production** : tout le métier, l'orchestrateur et l'API sont écrits
 avec la **bibliothèque standard** (`sqlite3`, `urllib`, `http.server`). Seul `pytest` est
 requis, et seulement pour les tests. Les fonctions optionnelles vivent dans des extras
-confinés : `pdf` (pypdf, import de CV), `scrape` (BeautifulSoup, intake par URL et RSS),
-`discord` (récepteur de clics historique) et `build` (PyInstaller, binaire autonome).
+confinés : `pdf` (pypdf, import de CV), `scrape` (BeautifulSoup, intake par URL et RSS)
+et `build` (PyInstaller, binaire autonome).
 
 ## Les trois couches
 
@@ -266,9 +266,8 @@ Les **clés Adzuna**, les **URLs de flux RSS** et les **pages carrière des entr
 ciblées** se saisissent dans la page Réglages du front (`PUT /settings/adzuna`,
 `PUT /settings/rss`, `PUT /settings/ats`). L'API les range dans des fichiers du dossier de
 données (`app.adzuna_credentials_store`, `app.rss_feeds_store`), hors dépôt. L'API n'utilise
-**que** les clés Adzuna saisies dans les Réglages de l'espace (OPP-227) : `ADZUNA_APP_ID` /
-`ADZUNA_APP_KEY` de l'environnement ne servent plus qu'aux runners en ligne de commande. L'espace Démo a ses propres fichiers : ses réglages ne fuitent pas dans « Mon
-espace ».
+**que** les clés Adzuna saisies dans les Réglages de l'espace (OPP-227). L'espace Démo a ses
+propres fichiers : ses réglages ne fuitent pas dans « Mon espace ».
 
 ## Binaire autonome (PyInstaller, OPP-190 / OPP-191)
 
@@ -315,41 +314,24 @@ Sous **Windows / WSL2** : travailler depuis le système de fichiers Linux (`~/Op
 `OLLAMA_HOST=0.0.0.0` et autoriser le port `11434` depuis le réseau Hyper-V/WSL dans le
 pare-feu Windows.
 
-## Validation humaine — revue Discord (interface historique)
-
-> ⚠️ **Interface historique (MVP).** La validation courante se fait dans le **frontend web**
-> (cf. [`../frontend/README.md`](../frontend/README.md)). Le chemin Discord reste **fonctionnel
-> et testé** mais n'est plus l'interface de référence.
-
-Un dossier prêt (offre + lettre) peut être **poussé** dans un salon Discord avec trois boutons
-Approuver / Rejeter / Différer, routés vers la décision métier
-(`POST /recommendations/{id}/decision`). Transport et autorisation sont sans dépendance
-(`urllib`, allowlist **fail-closed**) ; le récepteur de clics (`hermes.discord_gateway`) et la
-boucle push de bout en bout (`hermes.push_runner`, idempotente) vivent dans l'extra `[discord]`.
-
-→ Détail complet (modules, gateway, boucle push, idempotence, variables) :
-[`docs/revue-discord.md`](docs/revue-discord.md) · mise en route pas à pas :
-[`docs/runbook-bot-discord.md`](docs/runbook-bot-discord.md).
-
 ## Collecter des offres réelles (OPP-120 / OPP-122)
 
 La collecte réelle branche une **source** (port `SourceOffres`) sur le socle (OPP-119) :
-dédoublonnage **avant** analyse LLM, normalisation, persistance. Chaque runner lit sa config,
-assemble sa source et lance la passe (`app.collection_runner`), avec un bilan (collectées /
-persistées / doublons / échecs) ; un échec de la **source** sort en code non nul, les échecs
-par offre sont consignés sans interrompre la passe.
+dédoublonnage **avant** analyse LLM, normalisation, persistance. La collecte se lance depuis
+le catalogue d'offres de l'app (`POST /collect`) : l'API assemble la source de l'espace avec les
+clés et flux saisis dans les Réglages, lance la passe en tâche de fond (`app.offer_collection`)
+et rattache les offres à la recherche active. Le bilan compte les offres collectées,
+persistées, en doublon et en échec ; un échec par offre est consigné sans interrompre la passe.
 
 | Source | Module | Statut | Identifiants |
 |---|---|---|---|
-| **Adzuna** (recommandée) | `app.adzuna_runner` | actif | clé gratuite **self-service instantanée** |
-| **RSS / Atom** | `app.rss_runner` | actif | aucun (vous fournissez les flux) ; extra `scrape` |
+| **Adzuna** (recommandée) | `app.adzuna_source` | actif | clé gratuite **self-service instantanée** |
+| **RSS / Atom** | `app.rss_source` | actif | aucun (vous fournissez les flux) ; extra `scrape` |
 | **Entreprises ciblées** (Greenhouse, Lever) | `app.ats_source` (depuis l'app) | actif | aucun (vous fournissez les pages carrière) |
-| **France Travail** | `app.france_travail_runner` | **dormant** | API retirée de `francetravail.io` (oct. 2026) |
+| **France Travail** | `app.france_travail_source` | **dormant**, branché nulle part | API retirée de `francetravail.io` (oct. 2026) |
 
-**Adzuna** est la source par défaut (clé instantanée). Dans l'app, la collecte se lance depuis
-le catalogue d'offres (`POST /collect`) avec les clés et flux saisis dans les Réglages ; les
-runners en ligne de commande lisent toujours l'environnement. **France Travail**, plus riche, n'est
+**Adzuna** est la source par défaut (clé instantanée). **France Travail**, plus riche, n'est
 **pas utilisable** aujourd'hui (API retirée ; futur accès « Restreint » sur autorisation au cas
 par cas, inadapté à une diffusion grand public).
 
-→ Commandes, options et détail par connecteur : [`docs/collecte-offres.md`](docs/collecte-offres.md).
+→ Détail par connecteur : [`docs/collecte-offres.md`](docs/collecte-offres.md).

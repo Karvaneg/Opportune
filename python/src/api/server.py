@@ -383,6 +383,10 @@ def assemble_api(
     # Un seul dépôt d'offres partagé entre le scoring (RecommendationService) et l'intake
     # collé (POST /offers) : une offre fraîchement ajoutée est immédiatement évaluable.
     offers = OfferStore(conn)
+    # Une base créée avant OPP-243 garde la table Discord ``submissions`` : on la retire au boot.
+    from app.database_schema import drop_obsolete_tables
+
+    drop_obsolete_tables(conn)
     # Offres propres à chaque recherche (OPP-186) : la table de liens est créée après ``offers``
     # (et après le registre des recherches) pour que sa migration rattache l'existant.
     memberships = CandidateOfferStore(conn)
@@ -411,9 +415,9 @@ def assemble_api(
 
     # Intake d'offre collée (OPP-145) : le LLM local analyse le texte avant persistance.
     # POST /offers exige donc Ollama joignable (cf. mémoire ollama-wsl2).
-    # Timeout LLM généreux via OPPORTUNE_LLM_TIMEOUT (défaut 300s, convention partagée avec le
-    # runner push) et plafond de tokens via OLLAMA_NUM_PREDICT (OPP-154) : un intake réaliste
-    # (~85s) tient dans le défaut, sans l'ancien override codé en dur.
+    # Timeout LLM généreux via OPPORTUNE_LLM_TIMEOUT (défaut 300s) et plafond de tokens via
+    # OLLAMA_NUM_PREDICT (OPP-154) : un intake réaliste (~85s) tient dans le défaut, sans
+    # l'ancien override codé en dur.
     llm_client = OllamaLLMClient(timeout=resolve_llm_timeout(os.environ))
 
     def offer_intake(raw_text: str, *, source: str, candidate_id: str, url: str = "") -> Offer:
@@ -431,8 +435,8 @@ def assemble_api(
         return offer
 
     # Import de profil par CV PDF depuis le front (OPP-174) : décodage déjà fait au transport,
-    # on extrait le texte (pypdf, extra « pdf ») puis on relance la MÊME chaîne d'intake que la
-    # CLI (OPP-137) — même client LLM, même dépôt de profils. Upsert sur l'id du candidat ; les
+    # on extrait le texte (pypdf, extra « pdf ») puis on lance la chaîne d'intake (OPP-137) avec
+    # le client LLM et le dépôt de profils de l'espace. Upsert sur l'id du candidat ; les
     # faits verrouillés à la main (OPP-138) sont préservés par ``intake_profile``.
     from app.profile_intake_service import intake_profile
     from hermes.pdf_extract import extract_text_from_pdf_bytes
@@ -467,9 +471,8 @@ def assemble_api(
 
     from app.adzuna_source import build_adzuna_source
     from app.collection_jobs import CollectionJobRegistry, ProgressCallback
-    from app.collection_runner import run_collection
     from app.db import connect, database_path
-    from app.offer_collection import CollectionReport, source_cap
+    from app.offer_collection import CollectionReport, collect_offers, source_cap
     from app.rss_feeds_store import RssFeedsStore, default_rss_feeds_path
     from app.rss_source import build_rss_source
     from app.ats_companies_store import AtsCompaniesStore, default_ats_companies_path
@@ -516,7 +519,7 @@ def assemble_api(
                             source_error="Aucun flux RSS configuré : ajoutez des URLs de flux dans les Réglages.",
                         )
                     # Le nettoyage HTML du contenu RSS exige l'extra ``scrape`` (BeautifulSoup) :
-                    # sans lui, chaque offre échouerait. On échoue vite et clair (cf. rss_runner).
+                    # sans lui, chaque offre échouerait. On échoue vite et clair.
                     if find_spec("bs4") is None:
                         return CollectionReport(
                             0, 0, 0, (),
@@ -556,9 +559,9 @@ def assemble_api(
                 return CollectionReport(
                     0, 0, 0, (), source_error=f"{type(exc).__name__}: {exc}"
                 )
-            report = run_collection(
+            report = collect_offers(
                 collection_source,
-                llm_client=llm_client,
+                client=llm_client,
                 store=job_offers,
                 on_progress=on_progress,
                 should_cancel=should_cancel,
@@ -584,7 +587,7 @@ def assemble_api(
     collections = CollectionJobRegistry(collection_runner)
 
     # Lettre de motivation (OPP-147) : le MÊME client LLM sert l'analyse d'offre et la
-    # rédaction (comme le runner push), et les dépôts décisions/profils/offres sont partagés
+    # rédaction, et les dépôts décisions/profils/offres sont partagés
     # avec l'orchestrateur — une lettre se génère pour une reco déjà persistée.
     letters = LetterService(
         letters=LetterStore(conn),

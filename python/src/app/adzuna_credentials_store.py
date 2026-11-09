@@ -105,7 +105,7 @@ def resolve_adzuna_credentials(store: AdzunaCredentialsStore) -> AdzunaCredentia
 
     L'API ne se rabat plus sur ``ADZUNA_APP_ID`` / ``ADZUNA_APP_KEY`` de l'environnement : ce
     repli faisait collecter un espace (la démo notamment) avec des clés que ses Réglages disaient
-    absentes. Les commandes en ligne de commande (``adzuna_runner``) lisent toujours l'env.
+    absentes.
     Aucune clé saisie → ``AdzunaAuthError`` (rangée en ``source_error`` par la collecte).
     """
     stored = store.load()

@@ -11,8 +11,8 @@ lettre) et la candidature passe par ``ActionService`` (idempotent par nature). R
 restaure donc l'état canonique du candidat démo — pas de doublon, pas d'historique qui gonfle —
 ce qui tient lieu de « réinitialisation » sans suppression destructive.
 
-La logique vit ici (couche ``app``) pour être partagée par le **CLI** (``hermes.seed_demo_candidate``)
-et l'**API** (bouton « Créer un profil de démo »). Elle ne câble que des briques existantes.
+La logique vit ici (couche ``app``) et sert l'**API** (base démo seedée au démarrage et
+« Restaurer l'exemple »). Elle ne câble que des briques existantes.
 """
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ _SCENARIO: tuple[_Step, ...] = (
 
 @dataclass(frozen=True)
 class DemoSeedSummary:
-    """Bilan du seed, pour le retour CLI/API."""
+    """Bilan du seed, pour le retour de l'API."""
 
     candidate_id: str
     offers: int

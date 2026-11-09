@@ -2,7 +2,7 @@
 
 Connecteur **actif** d'Opportune : adaptateur mince entre le client Adzuna
 (``adzuna_client``) et le pipeline de collecte (``offer_collection``). Il émet des ``RawOffer``
-en ciblant par défaut les contrats **permanents** (``permanent=1`` ≈ CDI) et ne porte aucune
+en ciblant les contrats **permanents** (``permanent=1`` ≈ CDI) et ne porte aucune
 logique d'analyse ni de persistance — le socle OPP-119 dédoublonne *avant* le LLM et normalise
 en aval.
 
@@ -32,7 +32,7 @@ from app.source_support import assemble_raw_text, clamp
 # Provenance estampillée sur chaque offre (champ ``RawOffer.source``).
 SOURCE_NAME = "adzuna"
 # Plafond d'offres par défaut d'une passe : modéré pour ménager le quota gratuit
-# (2 500 appels/mois). Ajustable par ``max_offers`` / l'option ``--max`` du runner.
+# (2 500 appels/mois). Ajustable par ``max_offers``.
 DEFAULT_MAX_OFFERS = 200
 
 
@@ -66,10 +66,9 @@ def _to_raw_offer(offer: dict) -> RawOffer:
 class AdzunaSource:
     """Source ``SourceOffres`` qui pagine l'API Adzuna et émet des ``RawOffer``.
 
-    Cible par défaut les contrats **permanents** (``permanent=1`` ≈ CDI) ; ``permanent=False``
-    lève ce filtre. ``filters`` (``what``, ``where``, ``category``…) est passé tel quel à la
-    recherche. ``page_size`` est borné au maximum de l'API (50) et ``max_offers`` au plafond de
-    passe.
+    Cible toujours les contrats **permanents** (``permanent=1`` ≈ CDI). ``filters`` (``what``,
+    ``where``, ``category``…) est passé tel quel à la recherche. ``page_size`` est borné au
+    maximum de l'API (50) et ``max_offers`` au plafond de passe.
     """
 
     def __init__(
@@ -79,15 +78,13 @@ class AdzunaSource:
         page_size: int = RESULTS_PER_PAGE_MAX,
         max_offers: int = DEFAULT_MAX_OFFERS,
         filters: "Mapping[str, str] | None" = None,
-        permanent: bool = True,
     ) -> None:
         self._client = client
         self._page_size = clamp(page_size, 1, RESULTS_PER_PAGE_MAX)
         self._max_offers = max(1, max_offers)
         merged = dict(filters) if filters else {}
-        if permanent:
-            merged.setdefault("permanent", "1")
-        self._filters = merged or None
+        merged.setdefault("permanent", "1")
+        self._filters = merged
 
     def fetch(self) -> Iterator[RawOffer]:
         """Itère les offres de l'API, page par page, jusqu'au total ou au plafond ``max_offers``.
@@ -122,13 +119,12 @@ def build_adzuna_source(
     filters: "Mapping[str, str] | None" = None,
     max_offers: int = DEFAULT_MAX_OFFERS,
     country: str = DEFAULT_COUNTRY,
-    permanent: bool = True,
 ) -> AdzunaSource:
     """Assemble une ``AdzunaSource`` à partir d'identifiants déjà résolus (câblage prod).
 
     Les identifiants sont **fournis par l'appelant** : l'API passe ceux saisis dans les Réglages
-    (cf. ``resolve_adzuna_credentials``), le runner en ligne de commande ceux de l'environnement.
-    Ce module ne décide pas d'où ils viennent. Construit le client avec son transport ``urllib`` par défaut.
+    (cf. ``resolve_adzuna_credentials``). Ce module ne décide pas d'où ils viennent. Construit le
+    client avec son transport ``urllib`` par défaut.
     """
     client = AdzunaClient(credentials, country=country)
-    return AdzunaSource(client, max_offers=max_offers, filters=filters, permanent=permanent)
+    return AdzunaSource(client, max_offers=max_offers, filters=filters)
