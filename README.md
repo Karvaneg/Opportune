@@ -157,13 +157,15 @@ https://github.com/user-attachments/assets/cdd6ef51-1ffd-4d14-a81c-2761e252f643
 
 _Captures prises dans l'espace Démo (aucune donnée personnelle), fenêtre 1440×900, thème clair._
 
-|                       Écran d'accueil — Démo / Mon espace                       |                             Cockpit — guide de démarrage                              |
+|                       Écran d'accueil : Démo / Mon espace                       |                             Cockpit : guide de démarrage                              |
 | :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
-|       ![Écran d'accueil Démo / Mon espace](docs/images/WelcomeScreen.png)       |    ![Cockpit avec le guide « Nouveau profil » en 3 étapes](docs/images/guide.png)     |
-|                             **Cockpit — synthèse**                              |                             **Profil — CV & compétences**                             |
+|       ![Écran d'accueil Démo / Mon espace](docs/images/WelcomeScreen.png)       |    ![Cockpit avec le guide « Nouveau profil »](docs/images/guide.png)     |
+|                             **Cockpit : synthèse**                              |                             **Profil : CV & compétences**                             |
 | ![Cockpit de synthèse : compteurs et activité récente](docs/images/accueil.png) |       ![Profil : import de CV, compétences et parcours](docs/images/profil.png)       |
 |                               **Offres scorées**                                |                              **Recommandation + lettre**                              |
 |              ![Catalogue d'offres scorées](docs/images/offres.png)              | ![Fiche recommandation : score, lettre et validation](docs/images/recommandation.png) |
+|                                 **Réglages**                                    |                                                                                       |
+| ![Réglages : clés Adzuna, flux RSS, entreprises ciblées](docs/images/reglages.png) |                                                                                       |
 
 ## Feuille de route
 
