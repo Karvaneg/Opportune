@@ -90,8 +90,11 @@ donc pas les scripts bash partagés avec WSL.
 - `capabilities/` — permissions Tauri accordées à la fenêtre (dont `opener`, pour ouvrir
   les liens externes dans le navigateur du système).
 - `icons/` — `icon-source.svg` (badge indigo, lisible sur une barre des tâches claire ou
-  sombre, OPP-220), `icon-source.png`, et les dérivés `32x32.png`, `128x128.png`,
-  `icon.ico` (requis par `tauri-build` sous Windows).
+  sombre, OPP-220), `icon-source.png`, et les dérivés générés par
+  `npx tauri icon src-tauri/icons/icon-source.png` (OPP-250) : `32x32.png`, `64x64.png`,
+  `128x128.png`, `128x128@2x.png`, `icon.png` (paquets Linux), `icon.ico` (requis par
+  `tauri-build` sous Windows) et les `Square*Logo.png`/`StoreLogo.png` (Windows). Les icônes
+  macOS (`icon.icns`) et mobiles (`android/`, `ios/`) ne sont pas gardées.
 - `sync-sidecar.sh` — copie le binaire API sous `binaries/opportune-api-<triple>`,
   nom où Tauri résout son sidecar.
 - `sync-ollama.sh` — Linux : télécharge Ollama (version figée), **jette les runners GPU**
@@ -108,7 +111,7 @@ donc pas les scripts bash partagés avec WSL.
 - **Port fixe** (8000 par défaut, ou `OPPORTUNE_API_PORT`) : si le port est déjà pris
   (p. ex. un serveur de dev), le sidecar ne démarre pas. Pas de recherche automatique d'un
   port libre.
-- **Icônes** : `32x32.png`, `128x128.png` et `icon.ico` seulement. Pas encore de `.icns`
+- **Icônes** : pas encore de `.icns`
   (arrivera avec l'installeur Mac).
 - **Installeurs non signés** : ni le `.msi`/`.exe` Windows (OPP-217) ni les paquets Linux.
 - **Build Windows/Linux** (OPP-194) : fait sur chaque OS, pas en cross-compile —
