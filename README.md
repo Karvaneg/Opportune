@@ -146,6 +146,13 @@ pilotées par des **jetons sémantiques**. Design system complet :
 | `warning` | alerte                                   | `#d97706` | `#fbbf24` |
 | `danger`  | erreur                                   | `#dc2626` | `#f87171` |
 
+### Démo vidéo
+
+_Parcours d'une minute dans l'espace Démo : profil, offres scorées, décision commentée, lettre de
+motivation, réglages._
+
+https://github.com/user-attachments/assets/cdd6ef51-1ffd-4d14-a81c-2761e252f643
+
 ### Captures d'écran
 
 _Captures prises dans l'espace Démo (aucune donnée personnelle), fenêtre 1440×900, thème clair._

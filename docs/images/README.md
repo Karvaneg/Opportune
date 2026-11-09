@@ -17,3 +17,6 @@ Toutes les captures sont prises depuis l'espace **Démo** (aucune donnée person
 mêmes conditions : fenêtre 1440×900 rendue en x2 (2880×1800), thème clair, police Segoe UI,
 démo restaurée juste avant (« Restaurer l'exemple ») et assistant local joignable (pas de bandeau
 d'erreur). `guide.png` montre une recherche neuve créée pour l'occasion.
+
+La vidéo de démo n'est pas dans le dépôt : elle est hébergée par GitHub (déposée dans la PR #219)
+et lue directement dans le README.
