@@ -1,21 +1,20 @@
 """Extraction de texte d'un CV PDF (V2, OPP-137).
 
-Adaptateur d'entrée du runner d'intake de profil : lit un PDF et en extrait le texte
-brut, que ``analyze_cv`` (OPP-136) transforme en profil. La dépendance **pypdf** est
-optionnelle (extra ``[pdf]``) et importée **paresseusement** — le cœur métier reste sans
-dépendance, comme la gateway Discord confine ``discord.py`` (OPP-125).
+Adaptateur d'entrée de l'import de CV depuis le front (OPP-174) : lit un PDF reçu en octets
+et en extrait le texte brut, que ``analyze_cv`` (OPP-136) transforme en profil. La dépendance
+**pypdf** est optionnelle (extra ``[pdf]``) et importée **paresseusement** : le cœur métier
+reste sans dépendance.
 
 Le lecteur de pages est **injectable** (``read_pages``) : la logique propre à ce module
-(jointure des pages, rejet d'un texte vide) est testable sans pypdf ni fichier réel.
+(jointure des pages, rejet d'un texte vide) est testable sans pypdf.
 """
 
 from __future__ import annotations
 
 from typing import Callable
 
-# Un lecteur de pages prend un chemin et retourne le texte de chaque page.
-PageReader = Callable[[str], list[str]]
-# Un lecteur de pages depuis des octets (upload en mémoire, OPP-174), même contrat de sortie.
+# Un lecteur de pages prend les octets du PDF (upload en mémoire, OPP-174) et retourne le
+# texte de chaque page.
 BytesPageReader = Callable[[bytes], list[str]]
 
 
@@ -36,12 +35,6 @@ def _load_pypdf_reader():
             'pypdf n\'est pas installé : `pip install -e ".[pdf]"` pour lire un CV PDF.'
         ) from exc
     return PdfReader
-
-
-def _pypdf_page_reader(path: str) -> list[str]:
-    """Lecteur par défaut depuis un chemin : texte de chaque page via pypdf."""
-    reader = _load_pypdf_reader()(path)
-    return [page.extract_text() or "" for page in reader.pages]
 
 
 def _pypdf_bytes_page_reader(data: bytes) -> list[str]:
@@ -66,23 +59,10 @@ def _join_pages(pages: list[str], *, origin: str) -> str:
     return text
 
 
-def extract_text_from_pdf(path: str, *, read_pages: PageReader | None = None) -> str:
-    """Extrait le texte concaténé d'un PDF **sur disque** ; ``PdfExtractionError`` si rien d'exploitable.
-
-    ``read_pages`` (injectable) retourne la liste des textes de page ; par défaut pypdf. Un
-    PDF vide ou scanné (pypdf n'en tire aucun texte) est rejeté explicitement plutôt que de
-    produire un profil vide en aval. Lève ``ValueError`` si le chemin est vide.
-    """
-    if not isinstance(path, str) or path.strip() == "":
-        raise ValueError("Le chemin du PDF est requis")
-    pages = (read_pages or _pypdf_page_reader)(path)
-    return _join_pages(pages, origin=repr(path))
-
-
 def extract_text_from_pdf_bytes(
     data: bytes, *, read_pages: BytesPageReader | None = None
 ) -> str:
-    """Extrait le texte d'un PDF **en mémoire** (upload front, OPP-174) ; même garde-fou que sur disque.
+    """Extrait le texte d'un PDF **en mémoire** (upload front, OPP-174) ; rejette un texte vide.
 
     ``read_pages`` (injectable) rend la liste des textes de page depuis les octets ; par
     défaut pypdf via ``BytesIO``. Lève ``ValueError`` si ``data`` est vide, ``PdfExtractionError``

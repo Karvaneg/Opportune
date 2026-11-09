@@ -19,7 +19,7 @@
 - [ ] Réutilisation avant duplication (ex. lexique de compétences partagé).
 - [ ] Commentaires **en français**, densité et style cohérents avec l'existant.
 - [ ] Aucune **dépendance externe** ajoutée sans justification explicite : le cœur vise
-      zéro dépendance, les extras (`scrape`, `discord`) restent confinés et importés paresseusement.
+      zéro dépendance, les extras (`pdf`, `scrape`) restent confinés et importés paresseusement.
 - [ ] **Erreurs typées** (exceptions dédiées) là où l'appelant doit distinguer les cas.
 
 ## 3. Tests

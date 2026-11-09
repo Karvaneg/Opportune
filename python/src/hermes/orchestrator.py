@@ -213,7 +213,7 @@ class HermesOrchestrator:
         limit: int = 10,
         *,
         filters: dict | None = None,
-        only_new: bool = False,
+        only_new: bool = True,
     ) -> HermesRun:
         """Recommande **une seule fois**, journalise l'exécution *et* pré-évalue, d'un bloc.
 
@@ -227,15 +227,13 @@ class HermesOrchestrator:
         (cf. ``RecommendationService.recommend``) : seules les offres retenues sont donc
         évaluées, persistées et tracées dans le run.
 
-        ``only_new`` (OPP-150) : si vrai, le run n'évalue que les offres **nouvelles** —
-        celles sans décision déjà posée pour le candidat sont exclues en amont. Évite de
+        ``only_new`` (OPP-150, vrai par défaut) : le run n'évalue que les offres **nouvelles** ;
+        celles qui ont déjà une décision pour le candidat sont exclues en amont. Évite de
         re-lister à chaque run les offres déjà traitées (symptôme OPP-150) ; une offre
         ancienne se repasse à la main (re-score ciblé, cf. ``rescore_offer``). Un run sans
         nouveauté est alors légitimement vide — et, s'il n'a produit *aucune* erreur, n'est
-        **pas persisté** (cf. ``_execute``) pour ne pas polluer la liste des runs. **Réservé
-        au run piloté depuis le front** :
-        le push Discord garde ``only_new=False`` (il dédoublonne via ses propres soumissions,
-        et doit pouvoir re-pousser une offre après un ``forget``).
+        **pas persisté** (cf. ``_execute``) pour ne pas polluer la liste des runs.
+        ``only_new=False`` re-déroule tout le pool.
 
         Retourne le ``run`` : chaque ``OfferEvaluation`` y fige déjà son ``advisory_status``
         (pré-éval automatique), rendant un tri en buckets superflu ici. Propage

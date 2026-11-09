@@ -17,7 +17,7 @@ Assistant de candidature **local-first et mono-utilisateur** (tourne sur la mach
 l'utilisateur, API sur `localhost`, sans login ni jeton — cf. `docs/adr/0003`).
 
 - **Back** (`python/`) : cœur métier + orchestrateur **Hermes** + API HTTP, écrits avec la
-  **bibliothèque standard** (zéro dépendance de prod ; extras `pdf`/`scrape`/`discord`/`build` confinés).
+  **bibliothèque standard** (zéro dépendance de prod ; extras `pdf`/`scrape`/`build` confinés).
   Trois couches `app/` (métier) · `hermes/` (orchestration) · `api/` (HTTP). Détail :
   [`python/README.md`](python/README.md).
 - **Front** (`frontend/`) : dashboard React 19 + Vite + TypeScript + Tailwind v4 + TanStack

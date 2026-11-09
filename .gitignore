@@ -18,3 +18,6 @@ data/
 # CV personnels (jamais versionnés — données personnelles)
 docs/cv/
 CV/
+
+# Script local de tournage de la vidéo de démo (hors versioning)
+scripts/record_demo.py

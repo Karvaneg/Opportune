@@ -170,9 +170,9 @@ class RecommendationService:
     ``memberships`` (OPP-186) limite chaque recherche **à ses propres offres** (table de liens
     ``candidate_offers``). Les offres d'une recherche portent alors, dans ``created_at``, leur
     date d'**entrée dans la recherche** (date du lien) : c'est elle qui ordonne le catalogue, le
-    classement et le journal d'activité de la recherche. Sans lui, toutes les offres du dépôt sont visibles de toutes les
-    recherches : c'est le comportement des outils en ligne de commande et des tests unitaires
-    qui n'ont qu'un candidat. L'API, elle, le câble toujours (cf. ``api.server``).
+    classement et le journal d'activité de la recherche. Sans lui, toutes les offres du dépôt
+    sont visibles de toutes les recherches : c'est le comportement des tests unitaires qui
+    n'ont qu'un candidat. L'API, elle, le câble toujours (cf. ``api.server``).
     """
 
     def __init__(

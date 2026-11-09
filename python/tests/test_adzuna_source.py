@@ -77,16 +77,10 @@ def test_to_raw_offer_uses_redirect_url_as_dedup_key():
 # --- pagination -------------------------------------------------------------------------
 
 
-def test_fetch_defaults_to_permanent_filter():
+def test_fetch_always_applies_permanent_filter():
     client = FakeClient([SearchPage(offers=(), total=0)])
     list(AdzunaSource(client).fetch())
     assert client.search_calls[0]["extra"] == {"permanent": "1"}
-
-
-def test_fetch_can_lift_permanent_filter():
-    client = FakeClient([SearchPage(offers=(), total=0)])
-    list(AdzunaSource(client, permanent=False).fetch())
-    assert client.search_calls[0]["extra"] is None
 
 
 def test_fetch_merges_user_filters_with_permanent():

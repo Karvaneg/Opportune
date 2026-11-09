@@ -7,7 +7,7 @@ Orchestration de bout en bout, côté candidat ::
 Symétrique de ``offer_intake_service`` (OPP-037). Ne dépend que de contrats injectables :
 ``LLMClient`` (OPP-079) pour l'analyse et ``ProfileRepository`` (OPP-017) pour le stockage
 — d'où une testabilité complète avec un faux LLM et une fausse persistance, sans réseau ni
-SQLite réel. L'extraction du texte depuis un PDF est **en amont** (runner OPP-137).
+SQLite réel. L'extraction du texte depuis un PDF est **en amont** (``hermes.pdf_extract``).
 """
 
 from __future__ import annotations

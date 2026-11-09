@@ -13,9 +13,7 @@ Choix structurants :
   binaire planterait au premier import paresseux (``ModuleNotFoundError``).
 - **Extras embarqués : scrape + pdf.** ``bs4``/``soupsieve`` (intake RSS & URL)
   et ``pypdf`` (import de CV) sont des endpoints réels de l'API → inclus en
-  imports cachés. L'extra ``discord`` est **exclu** : la gateway Discord est un
-  process séparé, pas servie par l'API HTTP, et ``discord.py`` alourdirait le
-  binaire pour rien.
+  imports cachés.
 - **Front compilé embarqué** (OPP-191) : ``frontend/dist`` est joint sous
   ``frontend_dist``, et l'API le sert en statique (un binaire = app complète).
   Le ``dist`` doit exister avant le build (``npm run build`` ; fait par
@@ -60,8 +58,6 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # ``discord`` (extra non servi par l'API) : exclu pour ne pas gonfler le binaire.
-    excludes=["discord"],
     noarchive=False,
     optimize=0,
 )

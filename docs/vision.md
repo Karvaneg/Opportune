@@ -6,8 +6,7 @@
 > cible : **collecte réelle** d'offres (Adzuna, flux RSS, ajout par URL), scoring des
 > offres, génération de lettre de motivation (Ollama/Ministral), validation humaine
 > via un **frontend web** (React/Vite) et **suivi post-candidature** (entretien, rejet, offre
-> reçue). La validation Discord (push-to-triage, récepteur live inclus) reste disponible mais
-> n'est plus l'interface courante. Une **app de bureau** (Tauri, LLM embarqué) est en cours de
+> reçue). La validation par Discord du MVP a été retirée (OPP-243). Une **app de bureau** (Tauri, LLM embarqué) est en cours de
 > finalisation (Opportune 1.0). Restent notamment en chantier le **CV adapté**, le **message
 > LinkedIn**, les **relances** et le **freelance**. L'ancienne implémentation Node.js/JSON n'a
 > plus cours.
@@ -33,7 +32,6 @@ offre sélectionnée → dossier personnalisé → validation → envoi manuel o
 | **Kyutai**                | Commandes vocales et notes vocales            |
 | **Frontend web**          | Interface de validation courante (React/Vite) |
 | **Tauri**                 | App de bureau installable (coquille + sidecars) |
-| **Discord**               | Validation push-to-triage (MVP historique)    |
 | **SQLite**                | Suivi des offres et candidatures              |
 | **Python / Docker / WSL** | Orchestration                                 |
 
