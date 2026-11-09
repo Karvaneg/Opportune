@@ -4,7 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <p align="center">
-  <img src="docs/images/Opportune.png" width="320" alt="Opportune — Saisir l'occasion au vol." />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/Opportune-dark.png" />
+    <img src="docs/images/Opportune.png" width="320" alt="Opportune, saisir l'occasion au vol." />
+  </picture>
 </p>
 
 <p align="center">
@@ -145,7 +148,7 @@ pilotées par des **jetons sémantiques**. Design system complet :
 
 ### Captures d'écran
 
-_Captures prises dans l'espace Démo (aucune donnée personnelle)._
+_Captures prises dans l'espace Démo (aucune donnée personnelle), fenêtre 1440×900, thème clair._
 
 |                       Écran d'accueil — Démo / Mon espace                       |                             Cockpit — guide de démarrage                              |
 | :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
