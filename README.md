@@ -151,7 +151,7 @@ pilotées par des **jetons sémantiques**. Design system complet :
 _Parcours d'une minute dans l'espace Démo : profil, offres scorées, décision commentée, lettre de
 motivation, réglages._
 
-https://github.com/user-attachments/assets/cdd6ef51-1ffd-4d14-a81c-2761e252f643
+https://github.com/user-attachments/assets/7d139d1a-21ff-489c-b8c7-859b7608d463
 
 ### Captures d'écran
 
