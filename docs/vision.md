@@ -6,10 +6,10 @@
 > cible : **collecte réelle** d'offres (Adzuna, flux RSS, ajout par URL), scoring des
 > offres, génération de lettre de motivation (Ollama/Ministral), validation humaine
 > via un **frontend web** (React/Vite) et **suivi post-candidature** (entretien, rejet, offre
-> reçue). La validation par Discord du MVP a été retirée (OPP-243). Une **app de bureau** (Tauri, LLM embarqué) est en cours de
-> finalisation (Opportune 1.0). Restent notamment en chantier le **CV adapté**, le **message
-> LinkedIn**, les **relances** et le **freelance**. L'ancienne implémentation Node.js/JSON n'a
-> plus cours.
+> reçue, relances). La validation par Discord du MVP a été retirée (OPP-243). Opportune 1.0
+> est livrée en **app de bureau** (Tauri, LLM embarqué) pour Windows et Linux. Restent
+> notamment en chantier le **CV adapté**, le **message LinkedIn** et le **freelance**.
+> L'ancienne implémentation Node.js/JSON n'a plus cours.
 
 ## Objectif
 

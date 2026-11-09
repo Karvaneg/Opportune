@@ -43,9 +43,8 @@
 ## 5. Intégration et suivi
 
 - [ ] Ticket Notion créé **avant** la branche ; travail sur une **branche dédiée**
-      `OPP-XXX-slug`, créée depuis la branche de base à jour : `main`, ou la branche
-      d'intégration de l'épic en cours (ex. `epic/E13-opportune-1.0`).
-- [ ] **Commit conventionnel** ; PR ouverte vers cette même base et mergée avec l'accord
+      `OPP-XXX-slug`, créée depuis `main` à jour.
+- [ ] **Commit conventionnel** ; PR ouverte vers `main` et mergée avec l'accord
       explicite de l'utilisatrice, branche supprimée.
 - [ ] Le **ticket Notion** est passé en **Done**, statut **relu et confirmé**.
 
