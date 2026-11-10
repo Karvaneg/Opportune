@@ -112,9 +112,27 @@ def model_present(
     host: str | None = None,
     transport: JsonTransport | None = None,
 ) -> bool:
-    """Vrai si ``model`` (défaut :data:`app.llm.DEFAULT_MODEL`) est déjà installé dans Ollama."""
-    target = model or DEFAULT_MODEL
-    return target in list_models(host=host, transport=transport)
+    """Vrai si ``model`` (défaut :data:`app.llm.DEFAULT_MODEL`) est déjà installé dans Ollama.
+
+    Les noms sont comparés **avec leur tag** : Ollama liste toujours ``nom:tag`` et sous-entend
+    ``:latest`` quand on ne lui en donne pas. Sans ça, ``OLLAMA_MODEL=ministral-3`` ne serait
+    jamais reconnu dans un inventaire qui affiche ``ministral-3:latest``.
+    """
+    target = model_with_tag(model or DEFAULT_MODEL)
+    installed = list_models(host=host, transport=transport)
+    return any(model_with_tag(name) == target for name in installed)
+
+
+def model_with_tag(model: str) -> str:
+    """Nom du modèle avec son tag (``:latest`` par défaut, comme Ollama).
+
+    Un ``:`` suivi d'un ``/`` appartient au registre (``hôte:port/nom``), pas à un tag. Même
+    règle que ``model_with_tag`` côté coquille de bureau (``ollama_plan.rs``).
+    """
+    _, separator, tag = model.rpartition(":")
+    if separator and "/" not in tag:
+        return model
+    return f"{model}:latest"
 
 
 def pull_model(
