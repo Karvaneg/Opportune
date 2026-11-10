@@ -33,7 +33,12 @@ Vitest + Testing Library.
 - **Réglages** (`/reglages`, OPP-195/222/226) : saisie des **clés Adzuna** (`AdzunaSettings`),
   des **URLs de flux RSS** (`RssSettings`) et des **pages carrière des entreprises ciblées**
   (`AtsSettings`, Greenhouse/Lever), enregistrées par l'API dans le dossier de données de
-  l'app. Plus besoin d'éditer un `.env` pour collecter.
+  l'app. Plus besoin d'éditer un `.env` pour collecter. La page porte aussi les **délais de
+  relance** (`FollowUpSettings`, OPP-235), la **sauvegarde et restauration des données** de
+  l'espace (`DataTransferSettings`, OPP-232) et la **désinstallation** (`UninstallSettings`,
+  OPP-252). Cette dernière carte ne s'affiche que dans l'app de bureau installée : elle
+  indique le poids du modèle et des données, laisse choisir ce qui est supprimé, puis envoie
+  la demande à l'API (`api/system.ts`).
 - **Mise en route du LLM** (`LlmBanner`, OPP-193/195) : tant que le modèle local n'est pas
   installé, un bandeau propose de le télécharger (barre de progression) ou signale qu'Ollama
   est injoignable, sans bloquer l'app ; seules les actions qui exigent le LLM se désactivent.

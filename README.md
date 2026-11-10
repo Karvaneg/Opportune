@@ -200,6 +200,15 @@ _Captures prises dans l'espace Démo (aucune donnée personnelle), fenêtre 1440
 
 ## Feuille de route
 
+**Livré dans la v1.1.0** : Opportune s'adapte à ce qui est déjà sur la machine et se retire
+proprement.
+
+- 🤝 **Cohabitation avec ton Ollama** : si un Ollama assez récent tourne déjà, Opportune le
+  réutilise au lieu de lancer le sien, et ne retélécharge pas un modèle que tu as déjà.
+- 🧹 **Désinstallation depuis l'app** : Réglages > Désinstaller Opportune supprime l'app, et
+  au choix le modèle d'IA et tes données (voir [Désinstallation](#désinstallation)).
+- 🔍 **Icône agrandie** dans la barre des tâches et le menu des applications.
+
 **Livré dans la v1.0.0** : Opportune s'installe sans compétences techniques.
 
 - 📦 **Application de bureau** (Tauri) pour Windows et Linux, avec le moteur Python et le
