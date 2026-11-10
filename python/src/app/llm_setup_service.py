@@ -58,6 +58,7 @@ class LLMSetupService:
         pull: Callable[..., PullProgress] = pull_model,
         total_memory: Callable[[], int | None] = total_memory_bytes,
         spawn: Callable[[Callable[[], None]], None] | None = None,
+        on_downloaded: Callable[[str], None] | None = None,
     ) -> None:
         self._model = model
         self._host = host
@@ -65,6 +66,10 @@ class LLMSetupService:
         self._pull = pull
         self._total_memory = total_memory
         self._spawn = spawn or _spawn_daemon
+        # Appelé avec le nom du modèle quand **ce service** vient de le télécharger (OPP-251).
+        # Jamais appelé quand le modèle était déjà présent : c'est ce qui permet de distinguer
+        # un modèle apporté par Opportune d'un modèle que la personne avait déjà.
+        self._on_downloaded = on_downloaded
         self._lock = threading.Lock()
         self._snapshot = SetupSnapshot(IDLE, "", 0.0)
         # Mémoïsation de la RAM totale : constante de la machine, lue une seule fois (sous macOS
@@ -148,7 +153,23 @@ class LLMSetupService:
         if result.error is not None:
             self._set(SetupSnapshot(FAILED, result.status, result.fraction, error=result.error))
         else:
+            self._record_download()
             self._set(SetupSnapshot(DONE, result.status, 1.0))
+
+    def _record_download(self) -> None:
+        """Signale le téléchargement réussi, sans jamais faire échouer le setup.
+
+        Le modèle est bien là : si la trace de son origine ne s'écrit pas, il sera tenu pour déjà
+        présent, donc jamais supprimé à tort. On rattrape **toute** exception, pas seulement les
+        erreurs de disque : une exception qui s'échapperait arrêterait le thread avant le passage
+        à ``done``, et l'écran de mise en route resterait bloqué sur ``running``.
+        """
+        if self._on_downloaded is None:
+            return
+        try:
+            self._on_downloaded(self._model)
+        except Exception:  # noqa: BLE001 — la trace d'origine ne doit jamais bloquer le setup
+            pass
 
     def _on_progress(self, progress: PullProgress) -> None:
         self._set(SetupSnapshot(RUNNING, progress.status, progress.fraction))

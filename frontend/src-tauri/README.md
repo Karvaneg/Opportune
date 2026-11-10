@@ -8,16 +8,51 @@ Front et données viennent du même origin (l'API) : aucun CORS.
 - **API** (`opportune-api`, OPP-190) : sert le front compilé (OPP-191) sur
   `127.0.0.1:8000` (port surchargeable par `OPPORTUNE_API_PORT`, lu à la fois par la
   coquille et par l'API). La fenêtre s'ouvre une fois ce port prêt.
-- **Ollama** (OPP-194) : le moteur LLM local, sur `127.0.0.1:11434`. Embarqué en
-  **version CPU seule** (cf. `sync-ollama.sh`). Si un Ollama tourne déjà sur ce
-  port, on le réutilise au lieu d'en lancer un second. Le téléchargement du
-  **modèle** reste géré par le front/API (flux OPP-193, `/system/llm/*`).
+- **Ollama** (OPP-194, OPP-251) : le moteur LLM local. Embarqué en **version CPU
+  seule** (cf. `sync-ollama.sh`). Le téléchargement du **modèle** reste géré par le
+  front/API (flux OPP-193, `/system/llm/*`).
 
-Tout tient dans **une seule arborescence de données** (celle de l'app) : les bases
-SQLite (via `OPPORTUNE_DATA_DIR`, passé au sidecar API) **et** les modèles Ollama
-(via `OLLAMA_MODELS`) y sont rangés ensemble — supprimés avec l'app, sauvegardables
-d'un bloc. **Réserve** : quand on réutilise un Ollama déjà lancé, ses modèles suivent
-*sa* configuration (souvent `~/.ollama`), hors de notre contrôle.
+### Quel Ollama l'app utilise (OPP-251)
+
+Pour ne pas surcharger la machine, l'app réutilise ce qui est déjà installé. Au
+démarrage, `main.rs` sonde `/api/version` à l'adresse de l'`OLLAMA_HOST` de la
+personne (si elle en a défini un) et sur `127.0.0.1:11434`, en parallèle et dans
+un thread de fond :
+
+| Situation | Ce que fait l'app |
+|---|---|
+| Un Ollama de version ≥ 0.13.1 répond | Elle le réutilise, sans lancer le sien. Les modèles suivent la configuration de cet Ollama (souvent `~/.ollama`). |
+| Un Ollama récent répond, mais l'app a déjà téléchargé le modèle dans son propre dossier et cet Ollama ne l'a pas | Elle lance l'Ollama embarqué sur un port libre, pour ne pas télécharger le modèle une seconde fois. |
+| Aucun Ollama ne répond, `11434` est libre | Elle lance l'Ollama embarqué sur `11434`. |
+| `11434` est tenu par un autre service | Elle lance l'Ollama embarqué sur un port libre choisi par le système. |
+| L'Ollama qui répond est plus ancien que 0.13.1 | Elle ne le réutilise pas (`ministral-3` exige 0.13.1) et lance l'Ollama embarqué sur un port libre. |
+
+L'adresse retenue est passée à l'API par `OLLAMA_HOST`. Après avoir lancé l'Ollama
+embarqué, l'app attend qu'il réponde sur son port (5 s au plus). S'il s'arrête
+avant (port pris entre-temps par un autre programme), elle réessaie sur un autre
+port, trois fois au plus. Si aucun Ollama n'est utilisable,
+l'API reçoit une adresse où rien n'écoute et le front affiche « moteur indisponible ».
+
+Quand l'app lance l'Ollama embarqué, elle choisit son dossier de modèles, dans
+cet ordre (modèle = `OLLAMA_MODEL`, défaut `ministral-3:3b`) :
+
+1. le dossier de l'app (`ollama-models/`, à côté des bases SQLite) s'il contient
+   déjà le modèle ;
+2. le dossier Ollama de la personne (`OLLAMA_MODELS`, sinon `~/.ollama/models`)
+   s'il contient déjà le modèle : pas de nouveau téléchargement de ~3 Go.
+   `OLLAMA_NOPRUNE=1` empêche alors l'Ollama embarqué d'y supprimer des fichiers ;
+3. sinon le dossier de l'app, où le modèle sera téléchargé.
+
+Limite connue : un Ollama installé comme service système sous Linux range ses
+modèles sous `/usr/share/ollama`, que l'app ne regarde pas. S'il est arrêté au
+lancement d'Opportune, le modèle est téléchargé dans le dossier de l'app.
+
+L'API note dans `llm-model-origin.json` (dossier de données) chaque modèle
+qu'Opportune a téléchargé elle-même, avec le dossier où il a atterri
+(`app.model_origin`). La coquille lui donne ce dossier par
+`OPPORTUNE_OLLAMA_MODELS_DIR` ; il vaut `null` quand le téléchargement est passé
+par l'Ollama de la personne. On distingue ainsi la copie d'Opportune d'une copie
+que la personne avait déjà ou a téléchargée ensuite.
 
 ## Lancer en dev
 
@@ -103,6 +138,10 @@ donc pas les scripts bash partagés avec WSL.
   création de la fenêtre sur `http://127.0.0.1:8000`, arrêt des sidecars à la sortie.
   Sous Windows, les sidecars sont lancés avec `CREATE_NO_WINDOW` : aucune fenêtre console
   ne s'ouvre à côté de l'app (OPP-221).
+- `src/ollama_plan.rs` — décisions de démarrage d'Ollama (OPP-251), en fonctions pures :
+  adresses à sonder, lecture de la version, choix entre réutilisation et Ollama embarqué,
+  nom d'un modèle avec son tag, chemin de son manifeste. Testé par `cargo test` (à lancer à la main : la CI ne
+  compile pas la coquille Tauri).
 - `capabilities/` — permissions Tauri accordées à la fenêtre (dont `opener`, pour ouvrir
   les liens externes dans le navigateur du système).
 - `icons/` — `icon-source.svg` (badge indigo, lisible sur une barre des tâches claire ou

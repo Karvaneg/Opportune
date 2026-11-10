@@ -12,6 +12,7 @@ from app.ollama_provision import (
     _get_json,
     list_models,
     model_present,
+    model_with_tag,
     pull_model,
 )
 
@@ -141,3 +142,26 @@ def test_get_json_maps_non_json_200_to_unreachable(monkeypatch):
 
     with pytest.raises(OllamaUnreachable):
         _get_json("http://127.0.0.1:11434/api/tags")
+
+
+def test_model_present_matches_untagged_model_with_latest():
+    inventory_listing_latest = lambda url: {"models": [{"name": "ministral-3:latest"}]}  # noqa: E731
+
+    assert model_present("ministral-3", transport=inventory_listing_latest) is True
+
+
+def test_model_present_does_not_match_another_tag():
+    inventory_listing_other_tag = lambda url: {"models": [{"name": "ministral-3:8b"}]}  # noqa: E731
+
+    assert model_present("ministral-3", transport=inventory_listing_other_tag) is False
+    assert model_present("ministral-3:3b", transport=inventory_listing_other_tag) is False
+
+
+def test_model_with_tag_adds_latest_only_when_tag_is_missing():
+    model_without_tag = "ministral-3"
+    model_with_explicit_tag = "ministral-3:3b"
+    registry_with_port_and_no_tag = "registry.local:5000/team/custom"
+
+    assert model_with_tag(model_without_tag) == "ministral-3:latest"
+    assert model_with_tag(model_with_explicit_tag) == "ministral-3:3b"
+    assert model_with_tag(registry_with_port_and_no_tag) == "registry.local:5000/team/custom:latest"

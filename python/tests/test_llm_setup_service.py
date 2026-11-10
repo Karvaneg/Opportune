@@ -127,3 +127,59 @@ def test_start_is_idempotent_while_running():
     assert first.state == RUNNING
     assert second.state == RUNNING
     assert calls == []  # le pull n'a jamais été exécuté (spawn neutralisé), ni relancé
+
+
+def test_download_is_recorded_when_service_pulls_the_model():
+    downloaded_models = []
+    service = _service(model="ministral-3:3b", on_downloaded=downloaded_models.append)
+
+    service.start()
+
+    assert downloaded_models == ["ministral-3:3b"]
+
+
+def test_download_is_not_recorded_when_model_was_already_present():
+    downloaded_models = []
+    service = _service(
+        present=lambda model, host=None: True,
+        on_downloaded=downloaded_models.append,
+    )
+
+    service.start()
+
+    assert downloaded_models == []
+
+
+def test_download_is_not_recorded_when_pull_fails():
+    downloaded_models = []
+    service = _service(
+        pull=lambda model, host=None, on_progress=None: PullProgress("erreur", 0.2, error="réseau coupé"),
+        on_downloaded=downloaded_models.append,
+    )
+
+    snapshot = service.start()
+
+    assert snapshot.state == FAILED
+    assert downloaded_models == []
+
+
+def test_setup_succeeds_even_when_recording_the_download_fails():
+    def refuse_to_write(model):
+        raise OSError("disque plein")
+
+    service = _service(on_downloaded=refuse_to_write)
+
+    snapshot = service.start()
+
+    assert snapshot.state == DONE
+
+
+def test_setup_succeeds_even_when_recording_the_download_raises_any_error():
+    def fail_unexpectedly(model):
+        raise TypeError("valeur non sérialisable")
+
+    service = _service(on_downloaded=fail_unexpectedly)
+
+    snapshot = service.start()
+
+    assert snapshot.state == DONE

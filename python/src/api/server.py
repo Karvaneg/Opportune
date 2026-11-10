@@ -603,7 +603,21 @@ def assemble_api(
     from app.llm import DEFAULT_MODEL, DEFAULT_OLLAMA_HOST
     from app.llm_setup_service import LLMSetupService
 
-    llm_setup = LLMSetupService(model=DEFAULT_MODEL, host=DEFAULT_OLLAMA_HOST)
+    # On note les modèles qu'Opportune télécharge elle-même (OPP-251), avec le dossier où ils
+    # atterrissent, pour ne jamais supprimer plus tard un modèle que la personne avait déjà.
+    from app.model_origin import MODEL_ORIGIN_FILENAME, ModelOriginStore, models_dir_from_env
+    from app.ollama_provision import model_with_tag
+    from app.paths import user_data_dir
+
+    model_origin = ModelOriginStore(user_data_dir() / MODEL_ORIGIN_FILENAME)
+    llm_setup = LLMSetupService(
+        model=DEFAULT_MODEL,
+        host=DEFAULT_OLLAMA_HOST,
+        # Nom noté avec son tag (``ministral-3`` → ``ministral-3:latest``), comme Ollama le liste.
+        on_downloaded=lambda model: model_origin.mark_downloaded(
+            model_with_tag(model), models_dir_from_env()
+        ),
+    )
 
     return HermesApi(
         orchestrator,
