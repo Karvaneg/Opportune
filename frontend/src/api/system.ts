@@ -37,6 +37,7 @@ const SETUP_POLL_INTERVAL_MS = 1000;
 export const systemKeys = {
   llmStatus: ["system", "llm", "status"] as const,
   llmSetup: ["system", "llm", "setup"] as const,
+  uninstall: ["system", "uninstall"] as const,
 };
 
 /** Disponibilité du LLM local (Ollama joignable, modèle présent, verdict RAM). */
@@ -94,5 +95,63 @@ export function useLlmSetupProgress(enabled: boolean) {
     enabled,
     refetchInterval: (query) =>
       query.state.data?.state === "running" ? SETUP_POLL_INTERVAL_MS : false,
+  });
+}
+
+// Désinstallation depuis l'app (OPP-252). Contrat miroir de `api.app` (route /system/uninstall)
+// et de `app.uninstall_service`.
+
+/** Type d'installation, reconnu par l'app de bureau. `dev` : app lancée depuis le code source. */
+export type InstallKind =
+  | "appimage"
+  | "deb"
+  | "rpm"
+  | "linux-other"
+  | "windows-nsis"
+  | "windows-msi"
+  | "macos"
+  | "dev";
+
+export interface UninstallInfo {
+  /** Faux hors app de bureau (navigateur, dev sans coquille) : rien n'exécuterait la demande. */
+  available: boolean;
+  install_kind: InstallKind | null;
+  /** Chemin du fichier AppImage, quand l'app tourne depuis une AppImage. */
+  appimage_path: string | null;
+  /** Dossier des données de l'app. */
+  data_dir: string;
+  model: {
+    name: string;
+    present: boolean;
+    /** Vrai s'il existe une copie téléchargée par Opportune (les autres ne sont jamais supprimées). */
+    removable: boolean;
+    /** Taille de la copie rangée dans le dossier de l'app, en octets (0 s'il n'y en a pas). */
+    app_copy_bytes: number;
+  };
+  /** La personne a son propre Ollama : Opportune n'y touche pas. */
+  user_has_own_ollama: boolean;
+}
+
+export interface UninstallChoices {
+  remove_model: boolean;
+  remove_data: boolean;
+}
+
+/** Ce que la désinstallation peut supprimer : `GET /system/uninstall`. */
+export function useUninstallInfo() {
+  return useQuery({
+    queryKey: systemKeys.uninstall,
+    queryFn: () => apiFetch<UninstallInfo>("/system/uninstall"),
+    retry: false,
+  });
+}
+
+/**
+ * Demande la désinstallation : `POST /system/uninstall`. L'app de bureau arrête ensuite ses
+ * services, supprime ce qui est choisi et se ferme : il n'y a rien à rafraîchir après.
+ */
+export function useRequestUninstall() {
+  return useApiMutation<{ accepted: boolean }, UninstallChoices>({
+    mutationFn: (choices) => apiPost<{ accepted: boolean }>("/system/uninstall", choices),
   });
 }

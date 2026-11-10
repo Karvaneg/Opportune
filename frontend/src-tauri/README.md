@@ -54,6 +54,55 @@ qu'Opportune a téléchargé elle-même, avec le dossier où il a atterri
 par l'Ollama de la personne. On distingue ainsi la copie d'Opportune d'une copie
 que la personne avait déjà ou a téléchargée ensuite.
 
+### Désinstaller depuis l'app (OPP-252)
+
+Le bouton « Désinstaller Opportune » des réglages n'apparaît que dans l'app de
+bureau. La coquille donne à l'API le type d'installation (`OPPORTUNE_INSTALL_KIND` :
+`appimage`, `deb`, `rpm`, `linux-other`, `windows-nsis`, `windows-msi`, `macos` ou
+`dev`), reconnu une fois au démarrage, et la présence d'un Ollama propre à la
+personne (`OPPORTUNE_USER_OLLAMA` : on le réutilise, ou son dossier de modèles existe).
+
+Déroulé, une fois les choix confirmés à l'écran :
+
+1. L'API écrit la demande dans `uninstall-request.json` (dossier de données). Si
+   Opportune avait téléchargé le modèle à travers l'Ollama de la personne, l'API
+   demande d'abord à cet Ollama de le supprimer.
+2. La coquille, qui regarde ce fichier deux fois par seconde, arrête l'API et
+   Ollama (ils tiennent les fichiers à supprimer). Sous Windows, `taskkill /T /F`
+   arrête tout l'arbre de process de chacun.
+3. Elle supprime ce qui est coché : `ollama-models/` pour le modèle ; le reste du
+   dossier de données, le cache et les données de la fenêtre pour « mes données ».
+   Une suppression qui échoue est réessayée pendant 5 s ; si elle échoue encore,
+   une fenêtre liste ce qui reste à supprimer à la main.
+4. Elle lance le désinstalleur du système quand il y en a un, puis se ferme.
+
+Si l'app est encore ouverte 20 s après la demande, l'écran le signale et rend la main.
+
+| Installation | Ce que fait l'app à l'étape 4 |
+|---|---|
+| Windows, installeur `.exe` | Lance `uninstall.exe`, déposé à côté de l'exécutable. |
+| Windows, installeur `.msi` | Ouvre la page « Applications installées » de Windows. |
+| Linux `.deb` / `.rpm` | Rien : l'écran a affiché la commande (`sudo apt remove opportune` ou `sudo rpm -e opportune`). |
+| Linux, installée sous `/usr` sans dpkg ni base RPM | Rien : l'écran renvoie au gestionnaire de paquets de la distribution. |
+| Linux AppImage | Rien : l'écran a affiché le chemin du fichier à supprimer. |
+
+Garde-fous :
+
+- un modèle qui était là avant Opportune n'est jamais supprimé (`app.model_origin`).
+  Dans l'Ollama de la personne, la copie d'Opportune se reconnaît à sa date de
+  modification, notée au téléchargement : si la personne a supprimé puis
+  retéléchargé le modèle, la date ne correspond plus et la copie est conservée ;
+- un dossier n'est effacé que si son nom est l'identifiant de l'app ;
+- une demande restée d'un lancement précédent est jetée au démarrage.
+
+`~/.ollama` : l'Ollama embarqué y crée sa clé à son premier démarrage. Si le
+dossier n'existait pas avant, la coquille le note (`created-ollama-home` dans le
+dossier de données) et la désinstallation le retire, à condition qu'il ne
+contienne toujours que cette clé.
+
+L'Ollama embarqué fait partie de l'app : il part avec elle. L'Ollama personnel
+n'est jamais touché, l'écran indique seulement comment le désinstaller.
+
 ## Lancer en dev
 
 Prérequis : Rust (`rustup`), le toolchain système Tauri, et Node. Sous WSL, la
@@ -142,6 +191,8 @@ donc pas les scripts bash partagés avec WSL.
   adresses à sonder, lecture de la version, choix entre réutilisation et Ollama embarqué,
   nom d'un modèle avec son tag, chemin de son manifeste. Testé par `cargo test` (à lancer à la main : la CI ne
   compile pas la coquille Tauri).
+- `src/uninstall_plan.rs` — décisions de la désinstallation (OPP-252), en fonctions pures :
+  lecture de la demande, type d'installation, éléments du dossier de données à supprimer.
 - `capabilities/` — permissions Tauri accordées à la fenêtre (dont `opener`, pour ouvrir
   les liens externes dans le navigateur du système).
 - `icons/` — `icon-source.svg` (badge indigo, lisible sur une barre des tâches claire ou

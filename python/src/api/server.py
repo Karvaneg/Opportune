@@ -605,18 +605,26 @@ def assemble_api(
 
     # On note les modèles qu'Opportune télécharge elle-même (OPP-251), avec le dossier où ils
     # atterrissent, pour ne jamais supprimer plus tard un modèle que la personne avait déjà.
-    from app.model_origin import MODEL_ORIGIN_FILENAME, ModelOriginStore, models_dir_from_env
-    from app.ollama_provision import model_with_tag
+    from app.model_download_recorder import make_download_recorder
+    from app.model_origin import MODEL_ORIGIN_FILENAME, ModelOriginStore
     from app.paths import user_data_dir
 
     model_origin = ModelOriginStore(user_data_dir() / MODEL_ORIGIN_FILENAME)
     llm_setup = LLMSetupService(
         model=DEFAULT_MODEL,
         host=DEFAULT_OLLAMA_HOST,
-        # Nom noté avec son tag (``ministral-3`` → ``ministral-3:latest``), comme Ollama le liste.
-        on_downloaded=lambda model: model_origin.mark_downloaded(
-            model_with_tag(model), models_dir_from_env()
-        ),
+        on_downloaded=make_download_recorder(model_origin, host=DEFAULT_OLLAMA_HOST),
+    )
+
+    # Désinstallation depuis l'app (OPP-252) : même modèle, même hôte et même fichier d'origine
+    # que la mise en route, pour décrire exactement ce qu'Opportune a installé.
+    from app.uninstall_service import UninstallService
+
+    uninstall = UninstallService(
+        data_dir=user_data_dir(),
+        origin=model_origin,
+        model=DEFAULT_MODEL,
+        host=DEFAULT_OLLAMA_HOST,
     )
 
     return HermesApi(
@@ -632,6 +640,7 @@ def assemble_api(
         cv_intake=cv_intake,
         searches=searches,
         llm_setup=llm_setup,
+        uninstall=uninstall,
         adzuna_credentials=adzuna_credentials,
         rss_feeds=rss_feeds,
         follow_up_settings=follow_up_settings,

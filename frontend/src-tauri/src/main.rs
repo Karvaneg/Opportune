@@ -15,6 +15,10 @@
 //!   le téléchargement du modèle reste géré côté front/API (flux OPP-193, `/system/llm/*`).
 //! - **API** (`opportune-api`, OPP-190) : sert le front compilé (OPP-191) sur `127.0.0.1:8000`.
 //!
+//! Désinstallation (OPP-252) : l'API écrit la demande de la personne dans un fichier du dossier
+//! de données ; `watch_uninstall_request` le voit, arrête les sidecars, supprime ce qui est
+//! demandé et lance le désinstalleur du système. Les décisions sont dans `uninstall_plan.rs`.
+//!
 //! Arrêt des sidecars — le point délicat. Le binaire API est un onefile PyInstaller : il tourne
 //! en **deux** processus (un bootloader + le vrai process Python, petit-fils, qui tient le port).
 //! Tuer le seul bootloader laisserait le process Python orphelin à retenir `8000`, et le
@@ -22,6 +26,7 @@
 //! processus** (`setsid`) et on tue le **groupe entier** à la sortie.
 
 mod ollama_plan;
+mod uninstall_plan;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
@@ -34,6 +39,7 @@ use tauri::path::BaseDirectory;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 use ollama_plan::{Decision, Probe};
+use uninstall_plan::UninstallRequest;
 
 /// Port d'écoute du sidecar (front + API), depuis `OPPORTUNE_API_PORT` (défaut 8000). La **même**
 /// variable pilote le port côté Python (`api.server.resolve_api_port`) ; le sidecar en hérite via
@@ -256,8 +262,8 @@ fn dir_has_model(models_dir: &std::path::Path, model: &str) -> bool {
 fn app_models_dir(app: &tauri::AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
-        .map(|d| d.join("ollama-models"))
-        .unwrap_or_else(|_| PathBuf::from("ollama-models"))
+        .map(|d| d.join(uninstall_plan::APP_MODELS_DIRNAME))
+        .unwrap_or_else(|_| PathBuf::from(uninstall_plan::APP_MODELS_DIRNAME))
 }
 
 /// Dossier de modèles Ollama **de la personne** : son `OLLAMA_MODELS` si elle en a défini un,
@@ -290,6 +296,28 @@ fn ollama_took_port(child: &mut Child, addr: &str, timeout: Duration) -> bool {
     }
 }
 
+/// Dossier `~/.ollama`, où Ollama range sa clé (et, par défaut, ses modèles).
+fn ollama_home(app: &tauri::AppHandle) -> Option<PathBuf> {
+    Some(app.path().home_dir().ok()?.join(".ollama"))
+}
+
+/// Avant de lancer l'Ollama embarqué : si `~/.ollama` n'existe pas encore, c'est lui qui va le
+/// créer (pour sa clé). On le note par un fichier témoin dans le dossier de données, pour que la
+/// désinstallation puisse retirer ce dossier (OPP-252) sans jamais toucher à celui d'un Ollama
+/// installé par la personne.
+fn note_ollama_home_creation(app: &tauri::AppHandle) {
+    let Some(home) = ollama_home(app) else {
+        return;
+    };
+    if home.exists() {
+        return;
+    }
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        let _ = std::fs::create_dir_all(&data_dir);
+        let _ = std::fs::write(data_dir.join(uninstall_plan::CREATED_OLLAMA_HOME_MARKER), "");
+    }
+}
+
 /// L'Ollama retenu pour l'app.
 struct OllamaChoice {
     /// Adresse `hôte:port` où l'API doit le joindre.
@@ -297,6 +325,11 @@ struct OllamaChoice {
     /// Dossier de modèles, **quand c'est nous qui lançons Ollama**. `None` si on réutilise
     /// l'Ollama de la personne : son dossier relève de sa configuration, on ne le connaît pas.
     models_dir: Option<PathBuf>,
+    /// Vrai si la personne a **son propre Ollama** : on le réutilise, ou son dossier de modèles
+    /// existe. Sert à lui dire, à la désinstallation, qu'Opportune n'y touche pas (OPP-252).
+    /// On ne se fie pas à la seule existence de `~/.ollama` : l'Ollama embarqué le crée lui-même
+    /// à son premier démarrage pour y ranger sa clé.
+    user_has_own_ollama: bool,
 }
 
 /// Adresse à donner à l'API quand **aucun** Ollama n'est utilisable. Si le port par défaut est
@@ -322,6 +355,7 @@ fn unusable_ollama_addr(default_port_free: bool) -> String {
 ///    de la personne s'il a déjà le modèle, sinon celui de l'app (le modèle y sera téléchargé).
 fn spawn_ollama(app: &tauri::AppHandle) -> OllamaChoice {
     let model = configured_model();
+    let user_has_ollama_dir = user_models_dir(app).is_some_and(|dir| dir.is_dir());
     let app_dir = app_models_dir(app);
     let app_has_model = dir_has_model(&app_dir, &model);
 
@@ -344,7 +378,9 @@ fn spawn_ollama(app: &tauri::AppHandle) -> OllamaChoice {
 
     let decision = ollama_plan::decide(&probes, app_has_model, |addr| ollama_has_model(addr, &model));
     let default_port_free = match decision {
-        Decision::Reuse(addr) => return OllamaChoice { addr, models_dir: None },
+        Decision::Reuse(addr) => {
+            return OllamaChoice { addr, models_dir: None, user_has_own_ollama: true }
+        }
         Decision::Embedded { default_port_free } => default_port_free,
     };
 
@@ -352,8 +388,14 @@ fn spawn_ollama(app: &tauri::AppHandle) -> OllamaChoice {
         // Pas d'arbre embarqué (sync-ollama.sh pas lancé en dev). On ne bloque pas le démarrage :
         // le front signalera l'absence de moteur via /system/llm/status (flux OPP-193).
         eprintln!("Ollama embarqué introuvable : moteur LLM indisponible (lance sync-ollama.sh).");
-        return OllamaChoice { addr: unusable_ollama_addr(default_port_free), models_dir: None };
+        return OllamaChoice {
+            addr: unusable_ollama_addr(default_port_free),
+            models_dir: None,
+            user_has_own_ollama: user_has_ollama_dir,
+        };
     };
+
+    note_ollama_home_creation(app);
 
     let user_dir_with_model = user_models_dir(app).filter(|dir| dir_has_model(dir, &model));
     let (models_dir, belongs_to_user) = match user_dir_with_model {
@@ -403,12 +445,20 @@ fn spawn_ollama(app: &tauri::AppHandle) -> OllamaChoice {
         };
         if ollama_took_port(&mut child, &addr, Duration::from_secs(5)) {
             register_child(child);
-            return OllamaChoice { addr, models_dir: Some(models_dir) };
+            return OllamaChoice {
+                addr,
+                models_dir: Some(models_dir),
+                user_has_own_ollama: user_has_ollama_dir,
+            };
         }
         eprintln!("Ollama s'est arrêté dès son démarrage sur {addr} : nouvel essai sur un autre port.");
     }
 
-    OllamaChoice { addr: unusable_ollama_addr(default_port_free), models_dir: None }
+    OllamaChoice {
+        addr: unusable_ollama_addr(default_port_free),
+        models_dir: None,
+        user_has_own_ollama: user_has_ollama_dir,
+    }
 }
 
 /// Démarre l'API en sidecar (dans son propre groupe de processus).
@@ -433,13 +483,240 @@ fn spawn_api(app: &tauri::AppHandle, ollama: &OllamaChoice) -> std::io::Result<(
         Some(models_dir) => command.env("OPPORTUNE_OLLAMA_MODELS_DIR", models_dir),
         None => command.env_remove("OPPORTUNE_OLLAMA_MODELS_DIR"),
     };
+    // Pour l'écran de désinstallation (OPP-252) : type d'installation, et présence d'un Ollama
+    // propre à la personne. Sans `OPPORTUNE_INSTALL_KIND`, l'API ne propose pas la désinstallation.
+    command.env("OPPORTUNE_INSTALL_KIND", current_install_kind());
+    command.env("OPPORTUNE_USER_OLLAMA", if ollama.user_has_own_ollama { "1" } else { "0" });
     let child = spawn_in_group(command)?;
     register_child(child);
     Ok(())
 }
 
+/// Type de l'installation en cours (`appimage`, `deb`, `rpm`, `linux-other`, `windows-nsis`,
+/// `windows-msi`, `macos` ou `dev`), d'après ce qu'on observe sur la machine.
+///
+/// Calculé **une seule fois**, au premier appel (le lancement de l'API) : l'écran de
+/// désinstallation et la coquille annoncent et exécutent ainsi les mêmes étapes, même après
+/// que la désinstallation a supprimé des fichiers.
+fn current_install_kind() -> &'static str {
+    static KIND: OnceLock<&'static str> = OnceLock::new();
+    KIND.get_or_init(detect_install_kind)
+}
+
+fn detect_install_kind() -> &'static str {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let facts = uninstall_plan::InstallFacts {
+        os: std::env::consts::OS.to_string(),
+        runs_from_appimage: std::env::var_os("APPIMAGE").is_some(),
+        nsis_uninstaller_present: nsis_uninstaller_path().is_some_and(|path| path.is_file()),
+        dpkg_knows_package: PathBuf::from(format!(
+            "/var/lib/dpkg/info/{}.list",
+            uninstall_plan::LINUX_PACKAGE_NAME
+        ))
+        .is_file(),
+        rpm_database_present: ["/var/lib/rpm", "/usr/lib/sysimage/rpm"]
+            .iter()
+            .any(|dir| PathBuf::from(dir).is_dir()),
+        exe,
+    };
+    uninstall_plan::install_kind(&facts)
+}
+
+/// Chemin du désinstalleur que l'installeur NSIS (le `.exe`) dépose à côté de l'exécutable.
+fn nsis_uninstaller_path() -> Option<PathBuf> {
+    let mut path = std::env::current_exe().ok()?;
+    path.pop();
+    path.push("uninstall.exe");
+    Some(path)
+}
+
+/// Surveille la demande de désinstallation écrite par l'API (OPP-252) et l'exécute.
+///
+/// L'API ne peut pas supprimer elle-même les données : elle tient les bases SQLite ouvertes, et
+/// Ollama tient les fichiers du modèle. Elle écrit donc la demande dans un fichier, que l'on
+/// regarde ici deux fois par seconde. Une demande restée d'un lancement précédent (app arrêtée
+/// avant de l'avoir traitée) est **jetée au démarrage** : on ne supprime rien sur la foi d'un
+/// clic fait lors d'une autre session.
+fn watch_uninstall_request(app: tauri::AppHandle) {
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let request_file = data_dir.join(uninstall_plan::REQUEST_FILENAME);
+    let _ = std::fs::remove_file(&request_file);
+
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(500));
+        let Ok(content) = std::fs::read_to_string(&request_file) else {
+            continue;
+        };
+        let _ = std::fs::remove_file(&request_file);
+        let Some(request) = uninstall_plan::parse_request(&content) else {
+            eprintln!("Demande de désinstallation illisible : ignorée.");
+            continue;
+        };
+        run_uninstall(&app, request);
+        let ui = app.clone();
+        let _ = app.run_on_main_thread(move || ui.exit(0));
+        return;
+    });
+}
+
+/// Exécute la désinstallation : arrête les sidecars, supprime ce que la personne a coché, puis
+/// lance le désinstalleur du système quand il y en a un.
+fn run_uninstall(app: &tauri::AppHandle, request: UninstallRequest) {
+    // D'abord l'API et Ollama : ils tiennent les fichiers qu'on va supprimer.
+    kill_all();
+
+    let not_removed = remove_with_retries(removals_for(app, request), 10, Duration::from_millis(500));
+    if !not_removed.is_empty() {
+        // La personne doit le savoir : sinon elle croit avoir récupéré la place.
+        use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+        let list: Vec<String> = not_removed.iter().map(|r| r.path().display().to_string()).collect();
+        app.dialog()
+            .message(format!(
+                "Opportune n'a pas pu supprimer ces éléments :\n\n{}\n\nTu peux les supprimer à la main une fois l'app fermée.",
+                list.join("\n")
+            ))
+            .title("Désinstallation incomplète")
+            .kind(MessageDialogKind::Warning)
+            .blocking_show();
+    }
+
+    launch_system_uninstaller();
+}
+
+/// Une suppression à faire pendant la désinstallation.
+enum Removal {
+    /// Un fichier, ou un dossier avec tout son contenu.
+    Whole(PathBuf),
+    /// Un dossier, seulement s'il est vide. S'il ne l'est pas, il contient ce que la personne a
+    /// choisi de garder : ce n'est pas un échec.
+    DirIfEmpty(PathBuf),
+}
+
+impl Removal {
+    fn path(&self) -> &std::path::Path {
+        match self {
+            Removal::Whole(path) | Removal::DirIfEmpty(path) => path,
+        }
+    }
+}
+
+/// Fichiers et dossiers à supprimer pour cette demande.
+fn removals_for(app: &tauri::AppHandle, request: UninstallRequest) -> Vec<Removal> {
+    let identifier = app.config().identifier.clone();
+    let mut removals: Vec<Removal> = Vec::new();
+
+    match app.path().app_data_dir() {
+        Ok(data_dir) if uninstall_plan::is_app_dir(&data_dir, &identifier) => {
+            // `~/.ollama`, seulement si c'est l'Ollama embarqué qui l'a créé (fichier témoin) et
+            // qu'il ne contient que sa clé. Lu avant de supprimer le dossier de données.
+            let created_by_us = data_dir.join(uninstall_plan::CREATED_OLLAMA_HOME_MARKER).is_file();
+            if let Some(home) = ollama_home(app).filter(|_| created_by_us) {
+                let entry_names: Option<Vec<String>> = std::fs::read_dir(&home).ok().map(|dir| {
+                    dir.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+                        .collect()
+                });
+                if entry_names.is_some_and(|names| uninstall_plan::ollama_home_holds_only_keys(&names)) {
+                    removals.push(Removal::Whole(home));
+                }
+            }
+            if request.remove_model {
+                removals.push(Removal::Whole(data_dir.join(uninstall_plan::APP_MODELS_DIRNAME)));
+            }
+            if request.remove_data {
+                let entries: Vec<PathBuf> = std::fs::read_dir(&data_dir)
+                    .map(|dir| dir.filter_map(|entry| entry.ok().map(|e| e.path())).collect())
+                    .unwrap_or_default();
+                removals.extend(
+                    uninstall_plan::data_entries_to_delete(entries, !request.remove_model)
+                        .into_iter()
+                        .map(Removal::Whole),
+                );
+                // Cache et données locales de la fenêtre (WebView).
+                let mut window_dirs = vec![app.path().app_cache_dir().ok(), app.path().app_local_data_dir().ok()];
+                // macOS : la WebView range localStorage et IndexedDB à part, sous ~/Library/WebKit.
+                if cfg!(target_os = "macos") {
+                    window_dirs.push(app.path().home_dir().ok().map(|h| h.join("Library/WebKit").join(&identifier)));
+                }
+                for dir in window_dirs.into_iter().flatten() {
+                    if dir != data_dir && uninstall_plan::is_app_dir(&dir, &identifier) {
+                        removals.push(Removal::Whole(dir));
+                    }
+                }
+                // Le dossier de données lui-même, en dernier, et seulement s'il est vide (quand
+                // le modèle est conservé, il reste).
+                removals.push(Removal::DirIfEmpty(data_dir));
+            }
+        }
+        _ => eprintln!("Dossier de données de l'app introuvable ou inattendu : rien n'est supprimé."),
+    }
+    removals
+}
+
+/// Fait chaque suppression, en réessayant celles qui résistent (`attempts` essais espacés de
+/// `delay`) : un process qu'on vient d'arrêter peut tenir un fichier encore un instant, surtout
+/// sous Windows. Rend celles qui ont échoué.
+fn remove_with_retries(removals: Vec<Removal>, attempts: u32, delay: Duration) -> Vec<Removal> {
+    let mut remaining = removals;
+    for attempt in 1..=attempts {
+        remaining.retain(|removal| !remove(removal));
+        if remaining.is_empty() || attempt == attempts {
+            break;
+        }
+        std::thread::sleep(delay);
+    }
+    remaining
+}
+
+/// Fait une suppression. Rend `true` si elle a abouti (ou s'il n'y avait rien à supprimer).
+fn remove(removal: &Removal) -> bool {
+    let result = match removal {
+        Removal::Whole(path) if path.is_dir() && !path.is_symlink() => std::fs::remove_dir_all(path),
+        Removal::Whole(path) => std::fs::remove_file(path),
+        Removal::DirIfEmpty(path) => match std::fs::remove_dir(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
+            other => other,
+        },
+    };
+    match result {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(e) => {
+            eprintln!("Suppression impossible de {} : {e}", removal.path().display());
+            false
+        }
+    }
+}
+
+/// Lance le désinstalleur du système quand l'installation en a un.
+///
+/// - Installeur `.exe` (NSIS) : son `uninstall.exe`, déposé à côté de l'exécutable.
+/// - Installeur `.msi` : pas de désinstalleur à lancer directement ; on ouvre la page
+///   « Applications installées » de Windows, où la personne choisit Opportune.
+/// - Linux et macOS : rien à lancer, la marche à suivre a été affichée avant la fermeture.
+fn launch_system_uninstaller() {
+    match current_install_kind() {
+        "windows-nsis" => {
+            if let Some(uninstaller) = nsis_uninstaller_path() {
+                if let Err(e) = Command::new(uninstaller).spawn() {
+                    eprintln!("Lancement du désinstalleur impossible : {e}");
+                }
+            }
+        }
+        "windows-msi" => {
+            if let Err(e) = Command::new("cmd").args(["/C", "start", "ms-settings:appsfeatures"]).spawn() {
+                eprintln!("Ouverture des applications installées impossible : {e}");
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Arrête tous les sidecars encore en vie (idempotent). `drain` garantit qu'un seul chemin
 /// d'arrêt les emporte, même si deux se déclenchent (fermeture + signal).
+///
+/// Sous Windows, `taskkill /T /F` sur chaque sidecar (tout son arbre de process).
 ///
 /// Sous Unix, SIGTERM au **groupe** entier de chaque sidecar (`kill(-pgid)`, grâce au `setsid` du
 /// spawn) : atteint le bootloader ET les process enfants. L'arrêt est **parallèle** : on signale
@@ -447,7 +724,7 @@ fn spawn_api(app: &tauri::AppHandle, ollama: &OllamaChoice) -> std::io::Result<(
 /// **seule** échéance de ~5 s partagée avant de forcer au SIGKILL ceux qui traînent. Un arrêt
 /// séquentiel cumulerait l'échéance par sidecar (jusqu'à 5 s chacun) et retarderait d'autant la
 /// fermeture de la fenêtre. L'échéance évite aussi qu'un sidecar bloqué (requête LLM/scrape qui
-/// ignore SIGTERM) fasse pendre `wait()` indéfiniment. Ailleurs, `kill` direct de chaque process.
+/// ignore SIGTERM) fasse pendre `wait()` indéfiniment.
 fn kill_all() {
     let drained: Vec<Child> = children().lock().unwrap().drain(..).collect();
 
@@ -487,7 +764,31 @@ fn kill_all() {
         }
     }
 
-    #[cfg(not(unix))]
+    // Sous Windows, `taskkill /T /F` arrête **tout l'arbre** de chaque sidecar. Un simple
+    // `child.kill()` ne tuerait que le process direct : le vrai process Python (petit-fils du
+    // bootloader PyInstaller) et le runner d'Ollama resteraient en vie, à tenir le port, la base
+    // SQLite et les fichiers du modèle. La désinstallation (OPP-252) ne pourrait alors rien
+    // supprimer. Repli sur `kill()` si `taskkill` échoue.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        for mut child in drained {
+            let tree_killed = Command::new("taskkill")
+                .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status()
+                .is_ok_and(|status| status.success());
+            if !tree_killed {
+                let _ = child.kill();
+            }
+            let _ = child.wait();
+        }
+    }
+
+    #[cfg(not(any(unix, windows)))]
     {
         for mut child in drained {
             let _ = child.kill();
@@ -541,6 +842,9 @@ fn main() {
             // erreur de connexion. 20 s couvrent le premier démarrage (création + seed des bases).
             // En cas d'échec, on **tue les sidecars** avant de quitter, pour ne pas laisser de
             // process orphelin tenir un port (prochain lancement cassé).
+            // Demande de désinstallation écrite par l'API (OPP-252).
+            watch_uninstall_request(handle.clone());
+
             std::thread::spawn(move || {
                 let ollama = spawn_ollama(&handle);
                 let ready = match spawn_api(&handle, &ollama) {
@@ -740,6 +1044,77 @@ mod tests {
         let _ = slow_child.wait();
 
         assert!(took_port);
+    }
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("opportune-test-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn remove_whole_deletes_a_directory_with_its_content() {
+        let _ports = lock_ports();
+        let models_dir = scratch_dir("whole");
+        std::fs::write(models_dir.join("blob"), "x").unwrap();
+
+        let removed = remove(&Removal::Whole(models_dir.clone()));
+
+        assert!(removed);
+        assert!(!models_dir.exists());
+    }
+
+    #[test]
+    fn remove_whole_succeeds_when_there_is_nothing_to_delete() {
+        let _ports = lock_ports();
+        let missing_path = scratch_dir("missing").join("absent");
+
+        assert!(remove(&Removal::Whole(missing_path)));
+    }
+
+    #[test]
+    fn remove_dir_if_empty_keeps_a_directory_that_still_holds_kept_files() {
+        let _ports = lock_ports();
+        let data_dir = scratch_dir("kept");
+        std::fs::create_dir(data_dir.join("ollama-models")).unwrap();
+
+        let removed = remove(&Removal::DirIfEmpty(data_dir.clone()));
+        let still_there = data_dir.join("ollama-models").is_dir();
+        let _ = std::fs::remove_dir_all(&data_dir);
+
+        assert!(removed);
+        assert!(still_there);
+    }
+
+    #[test]
+    fn remove_dir_if_empty_deletes_an_empty_directory() {
+        let _ports = lock_ports();
+        let empty_data_dir = scratch_dir("empty");
+
+        let removed = remove(&Removal::DirIfEmpty(empty_data_dir.clone()));
+
+        assert!(removed);
+        assert!(!empty_data_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_with_retries_returns_what_could_not_be_deleted() {
+        use std::os::unix::fs::PermissionsExt;
+        let _ports = lock_ports();
+        let locked_parent = scratch_dir("locked");
+        let protected_file = locked_parent.join("fichier");
+        std::fs::write(&protected_file, "x").unwrap();
+        std::fs::set_permissions(&locked_parent, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let not_removed =
+            remove_with_retries(vec![Removal::Whole(protected_file.clone())], 2, Duration::from_millis(10));
+        std::fs::set_permissions(&locked_parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&locked_parent);
+
+        assert_eq!(not_removed.len(), 1);
+        assert_eq!(not_removed[0].path(), protected_file);
     }
 
     #[test]
