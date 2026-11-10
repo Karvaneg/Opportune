@@ -8,7 +8,7 @@ dans ``api``. ``version`` et ``healthcheck`` restent le point de contrôle minim
 l'environnement.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def healthcheck() -> str:
