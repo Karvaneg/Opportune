@@ -196,7 +196,9 @@ donc pas les scripts bash partagés avec WSL.
 - `capabilities/` — permissions Tauri accordées à la fenêtre (dont `opener`, pour ouvrir
   les liens externes dans le navigateur du système).
 - `icons/` — `icon-source.svg` (badge indigo, lisible sur une barre des tâches claire ou
-  sombre, OPP-220), `icon-source.png`, et les dérivés générés par
+  sombre, OPP-220 ; le badge occupe toute l'image, sans marge transparente, pour ne pas
+  paraître plus petit que les icônes voisines, OPP-253), `icon-source.png` (rendu 1024 px du
+  SVG, fond transparent), et les dérivés générés par
   `npx tauri icon src-tauri/icons/icon-source.png` (OPP-250) : `32x32.png`, `64x64.png`,
   `128x128.png`, `128x128@2x.png`, `icon.png` (paquets Linux), `icon.ico` (requis par
   `tauri-build` sous Windows) et les `Square*Logo.png`/`StoreLogo.png` (Windows). Les icônes
