@@ -4,7 +4,8 @@ Opportune réutilise autant que possible l'Ollama et les modèles déjà install
 Un modèle peut donc se trouver dans le dossier Ollama **de la personne** sans qu'Opportune l'y
 ait mis. Pour qu'une désinstallation (OPP-252) ne supprime jamais un modèle qui existait avant
 l'app, on note ici, dans un petit fichier JSON du dossier de données, chaque téléchargement fait
-par Opportune : le **nom du modèle** et le **dossier de modèles** où il a atterri.
+par Opportune : le **nom du modèle**, le **dossier de modèles** où il a atterri et une
+**empreinte** de la copie (date de modification donnée par Ollama).
 
 Le dossier compte autant que le nom : un même modèle peut exister en deux copies (une
 téléchargée par Opportune dans son dossier, une autre que la personne a téléchargée ensuite dans
@@ -12,6 +13,8 @@ son ``~/.ollama``). Seule la copie du dossier noté vient d'Opportune.
 
 Le dossier vaut ``None`` quand Opportune a téléchargé le modèle **à travers l'Ollama de la
 personne** : cet Ollama range ses modèles selon sa propre configuration, que l'app ne connaît pas.
+C'est là que l'empreinte sert : si la personne supprime ce modèle puis le retélécharge pour son
+propre usage, la date change, et la nouvelle copie n'est plus tenue pour celle d'Opportune.
 
 Un téléchargement absent du fichier est considéré comme **déjà présent** : c'est le choix sans
 risque, il conduit à ne rien supprimer. C'est aussi le cas des modèles téléchargés par une
@@ -41,24 +44,46 @@ def models_dir_from_env(environ: dict[str, str] | None = None) -> str | None:
 
 
 class ModelOriginStore:
-    """Liste, sur disque, des modèles téléchargés par Opportune et de leur dossier."""
+    """Liste, sur disque, des modèles téléchargés par Opportune, de leur dossier et de leur
+    empreinte."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
 
-    def mark_downloaded(self, model: str, models_dir: str | None) -> None:
-        """Note que ``model`` a été téléchargé par Opportune dans ``models_dir`` (sans doublon)."""
+    def mark_downloaded(
+        self, model: str, models_dir: str | None, fingerprint: str | None = None
+    ) -> None:
+        """Note que ``model`` a été téléchargé par Opportune dans ``models_dir``.
+
+        ``fingerprint`` identifie cette copie précise (date de modification donnée par Ollama).
+        Un nouveau téléchargement du même modèle au même endroit remplace l'entrée précédente.
+        """
+        downloads = [entry for entry in self._read() if not _matches(entry, model, models_dir)]
+        downloads.append({"model": model, "models_dir": models_dir, "fingerprint": fingerprint})
+        self._write(downloads)
+
+    def forget(self, model: str, models_dir: str | None) -> None:
+        """Retire la trace d'un téléchargement (la copie vient d'être supprimée)."""
         downloads = self._read()
-        entry = {"model": model, "models_dir": models_dir}
-        if entry in downloads:
-            return
-        downloads.append(entry)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps({_DOWNLOADS_KEY: downloads}, indent=2), encoding="utf-8")
+        remaining = [entry for entry in downloads if not _matches(entry, model, models_dir)]
+        if len(remaining) != len(downloads):
+            self._write(remaining)
 
     def was_downloaded_by_opportune(self, model: str, models_dir: str | None) -> bool:
-        """Vrai si la copie de ``model`` située dans ``models_dir`` vient d'Opportune."""
-        return {"model": model, "models_dir": models_dir} in self._read()
+        """Vrai si Opportune a téléchargé ``model`` dans ``models_dir``."""
+        return any(_matches(entry, model, models_dir) for entry in self._read())
+
+    def fingerprint_of(self, model: str, models_dir: str | None) -> str | None:
+        """Empreinte notée au téléchargement de ``model`` dans ``models_dir`` ; ``None`` si
+        Opportune ne l'y a pas téléchargé, ou sans empreinte connue."""
+        for entry in self._read():
+            if _matches(entry, model, models_dir):
+                return entry["fingerprint"]
+        return None
+
+    def _write(self, downloads: list[dict]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps({_DOWNLOADS_KEY: downloads}, indent=2), encoding="utf-8")
 
     def _read(self) -> list[dict]:
         """Téléchargements notés. Fichier absent ou illisible → liste vide (rien n'est tenu
@@ -71,9 +96,18 @@ class ModelOriginStore:
         if not isinstance(downloads, list):
             return []
         return [
-            {"model": entry["model"], "models_dir": entry.get("models_dir")}
+            {
+                "model": entry["model"],
+                "models_dir": entry.get("models_dir"),
+                "fingerprint": entry.get("fingerprint"),
+            }
             for entry in downloads
             if isinstance(entry, dict)
             and isinstance(entry.get("model"), str)
             and isinstance(entry.get("models_dir"), (str, type(None)))
+            and isinstance(entry.get("fingerprint"), (str, type(None)))
         ]
+
+
+def _matches(entry: dict, model: str, models_dir: str | None) -> bool:
+    return entry["model"] == model and entry["models_dir"] == models_dir

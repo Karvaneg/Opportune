@@ -74,6 +74,8 @@ inchangées par décision).
 | `GET /system/llm/status` | État du LLM local : Ollama joignable, modèle présent (OPP-193) |
 | `GET /system/llm/setup` | Avancement du téléchargement du modèle |
 | `POST /system/llm/setup` | Lance le téléchargement du modèle (202) |
+| `GET /system/uninstall` | Ce que la désinstallation peut supprimer : type d'installation, modèle, Ollama personnel (OPP-252) |
+| `POST /system/uninstall` | Enregistre la demande de désinstallation, exécutée par l'app de bureau (202 ; 409 hors app de bureau) |
 | `GET /settings/adzuna` | Clés Adzuna configurées ou non (jamais les clés elles-mêmes, OPP-222) |
 | `PUT /settings/adzuna` | Enregistre les clés Adzuna saisies dans l'app |
 | `GET /settings/rss` | URLs de flux RSS enregistrées (OPP-195) |
@@ -93,7 +95,8 @@ inchangées par décision).
 | `POST /demo/reset` · `POST /demo/restore` | Vide / restaure l'espace Démo (cf. « Deux espaces isolés ») |
 
 Certaines routes ne sont **montées que si leur service est câblé** (recherches, profil, CV,
-lettre, intake `POST /offers`, `/collect`, `/system/llm/*`, `/settings/*`, actions sensibles,
+lettre, intake `POST /offers`, `/collect`, `/system/llm/*`, `/system/uninstall`, `/settings/*`,
+actions sensibles,
 suivi) ; sinon elles répondent **404 neutre**.
 
 Côté transport (`server.py`), les routes de l'API sont préfixées **`/api`** ; toute autre

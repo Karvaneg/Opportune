@@ -18,6 +18,7 @@ de l'entrée/sortie réseau :
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -123,6 +124,28 @@ def model_present(
     return any(model_with_tag(name) == target for name in installed)
 
 
+def model_modified_at(
+    model: str | None = None,
+    *,
+    host: str | None = None,
+    transport: JsonTransport | None = None,
+) -> str | None:
+    """Date de dernière modification de ``model`` dans l'inventaire d'Ollama (``/api/tags``).
+
+    ``None`` si le modèle est absent ; chaîne vide s'il est présent mais qu'Ollama ne donne pas
+    de date. Cette date change quand le modèle est supprimé puis retéléchargé : elle sert
+    d'**empreinte** pour reconnaître la copie qu'Opportune a téléchargée (OPP-252). Lève
+    :class:`OllamaUnreachable` si Ollama ne répond pas.
+    """
+    target = model_with_tag(model or DEFAULT_MODEL)
+    send = transport or _get_json
+    body = send(ollama_url("api/tags", host=host))
+    for entry in body.get("models", []):
+        if isinstance(entry, dict) and model_with_tag(str(entry.get("name", ""))) == target:
+            return str(entry.get("modified_at") or "")
+    return None
+
+
 def model_with_tag(model: str) -> str:
     """Nom du modèle avec son tag (``:latest`` par défaut, comme Ollama).
 
@@ -161,6 +184,40 @@ def pull_model(
     if not last.done:
         return PullProgress(last.status, last.fraction, error="stream interrompu avant 'success'")
     return last
+
+
+def delete_model(
+    model: str | None = None,
+    *,
+    host: str | None = None,
+    transport: Callable[[str, dict], None] | None = None,
+) -> None:
+    """Supprime ``model`` de l'Ollama joint sur ``host`` (``DELETE /api/delete``, OPP-252).
+
+    Un modèle déjà absent n'est pas une erreur. Lève :class:`OllamaUnreachable` si Ollama ne
+    répond pas ou refuse.
+    """
+    target = model or DEFAULT_MODEL
+    send = transport or _delete_json
+    send(ollama_url("api/delete", host=host), {"model": target})
+
+
+def _delete_json(url: str, payload: dict, *, timeout: int = 30) -> None:
+    """DELETE JSON par défaut (``urllib``). 404 = modèle déjà absent, accepté ; toute autre
+    panne (réseau, autre statut) remonte en :class:`OllamaUnreachable`."""
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="DELETE"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout):  # noqa: S310 (URL interne)
+            return
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return
+        raise OllamaUnreachable(str(exc)) from exc
+    except OSError as exc:
+        raise OllamaUnreachable(str(exc)) from exc
 
 
 def _get_json(url: str, *, timeout: int = _PROBE_TIMEOUT_SECONDS) -> dict:

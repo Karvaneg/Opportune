@@ -59,11 +59,42 @@ Opportune s'installe **par double-clic, sans terminal**, avec son assistant IA l
 Mac n'est pas encore disponible. Pour lancer Opportune depuis les sources, voir la partie
 [Contribuer et développer](#contribuer-et-développer).
 
+## Désinstallation
+
+Dans l'app, ouvre **Réglages**, puis **Désinstaller Opportune**. Tu choisis ce qui est
+supprimé avec l'app :
+
+- **le modèle d'IA** téléchargé par Opportune (environ 3 Go). Un modèle que tu avais déjà
+  dans ton propre Ollama avant d'installer Opportune n'est jamais supprimé ;
+- **tes données** (recherches, profils, offres, analyses, lettres, candidatures, réglages).
+  Cette suppression est définitive : exporte-les d'abord si tu veux les garder.
+
+Opportune se ferme ensuite, et la suite dépend de ton système :
+
+| Système | Ce qui se passe |
+| --- | --- |
+| Windows (`.exe`) | Le désinstalleur s'ouvre. |
+| Windows (`.msi`) | La page « Applications installées » s'ouvre : choisis Opportune, puis « Désinstaller ». |
+| Linux (`.deb`) | Lance `sudo apt remove opportune` dans un terminal. |
+| Linux (`.rpm`) | Lance `sudo rpm -e opportune` dans un terminal. |
+| Linux (`.AppImage`) | Supprime le fichier `.AppImage`. |
+
+L'assistant IA embarqué (Ollama) fait partie d'Opportune et part avec elle. Si tu avais
+installé **ton propre Ollama**, Opportune n'y touche pas : désinstalle-le depuis
+« Applications installées » sous Windows, ou en suivant
+[la documentation d'Ollama](https://docs.ollama.com/linux#uninstall) sous Linux.
+
+Le bouton n'existe pas dans la version 1.0.0. Avec elle, désinstalle l'app par le moyen
+habituel de ton système, puis supprime à la main le dossier de données d'Opportune
+(`%APPDATA%\com.opportune.app` sous Windows, `~/.local/share/com.opportune.app` sous Linux)
+pour récupérer la place du modèle.
+
 ## Sommaire
 
 **Utiliser Opportune**
 
 - [Installation](#installation)
+- [Désinstallation](#désinstallation)
 - [Premiers pas](#premiers-pas)
 - [Sources d'offres](#sources-doffres)
 - [Aperçu et design](#aperçu-et-design)

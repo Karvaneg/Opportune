@@ -117,3 +117,48 @@ def test_models_dir_from_env_is_none_when_absent_or_blank():
 
     assert models_dir_from_env(environ_without_variable) is None
     assert models_dir_from_env(environ_with_blank_variable) is None
+
+
+def test_forget_removes_only_the_given_download(tmp_path):
+    store = ModelOriginStore(tmp_path / "llm-model-origin.json")
+    store.mark_downloaded("ministral-3:3b", _APP_DIR)
+    store.mark_downloaded("ministral-3:3b", None)
+
+    store.forget("ministral-3:3b", None)
+
+    assert store.was_downloaded_by_opportune("ministral-3:3b", None) is False
+    assert store.was_downloaded_by_opportune("ministral-3:3b", _APP_DIR) is True
+
+
+def test_forget_unknown_download_does_nothing(tmp_path):
+    origin_file = tmp_path / "llm-model-origin.json"
+    store = ModelOriginStore(origin_file)
+
+    store.forget("ministral-3:3b", _APP_DIR)
+
+    assert not origin_file.exists()
+
+
+def test_fingerprint_is_kept_with_the_download(tmp_path):
+    store = ModelOriginStore(tmp_path / "llm-model-origin.json")
+
+    store.mark_downloaded("ministral-3:3b", None, "2026-11-10T10:00:00Z")
+
+    assert store.fingerprint_of("ministral-3:3b", None) == "2026-11-10T10:00:00Z"
+
+
+def test_fingerprint_is_none_for_unknown_download(tmp_path):
+    store = ModelOriginStore(tmp_path / "llm-model-origin.json")
+
+    assert store.fingerprint_of("ministral-3:3b", None) is None
+
+
+def test_new_download_at_same_place_replaces_the_fingerprint(tmp_path):
+    origin_file = tmp_path / "llm-model-origin.json"
+    store = ModelOriginStore(origin_file)
+    store.mark_downloaded("ministral-3:3b", None, "2026-11-10T10:00:00Z")
+
+    store.mark_downloaded("ministral-3:3b", None, "2026-12-01T09:30:00Z")
+
+    assert store.fingerprint_of("ministral-3:3b", None) == "2026-12-01T09:30:00Z"
+    assert origin_file.read_text(encoding="utf-8").count("ministral-3:3b") == 1

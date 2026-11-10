@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from app.candidate_registry import CandidateRegistry
     from app.collection_jobs import CollectionJob, CollectionJobRegistry
     from app.llm_setup_service import LLMSetupService
+    from app.uninstall_service import UninstallService
     from app.offer_collection import CollectionReport
     from app.profile_service import ProfileService
     from app.rss_feeds_store import RssFeedsStore
@@ -207,6 +208,7 @@ _COLLECT_JOB_CANCEL = re.compile(r"^/collect/(?P<job_id>[^/]+)/cancel$")
 _COLLECT_JOB = re.compile(r"^/collect/(?P<job_id>[^/]+)$")
 _LLM_STATUS = re.compile(r"^/system/llm/status$")
 _LLM_SETUP = re.compile(r"^/system/llm/setup$")
+_UNINSTALL = re.compile(r"^/system/uninstall$")
 _SETTINGS_ADZUNA = re.compile(r"^/settings/adzuna$")
 _SETTINGS_RSS = re.compile(r"^/settings/rss$")
 _SETTINGS_FOLLOW_UP = re.compile(r"^/settings/follow-up$")
@@ -291,6 +293,7 @@ class HermesApi:
         cv_intake: "CvIntake | None" = None,
         searches: "CandidateRegistry | None" = None,
         llm_setup: "LLMSetupService | None" = None,
+        uninstall: "UninstallService | None" = None,
         adzuna_credentials: "AdzunaCredentialsStore | None" = None,
         rss_feeds: "RssFeedsStore | None" = None,
         ats_companies: "AtsCompaniesStore | None" = None,
@@ -340,6 +343,9 @@ class HermesApi:
         # modèle présent, RAM) et téléchargement du modèle suivi par sondage. Optionnel : si
         # absent, les routes /system/llm/* ne sont pas montées (404). Injecté en prod, faux en test.
         self.llm_setup = llm_setup
+        # Désinstallation depuis l'app (OPP-252) : ce que l'on peut supprimer, et la demande
+        # transmise à la coquille de bureau. Optionnel : absent → /system/uninstall en 404.
+        self.uninstall = uninstall
         # Identifiants Adzuna saisis par l'utilisateur (OPP-222) : store fichier dans le dossier de
         # données de l'app. Optionnel : si absent, /settings/adzuna n'est pas monté (404 neutre).
         # Les routes n'exposent jamais les clés (secret) — seulement l'état « configuré ».
@@ -602,6 +608,16 @@ class HermesApi:
                 return Response(200, serialize_snapshot(self.llm_setup.progress()))
             self._require(method, "POST", path)
             return Response(202, serialize_snapshot(self.llm_setup.start()))
+
+        if _UNINSTALL.match(path):
+            # Désinstallation depuis l'app (OPP-252). GET : ce qui peut être supprimé ;
+            # POST : enregistre la demande, que la coquille de bureau exécute.
+            if self.uninstall is None:
+                raise self._not_found(user, "désinstallation non disponible")
+            if method.upper() == "GET":
+                return Response(200, self.uninstall.info())
+            self._require(method, "POST", path)
+            return self._post_uninstall(body)
 
         if _SETTINGS_ADZUNA.match(path):
             # Identifiants Adzuna saisis par l'utilisateur (OPP-222). Montée uniquement si le store
@@ -1442,6 +1458,28 @@ class HermesApi:
         """
         assert self.adzuna_credentials is not None  # garanti par le dispatch (404 sinon)
         return Response(200, {"configured": self.adzuna_credentials.is_configured()})
+
+    def _post_uninstall(self, body: dict) -> Response:
+        """Enregistre la demande de désinstallation (OPP-252).
+
+        ``remove_model`` et ``remove_data`` sont requis et booléens (400 sinon) : la suppression
+        est irréversible, on n'applique aucune valeur par défaut. 409 hors app de bureau (personne
+        n'exécuterait la demande) ; 502 si l'Ollama de la personne n'a pas supprimé le modèle.
+        """
+        assert self.uninstall is not None  # garanti par le dispatch (404 sinon)
+        from app.uninstall_service import ModelRemovalFailed, UninstallNotAvailable
+
+        remove_model = body.get("remove_model")
+        remove_data = body.get("remove_data")
+        if not isinstance(remove_model, bool) or not isinstance(remove_data, bool):
+            raise ApiError(400, "remove_model et remove_data doivent être des booléens")
+        try:
+            self.uninstall.request(remove_model=remove_model, remove_data=remove_data)
+        except UninstallNotAvailable as exc:
+            raise ApiError(409, str(exc)) from exc
+        except ModelRemovalFailed as exc:
+            raise ApiError(502, "le modèle n'a pas pu être supprimé d'Ollama, rien n'a été désinstallé") from exc
+        return Response(202, {"accepted": True})
 
     def _put_adzuna_settings(self, body: dict) -> Response:
         """Enregistre les identifiants Adzuna saisis par l'utilisateur (OPP-222).
